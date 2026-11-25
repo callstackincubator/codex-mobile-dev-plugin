@@ -1,5 +1,5 @@
 
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="8a1c7fe2-9496-58ea-a417-20afdc1e0481")}catch(e){}}();
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="b67a9f36-bb7d-56ed-9384-059fe1b650f4")}catch(e){}}();
 ;(function(){var g=globalThis.__SENTRY_ORCHESTRION__=globalThis.__SENTRY_ORCHESTRION__||{};g.bundler=g.bundler||new Set();})();import { createRequire as mobileDevBundleRequire } from 'node:module'; import { fileURLToPath as mobileDevFileURLToPath } from 'node:url'; import { dirname as mobileDevPathDirname } from 'node:path'; const require = mobileDevBundleRequire(import.meta.url); const __filename = mobileDevFileURLToPath(import.meta.url); const __dirname = mobileDevPathDirname(__filename);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -4540,7 +4540,7 @@ var require_request = __commonJS({
         method: method2,
         body,
         headers,
-        query,
+        query: query2,
         idempotent,
         blocking,
         upgrade,
@@ -4637,7 +4637,7 @@ var require_request = __commonJS({
         this.completed = false;
         this.aborted = false;
         this.upgrade = upgrade || null;
-        this.path = query ? serializePathWithQuery(path, query) : path;
+        this.path = query2 ? serializePathWithQuery(path, query2) : path;
         this.origin = origin2;
         this.protocol = getProtocolFromUrlString(origin2);
         this.idempotent = idempotent == null ? method2 === "HEAD" || method2 === "GET" || method2 === "QUERY" : idempotent;
@@ -16862,11 +16862,11 @@ var require_mock_utils = __commonJS({
       }
       return true;
     }
-    function normalizeSearchParams(query) {
-      if (typeof query !== "string") {
-        return query;
+    function normalizeSearchParams(query2) {
+      if (typeof query2 !== "string") {
+        return query2;
       }
-      const originalQp = new URLSearchParams(query);
+      const originalQp = new URLSearchParams(query2);
       const normalizedQp = new URLSearchParams();
       for (let [key2, value] of originalQp.entries()) {
         key2 = key2.replace("[]", "");
@@ -16979,13 +16979,13 @@ var require_mock_utils = __commonJS({
       return path;
     }
     function buildKey(opts) {
-      const { path, method: method2, body, headers, query } = opts;
+      const { path, method: method2, body, headers, query: query2 } = opts;
       return {
         path,
         method: method2,
         body,
         headers,
-        query
+        query: query2
       };
     }
     function generateKeyValues(data) {
@@ -17508,7 +17508,7 @@ var require_mock_interceptor = __commonJS({
 var require_mock_client = __commonJS({
   "node_modules/undici/lib/mock/mock-client.js"(exports, module2) {
     "use strict";
-    var { promisify: promisify25 } = __require("node:util");
+    var { promisify: promisify26 } = __require("node:util");
     var Client3 = require_client();
     var { buildMockDispatch } = require_mock_utils();
     var {
@@ -17556,7 +17556,7 @@ var require_mock_client = __commonJS({
         this[kDispatches] = [];
       }
       async [kClose]() {
-        await promisify25(this[kOriginalClose])();
+        await promisify26(this[kOriginalClose])();
         this[kConnected] = 0;
         this[kMockAgent][Symbols.kClients].delete(this[kOrigin]);
       }
@@ -17769,7 +17769,7 @@ var require_mock_call_history = __commonJS({
 var require_mock_pool = __commonJS({
   "node_modules/undici/lib/mock/mock-pool.js"(exports, module2) {
     "use strict";
-    var { promisify: promisify25 } = __require("node:util");
+    var { promisify: promisify26 } = __require("node:util");
     var Pool = require_pool();
     var { buildMockDispatch } = require_mock_utils();
     var {
@@ -17817,7 +17817,7 @@ var require_mock_pool = __commonJS({
         this[kDispatches] = [];
       }
       async [kClose]() {
-        await promisify25(this[kOriginalClose])();
+        await promisify26(this[kOriginalClose])();
         this[kConnected] = 0;
         this[kMockAgent][Symbols.kClients].delete(this[kOrigin]);
       }
@@ -38672,9 +38672,9 @@ function filterUrlQuery(url3, behavior) {
     return url3;
   }
   const prefix3 = url3.slice(0, queryStart);
-  const query = url3.slice(queryStart + 1, queryEnd);
+  const query2 = url3.slice(queryStart + 1, queryEnd);
   const suffix = url3.slice(queryEnd);
-  const filtered2 = filterQueryParams(query, behavior);
+  const filtered2 = filterQueryParams(query2, behavior);
   return filtered2 ? `${prefix3}?${filtered2}${suffix}` : `${prefix3}${suffix}`;
 }
 var init_filterUrlQuery = __esm({
@@ -38690,8 +38690,8 @@ function urlQueryParamsBehavior(client2) {
 function filterCollectedUrl(url3, client2) {
   return url3 === void 0 ? void 0 : filterUrlQuery(url3, urlQueryParamsBehavior(client2));
 }
-function filterCollectedUrlQuery(query, client2) {
-  return query ? filterQueryParams(query, urlQueryParamsBehavior(client2)) : void 0;
+function filterCollectedUrlQuery(query2, client2) {
+  return query2 ? filterQueryParams(query2, urlQueryParamsBehavior(client2)) : void 0;
 }
 var init_filterCollectedUrl = __esm({
   "node_modules/@sentry/core/build/esm/utils/data-collection/filterCollectedUrl.js"() {
@@ -38797,8 +38797,8 @@ function getSanitizedUrlStringFromUrlObject(url3) {
   }
   return newUrl.toString();
 }
-function getUrlQuery(query) {
-  return query?.replace(/^\?/, "") || void 0;
+function getUrlQuery(query2) {
+  return query2?.replace(/^\?/, "") || void 0;
 }
 function getUrlFragment(fragment) {
   return fragment?.replace(/^#/, "") || void 0;
@@ -38858,15 +38858,15 @@ function parseUrl(url3) {
   if (!match2) {
     return {};
   }
-  const query = match2[6] || "";
+  const query2 = match2[6] || "";
   const fragment = match2[8] || "";
   return {
     host: match2[4],
     path: match2[5],
     protocol: match2[2],
-    search: query,
+    search: query2,
     hash: fragment,
-    relative: match2[5] + query + fragment
+    relative: match2[5] + query2 + fragment
     // everything minus origin
   };
 }
@@ -46903,25 +46903,25 @@ var init_mastra = __esm({
 });
 
 // node_modules/@sentry/server-utils/build/esm/utils/sql.js
-function getSqlQuerySummary(query) {
-  if (!query) {
+function getSqlQuerySummary(query2) {
+  if (!query2) {
     return void 0;
   }
-  const pragmaMatch = PRAGMA_RE.exec(query);
+  const pragmaMatch = PRAGMA_RE.exec(query2);
   if (pragmaMatch?.groups?.["operation"] && pragmaMatch.groups["command"]) {
     const operation = pragmaMatch.groups["operation"];
     const command3 = pragmaMatch.groups["command"];
     const parenIdx = command3.indexOf("(");
     return truncate2(`${operation} ${parenIdx >= 0 ? command3.substring(0, parenIdx) : command3}`);
   }
-  const ddlMatch = DDL_RE.exec(query);
+  const ddlMatch = DDL_RE.exec(query2);
   if (ddlMatch?.groups?.["operation"] && ddlMatch.groups["table"]) {
     return truncate2(`${ddlMatch.groups["operation"]} ${ddlMatch.groups["table"]}`);
   }
-  const insertMatch = INSERT_RE.exec(query);
+  const insertMatch = INSERT_RE.exec(query2);
   if (insertMatch?.groups?.["operation"] && insertMatch.groups["table"]) {
     const parts = [insertMatch.groups["operation"], insertMatch.groups["table"]];
-    const rest = query.slice(insertMatch[0].length);
+    const rest = query2.slice(insertMatch[0].length);
     const subSelect = /\b(SELECT)\b/i.exec(rest);
     if (subSelect?.[1]) {
       parts.push(subSelect[1]);
@@ -46930,52 +46930,52 @@ function getSqlQuerySummary(query) {
     }
     return truncate2(parts.join(" "));
   }
-  const updateMatch = UPDATE_RE.exec(query);
+  const updateMatch = UPDATE_RE.exec(query2);
   if (updateMatch?.groups?.["operation"] && updateMatch.groups["table"]) {
     return truncate2(`${updateMatch.groups["operation"]} ${updateMatch.groups["table"]}`);
   }
-  const deleteMatch = DELETE_RE.exec(query);
+  const deleteMatch = DELETE_RE.exec(query2);
   if (deleteMatch?.groups?.["operation"] && deleteMatch.groups["table"]) {
     return truncate2(`${deleteMatch.groups["operation"]} ${deleteMatch.groups["table"]}`);
   }
-  const selectMatch = SELECT_RE.exec(query);
+  const selectMatch = SELECT_RE.exec(query2);
   if (selectMatch?.groups?.["operation"]) {
-    const tables = extractTableNames(query.slice(selectMatch[0].length));
-    if (tables.length > 0) {
-      return truncate2(`${selectMatch.groups["operation"]} ${tables.join(" ")}`);
+    const tables2 = extractTableNames(query2.slice(selectMatch[0].length));
+    if (tables2.length > 0) {
+      return truncate2(`${selectMatch.groups["operation"]} ${tables2.join(" ")}`);
     }
     return selectMatch.groups["operation"];
   }
-  return truncate2(query.trim().split(/\s+/)[0] ?? query);
+  return truncate2(query2.trim().split(/\s+/)[0] ?? query2);
 }
 function extractTableNames(sql) {
-  const tables = [];
+  const tables2 = [];
   TOKEN_RE.lastIndex = 0;
   let match2;
   while ((match2 = TOKEN_RE.exec(sql)) !== null) {
     if (match2[1] || match2[2]) {
-      tables.push(match2[1] || match2[2]);
+      tables2.push(match2[1] || match2[2]);
       continue;
     }
     const rest = sql.slice(match2.index + match2[0].length);
     const subqueryMatch = SUBQUERY_SELECT_RE.exec(rest);
     if (subqueryMatch?.[1]) {
-      tables.push(subqueryMatch[1]);
+      tables2.push(subqueryMatch[1]);
       TOKEN_RE.lastIndex = match2.index + match2[0].length + subqueryMatch[0].length;
       continue;
     }
     const tableMatch = TABLE_REF_RE.exec(rest);
     if (!tableMatch) continue;
-    tables.push(tableMatch[0]);
+    tables2.push(tableMatch[0]);
     let afterTable = rest.slice(tableMatch[0].length);
     let commaMatch;
     while ((commaMatch = COMMA_TABLE_RE.exec(afterTable)) !== null) {
       if (!commaMatch[1]) break;
-      tables.push(commaMatch[1]);
+      tables2.push(commaMatch[1]);
       afterTable = afterTable.slice(commaMatch[0].length);
     }
   }
-  return tables;
+  return tables2;
 }
 function truncate2(summary) {
   if (summary.length <= MAX_SUMMARY_LENGTH) {
@@ -54761,17 +54761,17 @@ function subscribeQuery() {
       if (!parentSpan) {
         return void 0;
       }
-      const query = data.arguments[0];
+      const query2 = data.arguments[0];
       const client2 = runner?.client;
       const connection2 = client2?.config?.connection;
       const connectionString = connection2?.connectionString;
       const table = extractTableName(builder);
-      const operation = query?.method;
+      const operation = query2?.method;
       const dbNameSpace = connection2?.filename || connection2?.database || extractDatabaseFromConnectionString(connectionString);
       const dbSystem = mapSystem(client2?.driverName);
       const dialect = toSqlDialect(client2?.driverName);
       const { queryText: dbStatement, querySummary } = sanitizeSqlQueryWithSummary(
-        query?.sql ? truncate(query.sql, MAX_QUERY_LENGTH) : void 0,
+        query2?.sql ? truncate(query2.sql, MAX_QUERY_LENGTH) : void 0,
         dialect
       );
       const attributes2 = {
@@ -54816,13 +54816,13 @@ function cleanErrorMessage(data) {
     return void 0;
   }
   const rawMessage = error113.message;
-  const query = data.arguments[0];
-  if (!query?.sql) {
+  const query2 = data.arguments[0];
+  if (!query2?.sql) {
     return rawMessage;
   }
   try {
     const formatter = getFormatter(data.self);
-    const fullQuery = formatter(query.sql, query.bindings || []);
+    const fullQuery = formatter(query2.sql, query2.bindings || []);
     return rawMessage.replace(`${fullQuery} - `, "");
   } catch {
     return rawMessage;
@@ -55995,11 +55995,11 @@ function subscribeOrchestrionMongooseChannels() {
     }
   });
   bindExecSpan(CHANNELS.MONGOOSE_QUERY_EXEC, (self2) => {
-    const query = self2;
+    const query2 = self2;
     return startSpan2(
-      query.mongooseCollection,
-      query.model?.modelName,
-      query.op ?? "exec",
+      query2.mongooseCollection,
+      query2.model?.modelName,
+      query2.op ?? "exec",
       STORED_PARENT_SPAN.get(self2)
     );
   });
@@ -56775,8 +56775,8 @@ function recordConnectionFromChannel(message3) {
   connectionContexts.set(connection2, context3);
   registerEndpoint(context3);
 }
-function setConnectionAttributes(span, query, context3) {
-  const queryRecord = query;
+function setConnectionAttributes(span, query2, context3) {
+  const queryRecord = query2;
   if (queryRecord[CONNECTION_ATTRS_SET]) {
     return;
   }
@@ -56787,27 +56787,27 @@ function setConnectionAttributes(span, query, context3) {
 }
 function attachConnectionAttributesFromChannel(message3) {
   const connection2 = message3.self;
-  const query = message3.arguments?.[0];
-  if (!connection2 || !query) {
+  const query2 = message3.arguments?.[0];
+  if (!connection2 || !query2) {
     return;
   }
-  const span = query[QUERY_SPAN];
+  const span = query2[QUERY_SPAN];
   const context3 = connectionContexts.get(connection2);
   if (span && context3) {
-    setConnectionAttributes(span, query, context3);
+    setConnectionAttributes(span, query2, context3);
   }
 }
 function wrapQuerySettlement(data, span, sanitizedSqlQuery) {
-  const query = data.self;
-  if (!query) {
+  const query2 = data.self;
+  if (!query2) {
     return;
   }
   const markEnded = () => {
     data[SPAN_ENDED] = true;
   };
-  const originalResolve = query.resolve;
+  const originalResolve = query2.resolve;
   if (typeof originalResolve === "function") {
-    query.resolve = function(...resolveArgs) {
+    query2.resolve = function(...resolveArgs) {
       markEnded();
       try {
         const command3 = resolveArgs[0]?.command;
@@ -56819,9 +56819,9 @@ function wrapQuerySettlement(data, span, sanitizedSqlQuery) {
       return originalResolve.apply(this, resolveArgs);
     };
   }
-  const originalReject = query.reject;
+  const originalReject = query2.reject;
   if (typeof originalReject === "function") {
-    query.reject = function(...rejectArgs) {
+    query2.reject = function(...rejectArgs) {
       markEnded();
       try {
         const err = rejectArgs[0];
@@ -56862,14 +56862,14 @@ function instrumentPostgresJs(options) {
   bindTracingChannelToSpan(
     tracingChannel2(CHANNELS.POSTGRESJS_HANDLE),
     (data) => {
-      const query = data.self;
-      if (!query) {
+      const query2 = data.self;
+      if (!query2) {
         return void 0;
       }
-      if (query.executed === true || query[QUERY_FROM_INSTRUMENTED_SQL]) {
+      if (query2.executed === true || query2[QUERY_FROM_INSTRUMENTED_SQL]) {
         return void 0;
       }
-      const fullQuery = _reconstructQuery(query.strings);
+      const fullQuery = _reconstructQuery(query2.strings);
       const sanitizedSqlQuery = sanitizeSqlQuery(fullQuery);
       const querySummary = getSqlQuerySummary(sanitizedSqlQuery);
       const client2 = getClient();
@@ -56887,9 +56887,9 @@ function instrumentPostgresJs(options) {
           [ha]: _getOperationName(sanitizedSqlQuery)
         }
       });
-      query[QUERY_SPAN] = span;
+      query2[QUERY_SPAN] = span;
       if (context3) {
-        setConnectionAttributes(span, query, context3);
+        setConnectionAttributes(span, query2, context3);
       }
       if (requestHook) {
         try {
@@ -59084,7 +59084,7 @@ var init_httpServerSpansIntegration = __esm({
               const method2 = requestMethod || "GET";
               const httpTargetWithoutQueryFragment = urlObj ? urlObj.pathname : stripUrlQueryAndFragment(fullUrl);
               const bestEffortTransactionName = `${method2} ${httpTargetWithoutQueryFragment}`;
-              const query = getUrlQuery(urlObj?.search);
+              const query2 = getUrlQuery(urlObj?.search);
               const fragment = getUrlFragment(urlObj?.hash);
               const span = startInactiveSpan({
                 // With span streaming, span names have to be low cardinality, so we can't fall back to the URL path.
@@ -59099,7 +59099,7 @@ var init_httpServerSpansIntegration = __esm({
                   [pd]: isKnownPrefetchRequest2(request2) || void 0,
                   [yb]: filterCollectedUrl(fullUrl, client2),
                   [_b]: urlObj?.pathname ?? httpTargetWithoutQueryFragment,
-                  [Sb]: filterCollectedUrlQuery(query, client2),
+                  [Sb]: filterCollectedUrlQuery(query2, client2),
                   [mb]: fragment,
                   [ho]: normalizedRequest.method,
                   [Ab]: userAgent,
@@ -63849,7 +63849,7 @@ var init_transformer = __esm({
             }
           }
           const resolvedFunctionQuery = __privateMethod(this, _Transformer_instances, resolveExportAlias_fn).call(this, functionQuery, aliases);
-          const query = astQuery || __privateMethod(this, _Transformer_instances, fromFunctionQuery_fn).call(this, resolvedFunctionQuery);
+          const query2 = astQuery || __privateMethod(this, _Transformer_instances, fromFunctionQuery_fn).call(this, resolvedFunctionQuery);
           const state2 = {
             ...config4,
             dcModule: __privateGet(this, _dcModule),
@@ -63859,7 +63859,7 @@ var init_transformer = __esm({
             transforms: mergedTransforms
           };
           state2.operator = __privateMethod(this, _Transformer_instances, getOperator_fn).call(this, state2);
-          esquery2.traverse(ast, esquery2.parse(query), (...args) => {
+          esquery2.traverse(ast, esquery2.parse(query2), (...args) => {
             injectionCount++;
             __privateMethod(this, _Transformer_instances, visit_fn).call(this, state2, ...args);
           });
@@ -65804,7 +65804,7 @@ var PLUGIN_VERSION;
 var init_version3 = __esm({
   "packages/shared/src/version.ts"() {
     "use strict";
-    PLUGIN_VERSION = "0.1.192";
+    PLUGIN_VERSION = "0.1.197";
   }
 });
 
@@ -87330,6 +87330,16 @@ function recordPanelRuntime(runtime2, outcome, duration6, bytes, reason) {
   const attributes2 = { component: "server", runtime: runtime2, outcome, ...reason ? { reason } : {} };
   public_api_exports.distribution("panel_runtime.ready", duration6, { attributes: attributes2, unit: "millisecond" });
   if (bytes !== void 0) public_api_exports.distribution("panel_runtime.download_bytes", bytes, { attributes: { component: "server", runtime: runtime2 }, unit: "byte" });
+}
+function recordBaguetteDiscoveryTime(operation, duration6) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes2 = { component: "server", operation };
+  public_api_exports.distribution("baguette.runtime.command.duration", duration6, { unit: "millisecond", attributes: attributes2 });
+}
+function recordIosHitchOperation(operation, outcome, duration6) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes2 = { component: "server", surface: "recording", device_platform: "ios", operation, outcome };
+  public_api_exports.distribution("ios.hitches.operation.duration", duration6, { unit: "millisecond", attributes: attributes2 });
 }
 function recordAppStorageOperation(operation, platform7, outcome, duration6) {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
@@ -116639,6 +116649,1914 @@ var init_manual = __esm({
   }
 });
 
+// node_modules/xmlchars/xml/1.0/ed5.js
+var require_ed5 = __commonJS({
+  "node_modules/xmlchars/xml/1.0/ed5.js"(exports) {
+    "use strict";
+    Object.defineProperty(exports, "__esModule", { value: true });
+    exports.CHAR = "	\n\r -\uD7FF\uE000-\uFFFD\u{10000}-\u{10FFFF}";
+    exports.S = " 	\r\n";
+    exports.NAME_START_CHAR = ":A-Z_a-z\xC0-\xD6\xD8-\xF6\xF8-\u02FF\u0370-\u037D\u037F-\u1FFF\u200C\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD\u{10000}-\u{EFFFF}";
+    exports.NAME_CHAR = "-" + exports.NAME_START_CHAR + ".0-9\xB7\u0300-\u036F\u203F-\u2040";
+    exports.CHAR_RE = new RegExp("^[" + exports.CHAR + "]$", "u");
+    exports.S_RE = new RegExp("^[" + exports.S + "]+$", "u");
+    exports.NAME_START_CHAR_RE = new RegExp("^[" + exports.NAME_START_CHAR + "]$", "u");
+    exports.NAME_CHAR_RE = new RegExp("^[" + exports.NAME_CHAR + "]$", "u");
+    exports.NAME_RE = new RegExp("^[" + exports.NAME_START_CHAR + "][" + exports.NAME_CHAR + "]*$", "u");
+    exports.NMTOKEN_RE = new RegExp("^[" + exports.NAME_CHAR + "]+$", "u");
+    var TAB = 9;
+    var NL = 10;
+    var CR = 13;
+    var SPACE = 32;
+    exports.S_LIST = [SPACE, NL, CR, TAB];
+    function isChar(c2) {
+      return c2 >= SPACE && c2 <= 55295 || c2 === NL || c2 === CR || c2 === TAB || c2 >= 57344 && c2 <= 65533 || c2 >= 65536 && c2 <= 1114111;
+    }
+    exports.isChar = isChar;
+    function isS(c2) {
+      return c2 === SPACE || c2 === NL || c2 === CR || c2 === TAB;
+    }
+    exports.isS = isS;
+    function isNameStartChar(c2) {
+      return c2 >= 65 && c2 <= 90 || c2 >= 97 && c2 <= 122 || c2 === 58 || c2 === 95 || c2 === 8204 || c2 === 8205 || c2 >= 192 && c2 <= 214 || c2 >= 216 && c2 <= 246 || c2 >= 248 && c2 <= 767 || c2 >= 880 && c2 <= 893 || c2 >= 895 && c2 <= 8191 || c2 >= 8304 && c2 <= 8591 || c2 >= 11264 && c2 <= 12271 || c2 >= 12289 && c2 <= 55295 || c2 >= 63744 && c2 <= 64975 || c2 >= 65008 && c2 <= 65533 || c2 >= 65536 && c2 <= 983039;
+    }
+    exports.isNameStartChar = isNameStartChar;
+    function isNameChar(c2) {
+      return isNameStartChar(c2) || c2 >= 48 && c2 <= 57 || c2 === 45 || c2 === 46 || c2 === 183 || c2 >= 768 && c2 <= 879 || c2 >= 8255 && c2 <= 8256;
+    }
+    exports.isNameChar = isNameChar;
+  }
+});
+
+// node_modules/xmlchars/xml/1.1/ed2.js
+var require_ed2 = __commonJS({
+  "node_modules/xmlchars/xml/1.1/ed2.js"(exports) {
+    "use strict";
+    Object.defineProperty(exports, "__esModule", { value: true });
+    exports.CHAR = "-\uD7FF\uE000-\uFFFD\u{10000}-\u{10FFFF}";
+    exports.RESTRICTED_CHAR = "-\b\v\f-\x7F-\x84\x86-\x9F";
+    exports.S = " 	\r\n";
+    exports.NAME_START_CHAR = ":A-Z_a-z\xC0-\xD6\xD8-\xF6\xF8-\u02FF\u0370-\u037D\u037F-\u1FFF\u200C\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD\u{10000}-\u{EFFFF}";
+    exports.NAME_CHAR = "-" + exports.NAME_START_CHAR + ".0-9\xB7\u0300-\u036F\u203F-\u2040";
+    exports.CHAR_RE = new RegExp("^[" + exports.CHAR + "]$", "u");
+    exports.RESTRICTED_CHAR_RE = new RegExp("^[" + exports.RESTRICTED_CHAR + "]$", "u");
+    exports.S_RE = new RegExp("^[" + exports.S + "]+$", "u");
+    exports.NAME_START_CHAR_RE = new RegExp("^[" + exports.NAME_START_CHAR + "]$", "u");
+    exports.NAME_CHAR_RE = new RegExp("^[" + exports.NAME_CHAR + "]$", "u");
+    exports.NAME_RE = new RegExp("^[" + exports.NAME_START_CHAR + "][" + exports.NAME_CHAR + "]*$", "u");
+    exports.NMTOKEN_RE = new RegExp("^[" + exports.NAME_CHAR + "]+$", "u");
+    var TAB = 9;
+    var NL = 10;
+    var CR = 13;
+    var SPACE = 32;
+    exports.S_LIST = [SPACE, NL, CR, TAB];
+    function isChar(c2) {
+      return c2 >= 1 && c2 <= 55295 || c2 >= 57344 && c2 <= 65533 || c2 >= 65536 && c2 <= 1114111;
+    }
+    exports.isChar = isChar;
+    function isRestrictedChar(c2) {
+      return c2 >= 1 && c2 <= 8 || c2 === 11 || c2 === 12 || c2 >= 14 && c2 <= 31 || c2 >= 127 && c2 <= 132 || c2 >= 134 && c2 <= 159;
+    }
+    exports.isRestrictedChar = isRestrictedChar;
+    function isCharAndNotRestricted(c2) {
+      return c2 === 9 || c2 === 10 || c2 === 13 || c2 > 31 && c2 < 127 || c2 === 133 || c2 > 159 && c2 <= 55295 || c2 >= 57344 && c2 <= 65533 || c2 >= 65536 && c2 <= 1114111;
+    }
+    exports.isCharAndNotRestricted = isCharAndNotRestricted;
+    function isS(c2) {
+      return c2 === SPACE || c2 === NL || c2 === CR || c2 === TAB;
+    }
+    exports.isS = isS;
+    function isNameStartChar(c2) {
+      return c2 >= 65 && c2 <= 90 || c2 >= 97 && c2 <= 122 || c2 === 58 || c2 === 95 || c2 === 8204 || c2 === 8205 || c2 >= 192 && c2 <= 214 || c2 >= 216 && c2 <= 246 || c2 >= 248 && c2 <= 767 || c2 >= 880 && c2 <= 893 || c2 >= 895 && c2 <= 8191 || c2 >= 8304 && c2 <= 8591 || c2 >= 11264 && c2 <= 12271 || c2 >= 12289 && c2 <= 55295 || c2 >= 63744 && c2 <= 64975 || c2 >= 65008 && c2 <= 65533 || c2 >= 65536 && c2 <= 983039;
+    }
+    exports.isNameStartChar = isNameStartChar;
+    function isNameChar(c2) {
+      return isNameStartChar(c2) || c2 >= 48 && c2 <= 57 || c2 === 45 || c2 === 46 || c2 === 183 || c2 >= 768 && c2 <= 879 || c2 >= 8255 && c2 <= 8256;
+    }
+    exports.isNameChar = isNameChar;
+  }
+});
+
+// node_modules/xmlchars/xmlns/1.0/ed3.js
+var require_ed3 = __commonJS({
+  "node_modules/xmlchars/xmlns/1.0/ed3.js"(exports) {
+    "use strict";
+    Object.defineProperty(exports, "__esModule", { value: true });
+    exports.NC_NAME_START_CHAR = "A-Z_a-z\xC0-\xD6\xD8-\xF6\xF8-\u02FF\u0370-\u037D\u037F-\u1FFF\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD\u{10000}-\u{EFFFF}";
+    exports.NC_NAME_CHAR = "-" + exports.NC_NAME_START_CHAR + ".0-9\xB7\u0300-\u036F\u203F-\u2040";
+    exports.NC_NAME_START_CHAR_RE = new RegExp("^[" + exports.NC_NAME_START_CHAR + "]$", "u");
+    exports.NC_NAME_CHAR_RE = new RegExp("^[" + exports.NC_NAME_CHAR + "]$", "u");
+    exports.NC_NAME_RE = new RegExp("^[" + exports.NC_NAME_START_CHAR + "][" + exports.NC_NAME_CHAR + "]*$", "u");
+    function isNCNameStartChar(c2) {
+      return c2 >= 65 && c2 <= 90 || c2 === 95 || c2 >= 97 && c2 <= 122 || c2 >= 192 && c2 <= 214 || c2 >= 216 && c2 <= 246 || c2 >= 248 && c2 <= 767 || c2 >= 880 && c2 <= 893 || c2 >= 895 && c2 <= 8191 || c2 >= 8204 && c2 <= 8205 || c2 >= 8304 && c2 <= 8591 || c2 >= 11264 && c2 <= 12271 || c2 >= 12289 && c2 <= 55295 || c2 >= 63744 && c2 <= 64975 || c2 >= 65008 && c2 <= 65533 || c2 >= 65536 && c2 <= 983039;
+    }
+    exports.isNCNameStartChar = isNCNameStartChar;
+    function isNCNameChar(c2) {
+      return isNCNameStartChar(c2) || (c2 === 45 || c2 === 46 || c2 >= 48 && c2 <= 57 || c2 === 183 || c2 >= 768 && c2 <= 879 || c2 >= 8255 && c2 <= 8256);
+    }
+    exports.isNCNameChar = isNCNameChar;
+  }
+});
+
+// node_modules/saxes/saxes.js
+var require_saxes = __commonJS({
+  "node_modules/saxes/saxes.js"(exports) {
+    "use strict";
+    Object.defineProperty(exports, "__esModule", { value: true });
+    exports.SaxesParser = exports.EVENTS = void 0;
+    var ed5 = require_ed5();
+    var ed2 = require_ed2();
+    var NSed3 = require_ed3();
+    var isS = ed5.isS;
+    var isChar10 = ed5.isChar;
+    var isNameStartChar = ed5.isNameStartChar;
+    var isNameChar = ed5.isNameChar;
+    var S_LIST = ed5.S_LIST;
+    var NAME_RE = ed5.NAME_RE;
+    var isChar11 = ed2.isChar;
+    var isNCNameStartChar = NSed3.isNCNameStartChar;
+    var isNCNameChar = NSed3.isNCNameChar;
+    var NC_NAME_RE = NSed3.NC_NAME_RE;
+    var XML_NAMESPACE = "http://www.w3.org/XML/1998/namespace";
+    var XMLNS_NAMESPACE = "http://www.w3.org/2000/xmlns/";
+    var rootNS = {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      __proto__: null,
+      xml: XML_NAMESPACE,
+      xmlns: XMLNS_NAMESPACE
+    };
+    var XML_ENTITIES = {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+      __proto__: null,
+      amp: "&",
+      gt: ">",
+      lt: "<",
+      quot: '"',
+      apos: "'"
+    };
+    var EOC = -1;
+    var NL_LIKE = -2;
+    var S_BEGIN = 0;
+    var S_BEGIN_WHITESPACE = 1;
+    var S_DOCTYPE = 2;
+    var S_DOCTYPE_QUOTE = 3;
+    var S_DTD = 4;
+    var S_DTD_QUOTED = 5;
+    var S_DTD_OPEN_WAKA = 6;
+    var S_DTD_OPEN_WAKA_BANG = 7;
+    var S_DTD_COMMENT = 8;
+    var S_DTD_COMMENT_ENDING = 9;
+    var S_DTD_COMMENT_ENDED = 10;
+    var S_DTD_PI = 11;
+    var S_DTD_PI_ENDING = 12;
+    var S_TEXT = 13;
+    var S_ENTITY = 14;
+    var S_OPEN_WAKA = 15;
+    var S_OPEN_WAKA_BANG = 16;
+    var S_COMMENT = 17;
+    var S_COMMENT_ENDING = 18;
+    var S_COMMENT_ENDED = 19;
+    var S_CDATA = 20;
+    var S_CDATA_ENDING = 21;
+    var S_CDATA_ENDING_2 = 22;
+    var S_PI_FIRST_CHAR = 23;
+    var S_PI_REST = 24;
+    var S_PI_BODY = 25;
+    var S_PI_ENDING = 26;
+    var S_XML_DECL_NAME_START = 27;
+    var S_XML_DECL_NAME = 28;
+    var S_XML_DECL_EQ = 29;
+    var S_XML_DECL_VALUE_START = 30;
+    var S_XML_DECL_VALUE = 31;
+    var S_XML_DECL_SEPARATOR = 32;
+    var S_XML_DECL_ENDING = 33;
+    var S_OPEN_TAG = 34;
+    var S_OPEN_TAG_SLASH = 35;
+    var S_ATTRIB = 36;
+    var S_ATTRIB_NAME = 37;
+    var S_ATTRIB_NAME_SAW_WHITE = 38;
+    var S_ATTRIB_VALUE = 39;
+    var S_ATTRIB_VALUE_QUOTED = 40;
+    var S_ATTRIB_VALUE_CLOSED = 41;
+    var S_ATTRIB_VALUE_UNQUOTED = 42;
+    var S_CLOSE_TAG = 43;
+    var S_CLOSE_TAG_SAW_WHITE = 44;
+    var TAB = 9;
+    var NL = 10;
+    var CR = 13;
+    var SPACE = 32;
+    var BANG = 33;
+    var DQUOTE = 34;
+    var AMP = 38;
+    var SQUOTE = 39;
+    var MINUS = 45;
+    var FORWARD_SLASH = 47;
+    var SEMICOLON = 59;
+    var LESS = 60;
+    var EQUAL = 61;
+    var GREATER = 62;
+    var QUESTION = 63;
+    var OPEN_BRACKET = 91;
+    var CLOSE_BRACKET = 93;
+    var NEL = 133;
+    var LS = 8232;
+    var isQuote = (c2) => c2 === DQUOTE || c2 === SQUOTE;
+    var QUOTES = [DQUOTE, SQUOTE];
+    var DOCTYPE_TERMINATOR = [...QUOTES, OPEN_BRACKET, GREATER];
+    var DTD_TERMINATOR = [...QUOTES, LESS, CLOSE_BRACKET];
+    var XML_DECL_NAME_TERMINATOR = [EQUAL, QUESTION, ...S_LIST];
+    var ATTRIB_VALUE_UNQUOTED_TERMINATOR = [...S_LIST, GREATER, AMP, LESS];
+    function nsPairCheck(parser, prefix3, uri2) {
+      switch (prefix3) {
+        case "xml":
+          if (uri2 !== XML_NAMESPACE) {
+            parser.fail(`xml prefix must be bound to ${XML_NAMESPACE}.`);
+          }
+          break;
+        case "xmlns":
+          if (uri2 !== XMLNS_NAMESPACE) {
+            parser.fail(`xmlns prefix must be bound to ${XMLNS_NAMESPACE}.`);
+          }
+          break;
+        default:
+      }
+      switch (uri2) {
+        case XMLNS_NAMESPACE:
+          parser.fail(prefix3 === "" ? `the default namespace may not be set to ${uri2}.` : `may not assign a prefix (even "xmlns") to the URI ${XMLNS_NAMESPACE}.`);
+          break;
+        case XML_NAMESPACE:
+          switch (prefix3) {
+            case "xml":
+              break;
+            case "":
+              parser.fail(`the default namespace may not be set to ${uri2}.`);
+              break;
+            default:
+              parser.fail("may not assign the xml namespace to another prefix.");
+          }
+          break;
+        default:
+      }
+    }
+    function nsMappingCheck(parser, mapping) {
+      for (const local of Object.keys(mapping)) {
+        nsPairCheck(parser, local, mapping[local]);
+      }
+    }
+    var isNCName = (name2) => NC_NAME_RE.test(name2);
+    var isName = (name2) => NAME_RE.test(name2);
+    var FORBIDDEN_START = 0;
+    var FORBIDDEN_BRACKET = 1;
+    var FORBIDDEN_BRACKET_BRACKET = 2;
+    exports.EVENTS = [
+      "xmldecl",
+      "text",
+      "processinginstruction",
+      "doctype",
+      "comment",
+      "opentagstart",
+      "attribute",
+      "opentag",
+      "closetag",
+      "cdata",
+      "error",
+      "end",
+      "ready"
+    ];
+    var EVENT_NAME_TO_HANDLER_NAME = {
+      xmldecl: "xmldeclHandler",
+      text: "textHandler",
+      processinginstruction: "piHandler",
+      doctype: "doctypeHandler",
+      comment: "commentHandler",
+      opentagstart: "openTagStartHandler",
+      attribute: "attributeHandler",
+      opentag: "openTagHandler",
+      closetag: "closeTagHandler",
+      cdata: "cdataHandler",
+      error: "errorHandler",
+      end: "endHandler",
+      ready: "readyHandler"
+    };
+    var SaxesParser3 = class {
+      /**
+       * @param opt The parser options.
+       */
+      constructor(opt) {
+        this.opt = opt !== null && opt !== void 0 ? opt : {};
+        this.fragmentOpt = !!this.opt.fragment;
+        const xmlnsOpt = this.xmlnsOpt = !!this.opt.xmlns;
+        this.trackPosition = this.opt.position !== false;
+        this.fileName = this.opt.fileName;
+        if (xmlnsOpt) {
+          this.nameStartCheck = isNCNameStartChar;
+          this.nameCheck = isNCNameChar;
+          this.isName = isNCName;
+          this.processAttribs = this.processAttribsNS;
+          this.pushAttrib = this.pushAttribNS;
+          this.ns = Object.assign({ __proto__: null }, rootNS);
+          const additional = this.opt.additionalNamespaces;
+          if (additional != null) {
+            nsMappingCheck(this, additional);
+            Object.assign(this.ns, additional);
+          }
+        } else {
+          this.nameStartCheck = isNameStartChar;
+          this.nameCheck = isNameChar;
+          this.isName = isName;
+          this.processAttribs = this.processAttribsPlain;
+          this.pushAttrib = this.pushAttribPlain;
+        }
+        this.stateTable = [
+          /* eslint-disable @typescript-eslint/unbound-method */
+          this.sBegin,
+          this.sBeginWhitespace,
+          this.sDoctype,
+          this.sDoctypeQuote,
+          this.sDTD,
+          this.sDTDQuoted,
+          this.sDTDOpenWaka,
+          this.sDTDOpenWakaBang,
+          this.sDTDComment,
+          this.sDTDCommentEnding,
+          this.sDTDCommentEnded,
+          this.sDTDPI,
+          this.sDTDPIEnding,
+          this.sText,
+          this.sEntity,
+          this.sOpenWaka,
+          this.sOpenWakaBang,
+          this.sComment,
+          this.sCommentEnding,
+          this.sCommentEnded,
+          this.sCData,
+          this.sCDataEnding,
+          this.sCDataEnding2,
+          this.sPIFirstChar,
+          this.sPIRest,
+          this.sPIBody,
+          this.sPIEnding,
+          this.sXMLDeclNameStart,
+          this.sXMLDeclName,
+          this.sXMLDeclEq,
+          this.sXMLDeclValueStart,
+          this.sXMLDeclValue,
+          this.sXMLDeclSeparator,
+          this.sXMLDeclEnding,
+          this.sOpenTag,
+          this.sOpenTagSlash,
+          this.sAttrib,
+          this.sAttribName,
+          this.sAttribNameSawWhite,
+          this.sAttribValue,
+          this.sAttribValueQuoted,
+          this.sAttribValueClosed,
+          this.sAttribValueUnquoted,
+          this.sCloseTag,
+          this.sCloseTagSawWhite
+          /* eslint-enable @typescript-eslint/unbound-method */
+        ];
+        this._init();
+      }
+      /**
+       * Indicates whether or not the parser is closed. If ``true``, wait for
+       * the ``ready`` event to write again.
+       */
+      get closed() {
+        return this._closed;
+      }
+      _init() {
+        var _a8;
+        this.openWakaBang = "";
+        this.text = "";
+        this.name = "";
+        this.piTarget = "";
+        this.entity = "";
+        this.q = null;
+        this.tags = [];
+        this.tag = null;
+        this.topNS = null;
+        this.chunk = "";
+        this.chunkPosition = 0;
+        this.i = 0;
+        this.prevI = 0;
+        this.carriedFromPrevious = void 0;
+        this.forbiddenState = FORBIDDEN_START;
+        this.attribList = [];
+        const { fragmentOpt } = this;
+        this.state = fragmentOpt ? S_TEXT : S_BEGIN;
+        this.reportedTextBeforeRoot = this.reportedTextAfterRoot = this.closedRoot = this.sawRoot = fragmentOpt;
+        this.xmlDeclPossible = !fragmentOpt;
+        this.xmlDeclExpects = ["version"];
+        this.entityReturnState = void 0;
+        let { defaultXMLVersion } = this.opt;
+        if (defaultXMLVersion === void 0) {
+          if (this.opt.forceXMLVersion === true) {
+            throw new Error("forceXMLVersion set but defaultXMLVersion is not set");
+          }
+          defaultXMLVersion = "1.0";
+        }
+        this.setXMLVersion(defaultXMLVersion);
+        this.positionAtNewLine = 0;
+        this.doctype = false;
+        this._closed = false;
+        this.xmlDecl = {
+          version: void 0,
+          encoding: void 0,
+          standalone: void 0
+        };
+        this.line = 1;
+        this.column = 0;
+        this.ENTITIES = Object.create(XML_ENTITIES);
+        (_a8 = this.readyHandler) === null || _a8 === void 0 ? void 0 : _a8.call(this);
+      }
+      /**
+       * The stream position the parser is currently looking at. This field is
+       * zero-based.
+       *
+       * This field is not based on counting Unicode characters but is to be
+       * interpreted as a plain index into a JavaScript string.
+       */
+      get position() {
+        return this.chunkPosition + this.i;
+      }
+      /**
+       * The column number of the next character to be read by the parser.  *
+       * This field is zero-based. (The first column in a line is 0.)
+       *
+       * This field reports the index at which the next character would be in the
+       * line if the line were represented as a JavaScript string.  Note that this
+       * *can* be different to a count based on the number of *Unicode characters*
+       * due to how JavaScript handles astral plane characters.
+       *
+       * See [[column]] for a number that corresponds to a count of Unicode
+       * characters.
+       */
+      get columnIndex() {
+        return this.position - this.positionAtNewLine;
+      }
+      /**
+       * Set an event listener on an event. The parser supports one handler per
+       * event type. If you try to set an event handler over an existing handler,
+       * the old handler is silently overwritten.
+       *
+       * @param name The event to listen to.
+       *
+       * @param handler The handler to set.
+       */
+      on(name2, handler) {
+        this[EVENT_NAME_TO_HANDLER_NAME[name2]] = handler;
+      }
+      /**
+       * Unset an event handler.
+       *
+       * @parma name The event to stop listening to.
+       */
+      off(name2) {
+        this[EVENT_NAME_TO_HANDLER_NAME[name2]] = void 0;
+      }
+      /**
+       * Make an error object. The error object will have a message that contains
+       * the ``fileName`` option passed at the creation of the parser. If position
+       * tracking was turned on, it will also have line and column number
+       * information.
+       *
+       * @param message The message describing the error to report.
+       *
+       * @returns An error object with a properly formatted message.
+       */
+      makeError(message3) {
+        var _a8;
+        let msg = (_a8 = this.fileName) !== null && _a8 !== void 0 ? _a8 : "";
+        if (this.trackPosition) {
+          if (msg.length > 0) {
+            msg += ":";
+          }
+          msg += `${this.line}:${this.column}`;
+        }
+        if (msg.length > 0) {
+          msg += ": ";
+        }
+        return new Error(msg + message3);
+      }
+      /**
+       * Report a parsing error. This method is made public so that client code may
+       * check for issues that are outside the scope of this project and can report
+       * errors.
+       *
+       * @param message The error to report.
+       *
+       * @returns this
+       */
+      fail(message3) {
+        const err = this.makeError(message3);
+        const handler = this.errorHandler;
+        if (handler === void 0) {
+          throw err;
+        } else {
+          handler(err);
+        }
+        return this;
+      }
+      /**
+       * Write a XML data to the parser.
+       *
+       * @param chunk The XML data to write.
+       *
+       * @returns this
+       */
+      // We do need object for the type here. Yes, it often causes problems
+      // but not in this case.
+      write(chunk) {
+        if (this.closed) {
+          return this.fail("cannot write after close; assign an onready handler.");
+        }
+        let end = false;
+        if (chunk === null) {
+          end = true;
+          chunk = "";
+        } else if (typeof chunk === "object") {
+          chunk = chunk.toString();
+        }
+        if (this.carriedFromPrevious !== void 0) {
+          chunk = `${this.carriedFromPrevious}${chunk}`;
+          this.carriedFromPrevious = void 0;
+        }
+        let limit = chunk.length;
+        const lastCode = chunk.charCodeAt(limit - 1);
+        if (!end && // A trailing CR or surrogate must be carried over to the next
+        // chunk.
+        (lastCode === CR || lastCode >= 55296 && lastCode <= 56319)) {
+          this.carriedFromPrevious = chunk[limit - 1];
+          limit--;
+          chunk = chunk.slice(0, limit);
+        }
+        const { stateTable } = this;
+        this.chunk = chunk;
+        this.i = 0;
+        while (this.i < limit) {
+          stateTable[this.state].call(this);
+        }
+        this.chunkPosition += limit;
+        return end ? this.end() : this;
+      }
+      /**
+       * Close the current stream. Perform final well-formedness checks and reset
+       * the parser tstate.
+       *
+       * @returns this
+       */
+      close() {
+        return this.write(null);
+      }
+      /**
+       * Get a single code point out of the current chunk. This updates the current
+       * position if we do position tracking.
+       *
+       * This is the algorithm to use for XML 1.0.
+       *
+       * @returns The character read.
+       */
+      getCode10() {
+        const { chunk, i: i2 } = this;
+        this.prevI = i2;
+        this.i = i2 + 1;
+        if (i2 >= chunk.length) {
+          return EOC;
+        }
+        const code = chunk.charCodeAt(i2);
+        this.column++;
+        if (code < 55296) {
+          if (code >= SPACE || code === TAB) {
+            return code;
+          }
+          switch (code) {
+            case NL:
+              this.line++;
+              this.column = 0;
+              this.positionAtNewLine = this.position;
+              return NL;
+            case CR:
+              if (chunk.charCodeAt(i2 + 1) === NL) {
+                this.i = i2 + 2;
+              }
+              this.line++;
+              this.column = 0;
+              this.positionAtNewLine = this.position;
+              return NL_LIKE;
+            default:
+              this.fail("disallowed character.");
+              return code;
+          }
+        }
+        if (code > 56319) {
+          if (!(code >= 57344 && code <= 65533)) {
+            this.fail("disallowed character.");
+          }
+          return code;
+        }
+        const final = 65536 + (code - 55296) * 1024 + (chunk.charCodeAt(i2 + 1) - 56320);
+        this.i = i2 + 2;
+        if (final > 1114111) {
+          this.fail("disallowed character.");
+        }
+        return final;
+      }
+      /**
+       * Get a single code point out of the current chunk. This updates the current
+       * position if we do position tracking.
+       *
+       * This is the algorithm to use for XML 1.1.
+       *
+       * @returns {number} The character read.
+       */
+      getCode11() {
+        const { chunk, i: i2 } = this;
+        this.prevI = i2;
+        this.i = i2 + 1;
+        if (i2 >= chunk.length) {
+          return EOC;
+        }
+        const code = chunk.charCodeAt(i2);
+        this.column++;
+        if (code < 55296) {
+          if (code > 31 && code < 127 || code > 159 && code !== LS || code === TAB) {
+            return code;
+          }
+          switch (code) {
+            case NL:
+              this.line++;
+              this.column = 0;
+              this.positionAtNewLine = this.position;
+              return NL;
+            case CR: {
+              const next = chunk.charCodeAt(i2 + 1);
+              if (next === NL || next === NEL) {
+                this.i = i2 + 2;
+              }
+            }
+            /* yes, fall through */
+            case NEL:
+            // 0x85
+            case LS:
+              this.line++;
+              this.column = 0;
+              this.positionAtNewLine = this.position;
+              return NL_LIKE;
+            default:
+              this.fail("disallowed character.");
+              return code;
+          }
+        }
+        if (code > 56319) {
+          if (!(code >= 57344 && code <= 65533)) {
+            this.fail("disallowed character.");
+          }
+          return code;
+        }
+        const final = 65536 + (code - 55296) * 1024 + (chunk.charCodeAt(i2 + 1) - 56320);
+        this.i = i2 + 2;
+        if (final > 1114111) {
+          this.fail("disallowed character.");
+        }
+        return final;
+      }
+      /**
+       * Like ``getCode`` but with the return value normalized so that ``NL`` is
+       * returned for ``NL_LIKE``.
+       */
+      getCodeNorm() {
+        const c2 = this.getCode();
+        return c2 === NL_LIKE ? NL : c2;
+      }
+      unget() {
+        this.i = this.prevI;
+        this.column--;
+      }
+      /**
+       * Capture characters into a buffer until encountering one of a set of
+       * characters.
+       *
+       * @param chars An array of codepoints. Encountering a character in the array
+       * ends the capture. (``chars`` may safely contain ``NL``.)
+       *
+       * @return The character code that made the capture end, or ``EOC`` if we hit
+       * the end of the chunk. The return value cannot be NL_LIKE: NL is returned
+       * instead.
+       */
+      captureTo(chars) {
+        let { i: start } = this;
+        const { chunk } = this;
+        while (true) {
+          const c2 = this.getCode();
+          const isNLLike = c2 === NL_LIKE;
+          const final = isNLLike ? NL : c2;
+          if (final === EOC || chars.includes(final)) {
+            this.text += chunk.slice(start, this.prevI);
+            return final;
+          }
+          if (isNLLike) {
+            this.text += `${chunk.slice(start, this.prevI)}
+`;
+            start = this.i;
+          }
+        }
+      }
+      /**
+       * Capture characters into a buffer until encountering a character.
+       *
+       * @param char The codepoint that ends the capture. **NOTE ``char`` MAY NOT
+       * CONTAIN ``NL``.** Passing ``NL`` will result in buggy behavior.
+       *
+       * @return ``true`` if we ran into the character. Otherwise, we ran into the
+       * end of the current chunk.
+       */
+      captureToChar(char) {
+        let { i: start } = this;
+        const { chunk } = this;
+        while (true) {
+          let c2 = this.getCode();
+          switch (c2) {
+            case NL_LIKE:
+              this.text += `${chunk.slice(start, this.prevI)}
+`;
+              start = this.i;
+              c2 = NL;
+              break;
+            case EOC:
+              this.text += chunk.slice(start);
+              return false;
+            default:
+          }
+          if (c2 === char) {
+            this.text += chunk.slice(start, this.prevI);
+            return true;
+          }
+        }
+      }
+      /**
+       * Capture characters that satisfy ``isNameChar`` into the ``name`` field of
+       * this parser.
+       *
+       * @return The character code that made the test fail, or ``EOC`` if we hit
+       * the end of the chunk. The return value cannot be NL_LIKE: NL is returned
+       * instead.
+       */
+      captureNameChars() {
+        const { chunk, i: start } = this;
+        while (true) {
+          const c2 = this.getCode();
+          if (c2 === EOC) {
+            this.name += chunk.slice(start);
+            return EOC;
+          }
+          if (!isNameChar(c2)) {
+            this.name += chunk.slice(start, this.prevI);
+            return c2 === NL_LIKE ? NL : c2;
+          }
+        }
+      }
+      /**
+       * Skip white spaces.
+       *
+       * @return The character that ended the skip, or ``EOC`` if we hit
+       * the end of the chunk. The return value cannot be NL_LIKE: NL is returned
+       * instead.
+       */
+      skipSpaces() {
+        while (true) {
+          const c2 = this.getCodeNorm();
+          if (c2 === EOC || !isS(c2)) {
+            return c2;
+          }
+        }
+      }
+      setXMLVersion(version6) {
+        this.currentXMLVersion = version6;
+        if (version6 === "1.0") {
+          this.isChar = isChar10;
+          this.getCode = this.getCode10;
+        } else {
+          this.isChar = isChar11;
+          this.getCode = this.getCode11;
+        }
+      }
+      // STATE ENGINE METHODS
+      // This needs to be a state separate from S_BEGIN_WHITESPACE because we want
+      // to be sure never to come back to this state later.
+      sBegin() {
+        if (this.chunk.charCodeAt(0) === 65279) {
+          this.i++;
+          this.column++;
+        }
+        this.state = S_BEGIN_WHITESPACE;
+      }
+      sBeginWhitespace() {
+        const iBefore = this.i;
+        const c2 = this.skipSpaces();
+        if (this.prevI !== iBefore) {
+          this.xmlDeclPossible = false;
+        }
+        switch (c2) {
+          case LESS:
+            this.state = S_OPEN_WAKA;
+            if (this.text.length !== 0) {
+              throw new Error("no-empty text at start");
+            }
+            break;
+          case EOC:
+            break;
+          default:
+            this.unget();
+            this.state = S_TEXT;
+            this.xmlDeclPossible = false;
+        }
+      }
+      sDoctype() {
+        var _a8;
+        const c2 = this.captureTo(DOCTYPE_TERMINATOR);
+        switch (c2) {
+          case GREATER: {
+            (_a8 = this.doctypeHandler) === null || _a8 === void 0 ? void 0 : _a8.call(this, this.text);
+            this.text = "";
+            this.state = S_TEXT;
+            this.doctype = true;
+            break;
+          }
+          case EOC:
+            break;
+          default:
+            this.text += String.fromCodePoint(c2);
+            if (c2 === OPEN_BRACKET) {
+              this.state = S_DTD;
+            } else if (isQuote(c2)) {
+              this.state = S_DOCTYPE_QUOTE;
+              this.q = c2;
+            }
+        }
+      }
+      sDoctypeQuote() {
+        const q = this.q;
+        if (this.captureToChar(q)) {
+          this.text += String.fromCodePoint(q);
+          this.q = null;
+          this.state = S_DOCTYPE;
+        }
+      }
+      sDTD() {
+        const c2 = this.captureTo(DTD_TERMINATOR);
+        if (c2 === EOC) {
+          return;
+        }
+        this.text += String.fromCodePoint(c2);
+        if (c2 === CLOSE_BRACKET) {
+          this.state = S_DOCTYPE;
+        } else if (c2 === LESS) {
+          this.state = S_DTD_OPEN_WAKA;
+        } else if (isQuote(c2)) {
+          this.state = S_DTD_QUOTED;
+          this.q = c2;
+        }
+      }
+      sDTDQuoted() {
+        const q = this.q;
+        if (this.captureToChar(q)) {
+          this.text += String.fromCodePoint(q);
+          this.state = S_DTD;
+          this.q = null;
+        }
+      }
+      sDTDOpenWaka() {
+        const c2 = this.getCodeNorm();
+        this.text += String.fromCodePoint(c2);
+        switch (c2) {
+          case BANG:
+            this.state = S_DTD_OPEN_WAKA_BANG;
+            this.openWakaBang = "";
+            break;
+          case QUESTION:
+            this.state = S_DTD_PI;
+            break;
+          default:
+            this.state = S_DTD;
+        }
+      }
+      sDTDOpenWakaBang() {
+        const char = String.fromCodePoint(this.getCodeNorm());
+        const owb = this.openWakaBang += char;
+        this.text += char;
+        if (owb !== "-") {
+          this.state = owb === "--" ? S_DTD_COMMENT : S_DTD;
+          this.openWakaBang = "";
+        }
+      }
+      sDTDComment() {
+        if (this.captureToChar(MINUS)) {
+          this.text += "-";
+          this.state = S_DTD_COMMENT_ENDING;
+        }
+      }
+      sDTDCommentEnding() {
+        const c2 = this.getCodeNorm();
+        this.text += String.fromCodePoint(c2);
+        this.state = c2 === MINUS ? S_DTD_COMMENT_ENDED : S_DTD_COMMENT;
+      }
+      sDTDCommentEnded() {
+        const c2 = this.getCodeNorm();
+        this.text += String.fromCodePoint(c2);
+        if (c2 === GREATER) {
+          this.state = S_DTD;
+        } else {
+          this.fail("malformed comment.");
+          this.state = S_DTD_COMMENT;
+        }
+      }
+      sDTDPI() {
+        if (this.captureToChar(QUESTION)) {
+          this.text += "?";
+          this.state = S_DTD_PI_ENDING;
+        }
+      }
+      sDTDPIEnding() {
+        const c2 = this.getCodeNorm();
+        this.text += String.fromCodePoint(c2);
+        if (c2 === GREATER) {
+          this.state = S_DTD;
+        }
+      }
+      sText() {
+        if (this.tags.length !== 0) {
+          this.handleTextInRoot();
+        } else {
+          this.handleTextOutsideRoot();
+        }
+      }
+      sEntity() {
+        let { i: start } = this;
+        const { chunk } = this;
+        loop:
+          while (true) {
+            switch (this.getCode()) {
+              case NL_LIKE:
+                this.entity += `${chunk.slice(start, this.prevI)}
+`;
+                start = this.i;
+                break;
+              case SEMICOLON: {
+                const { entityReturnState } = this;
+                const entity = this.entity + chunk.slice(start, this.prevI);
+                this.state = entityReturnState;
+                let parsed;
+                if (entity === "") {
+                  this.fail("empty entity name.");
+                  parsed = "&;";
+                } else {
+                  parsed = this.parseEntity(entity);
+                  this.entity = "";
+                }
+                if (entityReturnState !== S_TEXT || this.textHandler !== void 0) {
+                  this.text += parsed;
+                }
+                break loop;
+              }
+              case EOC:
+                this.entity += chunk.slice(start);
+                break loop;
+              default:
+            }
+          }
+      }
+      sOpenWaka() {
+        const c2 = this.getCode();
+        if (isNameStartChar(c2)) {
+          this.state = S_OPEN_TAG;
+          this.unget();
+          this.xmlDeclPossible = false;
+        } else {
+          switch (c2) {
+            case FORWARD_SLASH:
+              this.state = S_CLOSE_TAG;
+              this.xmlDeclPossible = false;
+              break;
+            case BANG:
+              this.state = S_OPEN_WAKA_BANG;
+              this.openWakaBang = "";
+              this.xmlDeclPossible = false;
+              break;
+            case QUESTION:
+              this.state = S_PI_FIRST_CHAR;
+              break;
+            default:
+              this.fail("disallowed character in tag name");
+              this.state = S_TEXT;
+              this.xmlDeclPossible = false;
+          }
+        }
+      }
+      sOpenWakaBang() {
+        this.openWakaBang += String.fromCodePoint(this.getCodeNorm());
+        switch (this.openWakaBang) {
+          case "[CDATA[":
+            if (!this.sawRoot && !this.reportedTextBeforeRoot) {
+              this.fail("text data outside of root node.");
+              this.reportedTextBeforeRoot = true;
+            }
+            if (this.closedRoot && !this.reportedTextAfterRoot) {
+              this.fail("text data outside of root node.");
+              this.reportedTextAfterRoot = true;
+            }
+            this.state = S_CDATA;
+            this.openWakaBang = "";
+            break;
+          case "--":
+            this.state = S_COMMENT;
+            this.openWakaBang = "";
+            break;
+          case "DOCTYPE":
+            this.state = S_DOCTYPE;
+            if (this.doctype || this.sawRoot) {
+              this.fail("inappropriately located doctype declaration.");
+            }
+            this.openWakaBang = "";
+            break;
+          default:
+            if (this.openWakaBang.length >= 7) {
+              this.fail("incorrect syntax.");
+            }
+        }
+      }
+      sComment() {
+        if (this.captureToChar(MINUS)) {
+          this.state = S_COMMENT_ENDING;
+        }
+      }
+      sCommentEnding() {
+        var _a8;
+        const c2 = this.getCodeNorm();
+        if (c2 === MINUS) {
+          this.state = S_COMMENT_ENDED;
+          (_a8 = this.commentHandler) === null || _a8 === void 0 ? void 0 : _a8.call(this, this.text);
+          this.text = "";
+        } else {
+          this.text += `-${String.fromCodePoint(c2)}`;
+          this.state = S_COMMENT;
+        }
+      }
+      sCommentEnded() {
+        const c2 = this.getCodeNorm();
+        if (c2 !== GREATER) {
+          this.fail("malformed comment.");
+          this.text += `--${String.fromCodePoint(c2)}`;
+          this.state = S_COMMENT;
+        } else {
+          this.state = S_TEXT;
+        }
+      }
+      sCData() {
+        if (this.captureToChar(CLOSE_BRACKET)) {
+          this.state = S_CDATA_ENDING;
+        }
+      }
+      sCDataEnding() {
+        const c2 = this.getCodeNorm();
+        if (c2 === CLOSE_BRACKET) {
+          this.state = S_CDATA_ENDING_2;
+        } else {
+          this.text += `]${String.fromCodePoint(c2)}`;
+          this.state = S_CDATA;
+        }
+      }
+      sCDataEnding2() {
+        var _a8;
+        const c2 = this.getCodeNorm();
+        switch (c2) {
+          case GREATER: {
+            (_a8 = this.cdataHandler) === null || _a8 === void 0 ? void 0 : _a8.call(this, this.text);
+            this.text = "";
+            this.state = S_TEXT;
+            break;
+          }
+          case CLOSE_BRACKET:
+            this.text += "]";
+            break;
+          default:
+            this.text += `]]${String.fromCodePoint(c2)}`;
+            this.state = S_CDATA;
+        }
+      }
+      // We need this separate state to check the first character fo the pi target
+      // with this.nameStartCheck which allows less characters than this.nameCheck.
+      sPIFirstChar() {
+        const c2 = this.getCodeNorm();
+        if (this.nameStartCheck(c2)) {
+          this.piTarget += String.fromCodePoint(c2);
+          this.state = S_PI_REST;
+        } else if (c2 === QUESTION || isS(c2)) {
+          this.fail("processing instruction without a target.");
+          this.state = c2 === QUESTION ? S_PI_ENDING : S_PI_BODY;
+        } else {
+          this.fail("disallowed character in processing instruction name.");
+          this.piTarget += String.fromCodePoint(c2);
+          this.state = S_PI_REST;
+        }
+      }
+      sPIRest() {
+        const { chunk, i: start } = this;
+        while (true) {
+          const c2 = this.getCodeNorm();
+          if (c2 === EOC) {
+            this.piTarget += chunk.slice(start);
+            return;
+          }
+          if (!this.nameCheck(c2)) {
+            this.piTarget += chunk.slice(start, this.prevI);
+            const isQuestion = c2 === QUESTION;
+            if (isQuestion || isS(c2)) {
+              if (this.piTarget === "xml") {
+                if (!this.xmlDeclPossible) {
+                  this.fail("an XML declaration must be at the start of the document.");
+                }
+                this.state = isQuestion ? S_XML_DECL_ENDING : S_XML_DECL_NAME_START;
+              } else {
+                this.state = isQuestion ? S_PI_ENDING : S_PI_BODY;
+              }
+            } else {
+              this.fail("disallowed character in processing instruction name.");
+              this.piTarget += String.fromCodePoint(c2);
+            }
+            break;
+          }
+        }
+      }
+      sPIBody() {
+        if (this.text.length === 0) {
+          const c2 = this.getCodeNorm();
+          if (c2 === QUESTION) {
+            this.state = S_PI_ENDING;
+          } else if (!isS(c2)) {
+            this.text = String.fromCodePoint(c2);
+          }
+        } else if (this.captureToChar(QUESTION)) {
+          this.state = S_PI_ENDING;
+        }
+      }
+      sPIEnding() {
+        var _a8;
+        const c2 = this.getCodeNorm();
+        if (c2 === GREATER) {
+          const { piTarget } = this;
+          if (piTarget.toLowerCase() === "xml") {
+            this.fail("the XML declaration must appear at the start of the document.");
+          }
+          (_a8 = this.piHandler) === null || _a8 === void 0 ? void 0 : _a8.call(this, {
+            target: piTarget,
+            body: this.text
+          });
+          this.piTarget = this.text = "";
+          this.state = S_TEXT;
+        } else if (c2 === QUESTION) {
+          this.text += "?";
+        } else {
+          this.text += `?${String.fromCodePoint(c2)}`;
+          this.state = S_PI_BODY;
+        }
+        this.xmlDeclPossible = false;
+      }
+      sXMLDeclNameStart() {
+        const c2 = this.skipSpaces();
+        if (c2 === QUESTION) {
+          this.state = S_XML_DECL_ENDING;
+          return;
+        }
+        if (c2 !== EOC) {
+          this.state = S_XML_DECL_NAME;
+          this.name = String.fromCodePoint(c2);
+        }
+      }
+      sXMLDeclName() {
+        const c2 = this.captureTo(XML_DECL_NAME_TERMINATOR);
+        if (c2 === QUESTION) {
+          this.state = S_XML_DECL_ENDING;
+          this.name += this.text;
+          this.text = "";
+          this.fail("XML declaration is incomplete.");
+          return;
+        }
+        if (!(isS(c2) || c2 === EQUAL)) {
+          return;
+        }
+        this.name += this.text;
+        this.text = "";
+        if (!this.xmlDeclExpects.includes(this.name)) {
+          switch (this.name.length) {
+            case 0:
+              this.fail("did not expect any more name/value pairs.");
+              break;
+            case 1:
+              this.fail(`expected the name ${this.xmlDeclExpects[0]}.`);
+              break;
+            default:
+              this.fail(`expected one of ${this.xmlDeclExpects.join(", ")}`);
+          }
+        }
+        this.state = c2 === EQUAL ? S_XML_DECL_VALUE_START : S_XML_DECL_EQ;
+      }
+      sXMLDeclEq() {
+        const c2 = this.getCodeNorm();
+        if (c2 === QUESTION) {
+          this.state = S_XML_DECL_ENDING;
+          this.fail("XML declaration is incomplete.");
+          return;
+        }
+        if (isS(c2)) {
+          return;
+        }
+        if (c2 !== EQUAL) {
+          this.fail("value required.");
+        }
+        this.state = S_XML_DECL_VALUE_START;
+      }
+      sXMLDeclValueStart() {
+        const c2 = this.getCodeNorm();
+        if (c2 === QUESTION) {
+          this.state = S_XML_DECL_ENDING;
+          this.fail("XML declaration is incomplete.");
+          return;
+        }
+        if (isS(c2)) {
+          return;
+        }
+        if (!isQuote(c2)) {
+          this.fail("value must be quoted.");
+          this.q = SPACE;
+        } else {
+          this.q = c2;
+        }
+        this.state = S_XML_DECL_VALUE;
+      }
+      sXMLDeclValue() {
+        const c2 = this.captureTo([this.q, QUESTION]);
+        if (c2 === QUESTION) {
+          this.state = S_XML_DECL_ENDING;
+          this.text = "";
+          this.fail("XML declaration is incomplete.");
+          return;
+        }
+        if (c2 === EOC) {
+          return;
+        }
+        const value = this.text;
+        this.text = "";
+        switch (this.name) {
+          case "version": {
+            this.xmlDeclExpects = ["encoding", "standalone"];
+            const version6 = value;
+            this.xmlDecl.version = version6;
+            if (!/^1\.[0-9]+$/.test(version6)) {
+              this.fail("version number must match /^1\\.[0-9]+$/.");
+            } else if (!this.opt.forceXMLVersion) {
+              this.setXMLVersion(version6);
+            }
+            break;
+          }
+          case "encoding":
+            if (!/^[A-Za-z][A-Za-z0-9._-]*$/.test(value)) {
+              this.fail("encoding value must match /^[A-Za-z0-9][A-Za-z0-9._-]*$/.");
+            }
+            this.xmlDeclExpects = ["standalone"];
+            this.xmlDecl.encoding = value;
+            break;
+          case "standalone":
+            if (value !== "yes" && value !== "no") {
+              this.fail('standalone value must match "yes" or "no".');
+            }
+            this.xmlDeclExpects = [];
+            this.xmlDecl.standalone = value;
+            break;
+          default:
+        }
+        this.name = "";
+        this.state = S_XML_DECL_SEPARATOR;
+      }
+      sXMLDeclSeparator() {
+        const c2 = this.getCodeNorm();
+        if (c2 === QUESTION) {
+          this.state = S_XML_DECL_ENDING;
+          return;
+        }
+        if (!isS(c2)) {
+          this.fail("whitespace required.");
+          this.unget();
+        }
+        this.state = S_XML_DECL_NAME_START;
+      }
+      sXMLDeclEnding() {
+        var _a8;
+        const c2 = this.getCodeNorm();
+        if (c2 === GREATER) {
+          if (this.piTarget !== "xml") {
+            this.fail("processing instructions are not allowed before root.");
+          } else if (this.name !== "version" && this.xmlDeclExpects.includes("version")) {
+            this.fail("XML declaration must contain a version.");
+          }
+          (_a8 = this.xmldeclHandler) === null || _a8 === void 0 ? void 0 : _a8.call(this, this.xmlDecl);
+          this.name = "";
+          this.piTarget = this.text = "";
+          this.state = S_TEXT;
+        } else {
+          this.fail("The character ? is disallowed anywhere in XML declarations.");
+        }
+        this.xmlDeclPossible = false;
+      }
+      sOpenTag() {
+        var _a8;
+        const c2 = this.captureNameChars();
+        if (c2 === EOC) {
+          return;
+        }
+        const tag = this.tag = {
+          name: this.name,
+          attributes: /* @__PURE__ */ Object.create(null)
+        };
+        this.name = "";
+        if (this.xmlnsOpt) {
+          this.topNS = tag.ns = /* @__PURE__ */ Object.create(null);
+        }
+        (_a8 = this.openTagStartHandler) === null || _a8 === void 0 ? void 0 : _a8.call(this, tag);
+        this.sawRoot = true;
+        if (!this.fragmentOpt && this.closedRoot) {
+          this.fail("documents may contain only one root.");
+        }
+        switch (c2) {
+          case GREATER:
+            this.openTag();
+            break;
+          case FORWARD_SLASH:
+            this.state = S_OPEN_TAG_SLASH;
+            break;
+          default:
+            if (!isS(c2)) {
+              this.fail("disallowed character in tag name.");
+            }
+            this.state = S_ATTRIB;
+        }
+      }
+      sOpenTagSlash() {
+        if (this.getCode() === GREATER) {
+          this.openSelfClosingTag();
+        } else {
+          this.fail("forward-slash in opening tag not followed by >.");
+          this.state = S_ATTRIB;
+        }
+      }
+      sAttrib() {
+        const c2 = this.skipSpaces();
+        if (c2 === EOC) {
+          return;
+        }
+        if (isNameStartChar(c2)) {
+          this.unget();
+          this.state = S_ATTRIB_NAME;
+        } else if (c2 === GREATER) {
+          this.openTag();
+        } else if (c2 === FORWARD_SLASH) {
+          this.state = S_OPEN_TAG_SLASH;
+        } else {
+          this.fail("disallowed character in attribute name.");
+        }
+      }
+      sAttribName() {
+        const c2 = this.captureNameChars();
+        if (c2 === EQUAL) {
+          this.state = S_ATTRIB_VALUE;
+        } else if (isS(c2)) {
+          this.state = S_ATTRIB_NAME_SAW_WHITE;
+        } else if (c2 === GREATER) {
+          this.fail("attribute without value.");
+          this.pushAttrib(this.name, this.name);
+          this.name = this.text = "";
+          this.openTag();
+        } else if (c2 !== EOC) {
+          this.fail("disallowed character in attribute name.");
+        }
+      }
+      sAttribNameSawWhite() {
+        const c2 = this.skipSpaces();
+        switch (c2) {
+          case EOC:
+            return;
+          case EQUAL:
+            this.state = S_ATTRIB_VALUE;
+            break;
+          default:
+            this.fail("attribute without value.");
+            this.text = "";
+            this.name = "";
+            if (c2 === GREATER) {
+              this.openTag();
+            } else if (isNameStartChar(c2)) {
+              this.unget();
+              this.state = S_ATTRIB_NAME;
+            } else {
+              this.fail("disallowed character in attribute name.");
+              this.state = S_ATTRIB;
+            }
+        }
+      }
+      sAttribValue() {
+        const c2 = this.getCodeNorm();
+        if (isQuote(c2)) {
+          this.q = c2;
+          this.state = S_ATTRIB_VALUE_QUOTED;
+        } else if (!isS(c2)) {
+          this.fail("unquoted attribute value.");
+          this.state = S_ATTRIB_VALUE_UNQUOTED;
+          this.unget();
+        }
+      }
+      sAttribValueQuoted() {
+        const { q, chunk } = this;
+        let { i: start } = this;
+        while (true) {
+          switch (this.getCode()) {
+            case q:
+              this.pushAttrib(this.name, this.text + chunk.slice(start, this.prevI));
+              this.name = this.text = "";
+              this.q = null;
+              this.state = S_ATTRIB_VALUE_CLOSED;
+              return;
+            case AMP:
+              this.text += chunk.slice(start, this.prevI);
+              this.state = S_ENTITY;
+              this.entityReturnState = S_ATTRIB_VALUE_QUOTED;
+              return;
+            case NL:
+            case NL_LIKE:
+            case TAB:
+              this.text += `${chunk.slice(start, this.prevI)} `;
+              start = this.i;
+              break;
+            case LESS:
+              this.text += chunk.slice(start, this.prevI);
+              this.fail("disallowed character.");
+              return;
+            case EOC:
+              this.text += chunk.slice(start);
+              return;
+            default:
+          }
+        }
+      }
+      sAttribValueClosed() {
+        const c2 = this.getCodeNorm();
+        if (isS(c2)) {
+          this.state = S_ATTRIB;
+        } else if (c2 === GREATER) {
+          this.openTag();
+        } else if (c2 === FORWARD_SLASH) {
+          this.state = S_OPEN_TAG_SLASH;
+        } else if (isNameStartChar(c2)) {
+          this.fail("no whitespace between attributes.");
+          this.unget();
+          this.state = S_ATTRIB_NAME;
+        } else {
+          this.fail("disallowed character in attribute name.");
+        }
+      }
+      sAttribValueUnquoted() {
+        const c2 = this.captureTo(ATTRIB_VALUE_UNQUOTED_TERMINATOR);
+        switch (c2) {
+          case AMP:
+            this.state = S_ENTITY;
+            this.entityReturnState = S_ATTRIB_VALUE_UNQUOTED;
+            break;
+          case LESS:
+            this.fail("disallowed character.");
+            break;
+          case EOC:
+            break;
+          default:
+            if (this.text.includes("]]>")) {
+              this.fail('the string "]]>" is disallowed in char data.');
+            }
+            this.pushAttrib(this.name, this.text);
+            this.name = this.text = "";
+            if (c2 === GREATER) {
+              this.openTag();
+            } else {
+              this.state = S_ATTRIB;
+            }
+        }
+      }
+      sCloseTag() {
+        const c2 = this.captureNameChars();
+        if (c2 === GREATER) {
+          this.closeTag();
+        } else if (isS(c2)) {
+          this.state = S_CLOSE_TAG_SAW_WHITE;
+        } else if (c2 !== EOC) {
+          this.fail("disallowed character in closing tag.");
+        }
+      }
+      sCloseTagSawWhite() {
+        switch (this.skipSpaces()) {
+          case GREATER:
+            this.closeTag();
+            break;
+          case EOC:
+            break;
+          default:
+            this.fail("disallowed character in closing tag.");
+        }
+      }
+      // END OF STATE ENGINE METHODS
+      handleTextInRoot() {
+        let { i: start, forbiddenState } = this;
+        const { chunk, textHandler: handler } = this;
+        scanLoop:
+          while (true) {
+            switch (this.getCode()) {
+              case LESS: {
+                this.state = S_OPEN_WAKA;
+                if (handler !== void 0) {
+                  const { text: text9 } = this;
+                  const slice = chunk.slice(start, this.prevI);
+                  if (text9.length !== 0) {
+                    handler(text9 + slice);
+                    this.text = "";
+                  } else if (slice.length !== 0) {
+                    handler(slice);
+                  }
+                }
+                forbiddenState = FORBIDDEN_START;
+                break scanLoop;
+              }
+              case AMP:
+                this.state = S_ENTITY;
+                this.entityReturnState = S_TEXT;
+                if (handler !== void 0) {
+                  this.text += chunk.slice(start, this.prevI);
+                }
+                forbiddenState = FORBIDDEN_START;
+                break scanLoop;
+              case CLOSE_BRACKET:
+                switch (forbiddenState) {
+                  case FORBIDDEN_START:
+                    forbiddenState = FORBIDDEN_BRACKET;
+                    break;
+                  case FORBIDDEN_BRACKET:
+                    forbiddenState = FORBIDDEN_BRACKET_BRACKET;
+                    break;
+                  case FORBIDDEN_BRACKET_BRACKET:
+                    break;
+                  default:
+                    throw new Error("impossible state");
+                }
+                break;
+              case GREATER:
+                if (forbiddenState === FORBIDDEN_BRACKET_BRACKET) {
+                  this.fail('the string "]]>" is disallowed in char data.');
+                }
+                forbiddenState = FORBIDDEN_START;
+                break;
+              case NL_LIKE:
+                if (handler !== void 0) {
+                  this.text += `${chunk.slice(start, this.prevI)}
+`;
+                }
+                start = this.i;
+                forbiddenState = FORBIDDEN_START;
+                break;
+              case EOC:
+                if (handler !== void 0) {
+                  this.text += chunk.slice(start);
+                }
+                break scanLoop;
+              default:
+                forbiddenState = FORBIDDEN_START;
+            }
+          }
+        this.forbiddenState = forbiddenState;
+      }
+      handleTextOutsideRoot() {
+        let { i: start } = this;
+        const { chunk, textHandler: handler } = this;
+        let nonSpace = false;
+        outRootLoop:
+          while (true) {
+            const code = this.getCode();
+            switch (code) {
+              case LESS: {
+                this.state = S_OPEN_WAKA;
+                if (handler !== void 0) {
+                  const { text: text9 } = this;
+                  const slice = chunk.slice(start, this.prevI);
+                  if (text9.length !== 0) {
+                    handler(text9 + slice);
+                    this.text = "";
+                  } else if (slice.length !== 0) {
+                    handler(slice);
+                  }
+                }
+                break outRootLoop;
+              }
+              case AMP:
+                this.state = S_ENTITY;
+                this.entityReturnState = S_TEXT;
+                if (handler !== void 0) {
+                  this.text += chunk.slice(start, this.prevI);
+                }
+                nonSpace = true;
+                break outRootLoop;
+              case NL_LIKE:
+                if (handler !== void 0) {
+                  this.text += `${chunk.slice(start, this.prevI)}
+`;
+                }
+                start = this.i;
+                break;
+              case EOC:
+                if (handler !== void 0) {
+                  this.text += chunk.slice(start);
+                }
+                break outRootLoop;
+              default:
+                if (!isS(code)) {
+                  nonSpace = true;
+                }
+            }
+          }
+        if (!nonSpace) {
+          return;
+        }
+        if (!this.sawRoot && !this.reportedTextBeforeRoot) {
+          this.fail("text data outside of root node.");
+          this.reportedTextBeforeRoot = true;
+        }
+        if (this.closedRoot && !this.reportedTextAfterRoot) {
+          this.fail("text data outside of root node.");
+          this.reportedTextAfterRoot = true;
+        }
+      }
+      pushAttribNS(name2, value) {
+        var _a8;
+        const { prefix: prefix3, local } = this.qname(name2);
+        const attr = { name: name2, prefix: prefix3, local, value };
+        this.attribList.push(attr);
+        (_a8 = this.attributeHandler) === null || _a8 === void 0 ? void 0 : _a8.call(this, attr);
+        if (prefix3 === "xmlns") {
+          const trimmed = value.trim();
+          if (this.currentXMLVersion === "1.0" && trimmed === "") {
+            this.fail("invalid attempt to undefine prefix in XML 1.0");
+          }
+          this.topNS[local] = trimmed;
+          nsPairCheck(this, local, trimmed);
+        } else if (name2 === "xmlns") {
+          const trimmed = value.trim();
+          this.topNS[""] = trimmed;
+          nsPairCheck(this, "", trimmed);
+        }
+      }
+      pushAttribPlain(name2, value) {
+        var _a8;
+        const attr = { name: name2, value };
+        this.attribList.push(attr);
+        (_a8 = this.attributeHandler) === null || _a8 === void 0 ? void 0 : _a8.call(this, attr);
+      }
+      /**
+       * End parsing. This performs final well-formedness checks and resets the
+       * parser to a clean state.
+       *
+       * @returns this
+       */
+      end() {
+        var _a8, _b2;
+        if (!this.sawRoot) {
+          this.fail("document must contain a root element.");
+        }
+        const { tags } = this;
+        while (tags.length > 0) {
+          const tag = tags.pop();
+          this.fail(`unclosed tag: ${tag.name}`);
+        }
+        if (this.state !== S_BEGIN && this.state !== S_TEXT) {
+          this.fail("unexpected end.");
+        }
+        const { text: text9 } = this;
+        if (text9.length !== 0) {
+          (_a8 = this.textHandler) === null || _a8 === void 0 ? void 0 : _a8.call(this, text9);
+          this.text = "";
+        }
+        this._closed = true;
+        (_b2 = this.endHandler) === null || _b2 === void 0 ? void 0 : _b2.call(this);
+        this._init();
+        return this;
+      }
+      /**
+       * Resolve a namespace prefix.
+       *
+       * @param prefix The prefix to resolve.
+       *
+       * @returns The namespace URI or ``undefined`` if the prefix is not defined.
+       */
+      resolve(prefix3) {
+        var _a8, _b2;
+        let uri2 = this.topNS[prefix3];
+        if (uri2 !== void 0) {
+          return uri2;
+        }
+        const { tags } = this;
+        for (let index = tags.length - 1; index >= 0; index--) {
+          uri2 = tags[index].ns[prefix3];
+          if (uri2 !== void 0) {
+            return uri2;
+          }
+        }
+        uri2 = this.ns[prefix3];
+        if (uri2 !== void 0) {
+          return uri2;
+        }
+        return (_b2 = (_a8 = this.opt).resolvePrefix) === null || _b2 === void 0 ? void 0 : _b2.call(_a8, prefix3);
+      }
+      /**
+       * Parse a qname into its prefix and local name parts.
+       *
+       * @param name The name to parse
+       *
+       * @returns
+       */
+      qname(name2) {
+        const colon = name2.indexOf(":");
+        if (colon === -1) {
+          return { prefix: "", local: name2 };
+        }
+        const local = name2.slice(colon + 1);
+        const prefix3 = name2.slice(0, colon);
+        if (prefix3 === "" || local === "" || local.includes(":")) {
+          this.fail(`malformed name: ${name2}.`);
+        }
+        return { prefix: prefix3, local };
+      }
+      processAttribsNS() {
+        var _a8;
+        const { attribList } = this;
+        const tag = this.tag;
+        {
+          const { prefix: prefix3, local } = this.qname(tag.name);
+          tag.prefix = prefix3;
+          tag.local = local;
+          const uri2 = tag.uri = (_a8 = this.resolve(prefix3)) !== null && _a8 !== void 0 ? _a8 : "";
+          if (prefix3 !== "") {
+            if (prefix3 === "xmlns") {
+              this.fail('tags may not have "xmlns" as prefix.');
+            }
+            if (uri2 === "") {
+              this.fail(`unbound namespace prefix: ${JSON.stringify(prefix3)}.`);
+              tag.uri = prefix3;
+            }
+          }
+        }
+        if (attribList.length === 0) {
+          return;
+        }
+        const { attributes: attributes2 } = tag;
+        const seen = /* @__PURE__ */ new Set();
+        for (const attr of attribList) {
+          const { name: name2, prefix: prefix3, local } = attr;
+          let uri2;
+          let eqname;
+          if (prefix3 === "") {
+            uri2 = name2 === "xmlns" ? XMLNS_NAMESPACE : "";
+            eqname = name2;
+          } else {
+            uri2 = this.resolve(prefix3);
+            if (uri2 === void 0) {
+              this.fail(`unbound namespace prefix: ${JSON.stringify(prefix3)}.`);
+              uri2 = prefix3;
+            }
+            eqname = `{${uri2}}${local}`;
+          }
+          if (seen.has(eqname)) {
+            this.fail(`duplicate attribute: ${eqname}.`);
+          }
+          seen.add(eqname);
+          attr.uri = uri2;
+          attributes2[name2] = attr;
+        }
+        this.attribList = [];
+      }
+      processAttribsPlain() {
+        const { attribList } = this;
+        const attributes2 = this.tag.attributes;
+        for (const { name: name2, value } of attribList) {
+          if (attributes2[name2] !== void 0) {
+            this.fail(`duplicate attribute: ${name2}.`);
+          }
+          attributes2[name2] = value;
+        }
+        this.attribList = [];
+      }
+      /**
+       * Handle a complete open tag. This parser code calls this once it has seen
+       * the whole tag. This method checks for well-formeness and then emits
+       * ``onopentag``.
+       */
+      openTag() {
+        var _a8;
+        this.processAttribs();
+        const { tags } = this;
+        const tag = this.tag;
+        tag.isSelfClosing = false;
+        (_a8 = this.openTagHandler) === null || _a8 === void 0 ? void 0 : _a8.call(this, tag);
+        tags.push(tag);
+        this.state = S_TEXT;
+        this.name = "";
+      }
+      /**
+       * Handle a complete self-closing tag. This parser code calls this once it has
+       * seen the whole tag. This method checks for well-formeness and then emits
+       * ``onopentag`` and ``onclosetag``.
+       */
+      openSelfClosingTag() {
+        var _a8, _b2, _c;
+        this.processAttribs();
+        const { tags } = this;
+        const tag = this.tag;
+        tag.isSelfClosing = true;
+        (_a8 = this.openTagHandler) === null || _a8 === void 0 ? void 0 : _a8.call(this, tag);
+        (_b2 = this.closeTagHandler) === null || _b2 === void 0 ? void 0 : _b2.call(this, tag);
+        const top = this.tag = (_c = tags[tags.length - 1]) !== null && _c !== void 0 ? _c : null;
+        if (top === null) {
+          this.closedRoot = true;
+        }
+        this.state = S_TEXT;
+        this.name = "";
+      }
+      /**
+       * Handle a complete close tag. This parser code calls this once it has seen
+       * the whole tag. This method checks for well-formeness and then emits
+       * ``onclosetag``.
+       */
+      closeTag() {
+        const { tags, name: name2 } = this;
+        this.state = S_TEXT;
+        this.name = "";
+        if (name2 === "") {
+          this.fail("weird empty close tag.");
+          this.text += "</>";
+          return;
+        }
+        const handler = this.closeTagHandler;
+        let l3 = tags.length;
+        while (l3-- > 0) {
+          const tag = this.tag = tags.pop();
+          this.topNS = tag.ns;
+          handler === null || handler === void 0 ? void 0 : handler(tag);
+          if (tag.name === name2) {
+            break;
+          }
+          this.fail("unexpected close tag.");
+        }
+        if (l3 === 0) {
+          this.closedRoot = true;
+        } else if (l3 < 0) {
+          this.fail(`unmatched closing tag: ${name2}.`);
+          this.text += `</${name2}>`;
+        }
+      }
+      /**
+       * Resolves an entity. Makes any necessary well-formedness checks.
+       *
+       * @param entity The entity to resolve.
+       *
+       * @returns The parsed entity.
+       */
+      parseEntity(entity) {
+        if (entity[0] !== "#") {
+          const defined = this.ENTITIES[entity];
+          if (defined !== void 0) {
+            return defined;
+          }
+          this.fail(this.isName(entity) ? "undefined entity." : "disallowed character in entity name.");
+          return `&${entity};`;
+        }
+        let num2 = NaN;
+        if (entity[1] === "x" && /^#x[0-9a-f]+$/i.test(entity)) {
+          num2 = parseInt(entity.slice(2), 16);
+        } else if (/^#[0-9]+$/.test(entity)) {
+          num2 = parseInt(entity.slice(1), 10);
+        }
+        if (!this.isChar(num2)) {
+          this.fail("malformed character entity.");
+          return `&${entity};`;
+        }
+        return String.fromCodePoint(num2);
+      }
+    };
+    exports.SaxesParser = SaxesParser3;
+  }
+});
+
 // node_modules/isexe/windows.js
 var require_windows = __commonJS({
   "node_modules/isexe/windows.js"(exports, module2) {
@@ -117116,7 +119034,7 @@ var require_cross_spawn = __commonJS({
     var cp2 = __require("child_process");
     var parse11 = require_parse2();
     var enoent = require_enoent();
-    function spawn17(command3, args, options) {
+    function spawn18(command3, args, options) {
       const parsed = parse11(command3, args, options);
       const spawned = cp2.spawn(parsed.command, parsed.args, parsed.options);
       enoent.hookChildProcess(spawned, parsed);
@@ -117128,8 +119046,8 @@ var require_cross_spawn = __commonJS({
       result4.error = result4.error || enoent.verifyENOENTSync(result4.status, parsed);
       return result4;
     }
-    module2.exports = spawn17;
-    module2.exports.spawn = spawn17;
+    module2.exports = spawn18;
+    module2.exports.spawn = spawn18;
     module2.exports.sync = spawnSync;
     module2.exports._parse = parse11;
     module2.exports._enoent = enoent;
@@ -145432,6 +147350,7 @@ init_zod();
 import { fileURLToPath as fileURLToPath10 } from "node:url";
 
 // packages/core/src/baguette-runtime.ts
+init_telemetry2();
 import { execFile as execFile9 } from "node:child_process";
 import { access as access6, realpath } from "node:fs/promises";
 import { constants as constants5 } from "node:fs";
@@ -145439,9 +147358,24 @@ import { basename as basename2, delimiter as delimiter2, dirname as dirname7, is
 import { promisify as promisify8 } from "node:util";
 var BAGUETTE_RUNTIME_TIMEOUT_MS = 5e3;
 var execute6 = promisify8(execFile9);
-async function baguetteEnvironment(executable4, signal, run5 = execute6) {
-  const deadline = AbortSignal.timeout(BAGUETTE_RUNTIME_TIMEOUT_MS);
-  const discoverySignal = AbortSignal.any([signal, deadline]);
+var commandNames = {
+  "/usr/bin/xcode-select": "xcode-select",
+  "/usr/bin/otool": "otool",
+  "/usr/bin/xcrun": "swift-stdlib-tool"
+};
+var runXcodeCommand = async (command3, args, options) => {
+  const started = performance.now();
+  try {
+    return await execute6(command3, args, options);
+  } finally {
+    const elapsed = performance.now() - started;
+    recordBaguetteDiscoveryTime(commandNames[command3], elapsed);
+  }
+};
+async function baguetteEnvironment(executable4, signal, timeoutMs = BAGUETTE_RUNTIME_TIMEOUT_MS, run5 = runXcodeCommand) {
+  const deadline = AbortSignal.timeout(timeoutMs);
+  const inspection = new AbortController();
+  const discoverySignal = AbortSignal.any([signal, deadline, inspection.signal]);
   discoverySignal.throwIfAborted();
   let developer;
   try {
@@ -145462,12 +147396,21 @@ async function baguetteEnvironment(executable4, signal, run5 = execute6) {
   const environment = { ...process.env, DEVELOPER_DIR: developer };
   delete environment.DYLD_LIBRARY_PATH;
   try {
-    const commands2 = await run5("/usr/bin/otool", ["-l", executable4], {
+    const loadCommands = run5("/usr/bin/otool", ["-l", executable4], {
       env: environment,
       signal: discoverySignal,
       encoding: "utf8",
       maxBuffer: 1024 * 1024
     });
+    const swiftLibraries = run5("/usr/bin/xcrun", [
+      "swift-stdlib-tool",
+      "--print",
+      "--scan-executable",
+      executable4,
+      "--platform",
+      "macosx"
+    ], { env: environment, signal: discoverySignal, encoding: "utf8", maxBuffer: 64 * 1024 });
+    const [commands2, scan] = await Promise.all([loadCommands, swiftLibraries]);
     const blocks = commands2.stdout.split("Load command");
     const required3 = /* @__PURE__ */ new Set();
     for (const block of blocks) {
@@ -145477,14 +147420,6 @@ async function baguetteEnvironment(executable4, signal, run5 = execute6) {
       const name2 = basename2(match2[1]);
       required3.add(name2);
     }
-    const scan = await run5("/usr/bin/xcrun", [
-      "swift-stdlib-tool",
-      "--print",
-      "--scan-executable",
-      executable4,
-      "--platform",
-      "macosx"
-    ], { env: environment, signal: discoverySignal, encoding: "utf8", maxBuffer: 64 * 1024 });
     const output2 = scan.stdout.trim();
     const libraries = output2.length > 0 ? output2.split("\n") : [];
     const directories = /* @__PURE__ */ new Set();
@@ -145511,6 +147446,7 @@ async function baguetteEnvironment(executable4, signal, run5 = execute6) {
     }
   } catch {
     discoverySignal.throwIfAborted();
+    inspection.abort();
     throw new Error("The selected Xcode cannot supply Baguette's required Swift runtime libraries. Install Xcode 26 or later and select it in Xcode Settings > Locations > Command Line Tools.");
   }
   discoverySignal.throwIfAborted();
@@ -146697,13 +148633,13 @@ async function sqlite(run5, file4, sql) {
   return output2.trim() ? JSON.parse(output2) : [];
 }
 async function describeTables(run5, file4) {
-  const tables = /* @__PURE__ */ new Map();
+  const tables2 = /* @__PURE__ */ new Map();
   for (const row of await sqlite(run5, file4, "SELECT m.name AS tbl, p.name AS col, p.type AS type FROM sqlite_master m JOIN pragma_table_info(m.name) p WHERE m.type='table' AND m.name NOT LIKE 'sqlite_%' ORDER BY m.name, p.cid")) {
-    let columns = tables.get(String(row.tbl));
-    if (columns === void 0) tables.set(String(row.tbl), columns = []);
+    let columns = tables2.get(String(row.tbl));
+    if (columns === void 0) tables2.set(String(row.tbl), columns = []);
     columns.push({ name: String(row.col), type: String(row.type ?? "") });
   }
-  return tables;
+  return tables2;
 }
 function withDatabase(container, candidate, work) {
   return withTemporaryDirectory(async (directory2) => {
@@ -146714,21 +148650,21 @@ function withDatabase(container, candidate, work) {
 }
 async function readSqlite(container, candidate, run5) {
   return withDatabase(container, candidate, async (file4) => {
-    let tables;
+    let tables2;
     try {
-      tables = await describeTables(run5, file4);
+      tables2 = await describeTables(run5, file4);
     } catch {
       return { status: "unreadable", note: "Not a readable SQLite database.", entries: [] };
     }
-    const keyValueTable = tables.has("catalystLocalStorage") ? "catalystLocalStorage" : tables.has("entries") && candidate.path.includes("async-storage/") ? "entries" : tables.has("Storage") && /^AsyncStorage/.test(candidate.name) ? "Storage" : void 0;
+    const keyValueTable = tables2.has("catalystLocalStorage") ? "catalystLocalStorage" : tables2.has("entries") && candidate.path.includes("async-storage/") ? "entries" : tables2.has("Storage") && /^AsyncStorage/.test(candidate.name) ? "Storage" : void 0;
     if (keyValueTable) {
       const rows = await sqlite(run5, file4, `SELECT key, value FROM ${quoteIdentifier(keyValueTable)}`);
       const entries = rows.map((row) => row.value === null || row.value === void 0 ? nullEntry(String(row.key)) : textEntry(String(row.key), String(row.value)));
       return { status: "ok", kind: "async-storage", entries };
     }
-    if (tables.size === 0) return { status: "ok", entries: [] };
-    const counts = new Map((await sqlite(run5, file4, [...tables.keys()].map((table) => `SELECT ${sqlString(table)} AS name, count(*) AS total FROM ${quoteIdentifier(table)}`).join(" UNION ALL "))).map((row) => [String(row.name), Number(row.total)]));
-    return { status: "ok", entries: [...tables].map(([table, columns]) => ({ key: table, type: "table", value: `${counts.get(table) ?? "?"} rows \xB7 ${columns.map((column) => column.name).join(", ")}`, bytes: 0 })) };
+    if (tables2.size === 0) return { status: "ok", entries: [] };
+    const counts = new Map((await sqlite(run5, file4, [...tables2.keys()].map((table) => `SELECT ${sqlString(table)} AS name, count(*) AS total FROM ${quoteIdentifier(table)}`).join(" UNION ALL "))).map((row) => [String(row.name), Number(row.total)]));
+    return { status: "ok", entries: [...tables2].map(([table, columns]) => ({ key: table, type: "table", value: `${counts.get(table) ?? "?"} rows \xB7 ${columns.map((column) => column.name).join(", ")}`, bytes: 0 })) };
   });
 }
 async function readAsyncManifest(container, candidate) {
@@ -147575,9 +149511,9 @@ async function createAppFlowHost(options = {}) {
   };
   flow = createAppFlowService2(ports);
   const manual = createManualRecordingService2(ports);
-  const projectFor = (query) => {
-    if (query.projectPath) return query.projectPath;
-    const run5 = query.runId ? runs.get(query.runId) : void 0;
+  const projectFor = (query2) => {
+    if (query2.projectPath) return query2.projectPath;
+    const run5 = query2.runId ? runs.get(query2.runId) : void 0;
     if (!run5) throw new Error("That App Flow run does not exist.");
     return run5.projectPath;
   };
@@ -147619,13 +149555,13 @@ async function createAppFlowHost(options = {}) {
         throw error113;
       }
     },
-    async status(query) {
-      if (query.runId) {
-        const run5 = runs.get(query.runId);
+    async status(query2) {
+      if (query2.runId) {
+        const run5 = runs.get(query2.runId);
         if (!run5) throw new Error("That App Flow run does not exist.");
         return { ...run5, appLaunched: await flow.isAppLaunched(run5.projectPath) };
       }
-      const selectedProjectPath = projectFor(query);
+      const selectedProjectPath = projectFor(query2);
       const appLaunched = await flow.isAppLaunched(selectedProjectPath);
       const active = [...runs.values()].find((run5) => run5.projectPath === selectedProjectPath && (run5.state === "running" || run5.state === "needs-user-action" || run5.state === "suspended"));
       const saved = await flow.getStatus(selectedProjectPath);
@@ -147674,10 +149610,10 @@ async function createAppFlowHost(options = {}) {
         ...saved.manifest === void 0 ? {} : { manifest: saved.manifest }
       };
     },
-    async result(query) {
-      const selectedProjectPath = projectFor(query);
+    async result(query2) {
+      const selectedProjectPath = projectFor(query2);
       return {
-        ...query.runId ? { runId: query.runId } : {},
+        ...query2.runId ? { runId: query2.runId } : {},
         projectPath: selectedProjectPath,
         projectId: getProjectId2(selectedProjectPath),
         result: await flow.getResult(selectedProjectPath)
@@ -147814,14 +149750,14 @@ async function createAppFlowHost(options = {}) {
     manualCancel: (selectedProjectPath) => manual.cancel(selectedProjectPath),
     manualReplay: (selectedProjectPath, nodeId) => manual.replay(selectedProjectPath, nodeId),
     runtimeReplay: (selectedProjectPath, nodeId) => manual.replayRuntime(selectedProjectPath, nodeId),
-    async poll(query, since) {
-      const key2 = query.runId ? query.runId : `manual:${getProjectId2(projectFor(query))}`;
+    async poll(query2, since) {
+      const key2 = query2.runId ? query2.runId : `manual:${getProjectId2(projectFor(query2))}`;
       const buffered = recentEvents.get(key2) ?? [];
       const pending = buffered.filter((entry2) => entry2.seq > since);
-      if (pending.length || !query.runId) return pending;
-      const remoteProjectPath = remoteRunProjects.get(query.runId);
+      if (pending.length || !query2.runId) return pending;
+      const remoteProjectPath = remoteRunProjects.get(query2.runId);
       if (!remoteProjectPath) return pending;
-      const durable = await runStore.readEvent(remoteProjectPath, query.runId, since);
+      const durable = await runStore.readEvent(remoteProjectPath, query2.runId, since);
       return durable ? [durable] : pending;
     },
     async screenshot(selectedProjectId, encodedPath) {
@@ -154270,7 +156206,7 @@ var CpuSessions = class {
   key(target3) {
     return `${target3.platform}:${target3.deviceId}:${target3.bundleId}`;
   }
-  open(input2) {
+  open(input2, onProcess) {
     const target3 = cpuTargetSchema.parse(input2);
     if (this.disposed) throw new ExpectedOperationError("session_closed", "The plugin server has closed.");
     if (this.sessions.size >= 8) throw new ExpectedOperationError("resource_limit", "Too many CPU sessions. Close a performance panel and retry.");
@@ -154282,16 +156218,17 @@ var CpuSessions = class {
     const id3 = bytes.toString("hex");
     this.sessions.set(id3, session);
     this.targets.set(key2, session);
-    session.start = this.initialize(session);
+    session.start = this.initialize(session, onProcess);
     return id3;
   }
-  async initialize(session) {
+  async initialize(session, onProcess) {
     const signal = session.abort.signal;
     try {
       const apps = await this.sources.apps(session.target.deviceId, signal, session.target.platform, session.target.kind);
       signal.throwIfAborted();
       const app = apps.find((candidate) => candidate.bundleId === session.target.bundleId);
       if (app === void 0) throw new ExpectedOperationError("app_unavailable", "The selected app is no longer running. Open it on the selected device.");
+      onProcess?.(app.pid);
       const startedAt = performance.now();
       session.buffer.timeOrigin = startedAt / 1e3;
       session.monitor = await this.sources.monitor({ target: session.target, pid: app.pid, signal, onSample: (reading3) => {
@@ -154528,13 +156465,45 @@ function registerCpuTools(server, cpu, simulators, { apps = readDeviceApps, andr
 }
 
 // packages/core/src/performance-recordings.ts
-import { randomUUID as randomUUID12 } from "node:crypto";
-import { mkdir as mkdir13, readFile as readFile22, readdir as readdir16, rename as rename9, stat as stat12, writeFile as writeFile15, rm as rm8 } from "node:fs/promises";
+import { randomUUID as randomUUID13 } from "node:crypto";
+import { mkdir as mkdir13, readFile as readFile22, readdir as readdir16, rename as rename9, stat as stat12, writeFile as writeFile15, rm as rm9 } from "node:fs/promises";
 import { homedir as homedir9 } from "node:os";
-import { join as join44 } from "node:path";
+import { join as join45 } from "node:path";
 
 // packages/shared/src/recordings.ts
 init_zod();
+
+// packages/shared/src/ios-hitches.ts
+init_zod();
+var iosHitchSchema = external_exports.object({
+  time: external_exports.number().finite().nonnegative(),
+  lateMs: external_exports.number().finite().positive(),
+  refreshIntervalMs: external_exports.number().finite().positive()
+});
+var iosHitchesSchema = external_exports.discriminatedUnion("status", [
+  external_exports.object({ status: external_exports.literal("finished"), end: external_exports.number().finite().positive(), events: external_exports.array(iosHitchSchema) }),
+  external_exports.object({ status: external_exports.literal("unavailable"), error: external_exports.string() })
+]);
+var hitchStatsSchema = external_exports.object({ count: external_exports.number().int().nonnegative(), lateMs: external_exports.number().finite().nonnegative() });
+function summarizeIosHitches(capture, start, end) {
+  if (capture?.status !== "finished" || start >= capture.end) return null;
+  let count4 = 0;
+  let lateMs = 0;
+  let accountedFrom = end;
+  for (let index = capture.events.length - 1; index >= 0; index--) {
+    const event = capture.events[index];
+    if (event.time < start) break;
+    if (event.time < end) count4++;
+    const from = Math.max(start, event.time - event.lateMs / 1e3);
+    const to = Math.min(accountedFrom, event.time);
+    if (to <= from) continue;
+    lateMs += (to - from) * 1e3;
+    accountedFrom = from;
+  }
+  return { count: count4, lateMs };
+}
+
+// packages/shared/src/recordings.ts
 init_version3();
 
 // packages/shared/src/display-fps.ts
@@ -154613,8 +156582,23 @@ var displayFrameStatsSchema = external_exports.object({
 });
 var nullableDisplayFrameStatsSchema = displayFrameStatsSchema.nullable();
 var JANK_NONE = 1;
-var JANK_REASONS = 2 | 4 | 8 | 16 | 32 | 64 | 128 | 512 | 1024;
+var jankReasons = [
+  [2, "SurfaceFlinger scheduling"],
+  [4, "Prediction error"],
+  [8, "Display HAL"],
+  [16, "SurfaceFlinger CPU deadline missed"],
+  [32, "SurfaceFlinger GPU deadline missed"],
+  [64, "App deadline missed"],
+  [128, "Buffer stuffing"],
+  [512, "SurfaceFlinger stuffing"],
+  [1024, "Dropped frame"]
+];
+var JANK_REASONS = jankReasons.reduce((mask, [bit]) => mask | bit, 0);
 var CLASSIFIED_JANK_BITS = JANK_NONE | JANK_REASONS;
+function classifyDisplayJank(bits) {
+  if (bits === void 0 || bits === 0 || (bits & ~CLASSIFIED_JANK_BITS) !== 0) return "unknown";
+  return (bits & JANK_REASONS) === 0 ? "none" : "janky";
+}
 function percentile(sorted, fraction) {
   const rank = Math.ceil(sorted.length * fraction);
   return sorted[rank - 1];
@@ -154678,11 +156662,10 @@ function summarizeDisplayFrames(samples, duration6, range) {
         continue;
       }
       stats.presentedFrameCount++;
-      const jank = frame2.jankType;
-      const classified = jank !== void 0 && jank !== 0 && (jank & ~CLASSIFIED_JANK_BITS) === 0;
-      if (classified) {
+      const jank = classifyDisplayJank(frame2.jankType);
+      if (jank !== "unknown") {
         stats.classifiedPresentedFrameCount++;
-        if ((jank & JANK_REASONS) !== 0) stats.jankyPresentedFrameCount++;
+        if (jank === "janky") stats.jankyPresentedFrameCount++;
       } else stats.unclassifiedPresentedFrameCount++;
       const presentation = BigInt(frame2.endTimeNs);
       if (previousPresentation !== void 0 && presentation > previousPresentation) {
@@ -154750,6 +156733,7 @@ var recordingSchema = external_exports.object({
   status: external_exports.enum(["connecting", "recording", "finishing", "finished", "failed"]),
   memoryMetric: external_exports.enum(["rss", "physical-footprint"]),
   samples: external_exports.array(recordingSampleSchema).max(1800),
+  iosHitches: iosHitchesSchema.optional(),
   fps: recordingFpsSchema.default({ status: "unavailable", samples: [], error: "FPS was not captured in this recording." }),
   error: external_exports.string().optional()
 });
@@ -154758,6 +156742,7 @@ function recordingPreview(recording2) {
   const reading3 = (value, digits) => value === null ? null : round2(value, digits);
   return {
     ...recording2,
+    iosHitches: void 0,
     samples: recording2.samples.map((sample) => ({
       time: round2(sample.time, 2),
       interval: round2(sample.interval, 2),
@@ -154844,7 +156829,9 @@ function summarizeRecording(recording2, range) {
   }
   const memoryChangeBytes = firstMemoryBytes !== null && lastMemoryBytes !== null ? lastMemoryBytes - firstMemoryBytes : null;
   const frameStats = recording2.target.platform === "android" ? summarizeDisplayFrames(recording2.fps.samples, recording2.durationSeconds, range) : null;
+  const hitchStats = summarizeIosHitches(recording2.iosHitches, start, end);
   return {
+    hitchStats,
     peakCpuPercent,
     averageCpuPercent: cpuWeight > 0 ? cpuTotal / cpuWeight : null,
     firstMemoryBytes,
@@ -154862,8 +156849,292 @@ function summarizeRecording(recording2, range) {
 
 // packages/core/src/performance-recordings.ts
 init_protocol();
+
+// packages/core/src/fps/ios-hitch-trace.ts
+var import_saxes2 = __toESM(require_saxes(), 1);
 init_telemetry2();
-var RECORDINGS_DIRECTORY = join44(homedir9(), "Library/Application Support/mobile-dev/recordings");
+import { execFile as execFile16, spawn as spawn12 } from "node:child_process";
+import { randomUUID as randomUUID12 } from "node:crypto";
+import { mkdtemp as mkdtemp4, rm as rm8 } from "node:fs/promises";
+import { tmpdir as tmpdir5 } from "node:os";
+import { join as join44 } from "node:path";
+import { promisify as promisify14 } from "node:util";
+
+// packages/core/src/fps/ios-hitch-events.ts
+var import_saxes = __toESM(require_saxes(), 1);
+var caSubclass = 202;
+var frameInfo = 11;
+var frameStall = 120;
+var stallContext = 121;
+var stallInfo = 145;
+var scalarTags = /* @__PURE__ */ new Set([
+  "mach-absolute-time",
+  "mach-timebase-info-field",
+  "kdebug-class",
+  "kdebug-subclass",
+  "kdebug-code",
+  "kdebug-func",
+  "kdebug-arg"
+]);
+async function readIosHitchEvents(xml, pid3, offsetSeconds, end) {
+  const parser = new import_saxes.SaxesParser();
+  const values = [];
+  const stalls = /* @__PURE__ */ new Map();
+  let field2 = "";
+  let id3 = "";
+  let ref = "";
+  let text9 = "";
+  let inRow = false;
+  let traceEpoch = 0;
+  let tickNs = 0;
+  let frameCount = 0;
+  let sourceClass = 0;
+  let subclass = 0;
+  let code = 0;
+  let func = 0;
+  const args = [];
+  const timebase = [];
+  function recordRow() {
+    if (sourceClass !== 49 || subclass !== caSubclass || func !== 0) return;
+    if (code === frameInfo) frameCount++;
+    if (code !== frameStall && code !== stallContext && code !== stallInfo) return;
+    if (args.length !== 4 || args.some((value) => Number.isSafeInteger(value) === false)) {
+      throw new Error("Invalid Core Animation stall arguments.");
+    }
+    const [swap, second, third, fourth] = args;
+    let stall = stalls.get(swap);
+    if (stall === void 0) {
+      stall = { contexts: /* @__PURE__ */ new Set(), includesApp: false };
+      stalls.set(swap, stall);
+    }
+    if (code === frameStall) {
+      stall.presentation = third;
+      stall.late = third - fourth - second;
+    } else if (code === stallInfo) {
+      stall.refresh = fourth;
+      stall.expectedContexts = second;
+    } else {
+      stall.contexts.add(second);
+      if (third === pid3) stall.includesApp = true;
+    }
+  }
+  parser.on("opentag", (tag) => {
+    if (tag.name === "row") {
+      inRow = true;
+      sourceClass = 0;
+      subclass = 0;
+      code = 0;
+      func = -1;
+      args.length = 0;
+      timebase.length = 0;
+    }
+    if (inRow === false || scalarTags.has(tag.name) === false) return;
+    field2 = tag.name;
+    id3 = tag.attributes.id;
+    ref = tag.attributes.ref;
+    text9 = "";
+  });
+  parser.on("text", (value) => {
+    if (field2) text9 += value;
+  });
+  parser.on("closetag", (tag) => {
+    if (tag.name === "row") {
+      recordRow();
+      if (timebase.length === 2) tickNs = timebase[0] / timebase[1];
+      inRow = false;
+    }
+    if (field2 !== tag.name) return;
+    const raw = text9.trim();
+    const value = ref ? values[Number(ref)] : Number(raw);
+    if (value === void 0 || ref === void 0 && raw.length === 0 || Number.isFinite(value) === false) {
+      throw new Error("Invalid Instruments timing column.");
+    }
+    if (id3) values[Number(id3)] = value;
+    switch (field2) {
+      case "mach-absolute-time":
+        traceEpoch = value;
+        break;
+      case "mach-timebase-info-field":
+        timebase.push(value);
+        break;
+      case "kdebug-class":
+        sourceClass = value;
+        break;
+      case "kdebug-subclass":
+        subclass = value;
+        break;
+      case "kdebug-code":
+        code = value;
+        break;
+      case "kdebug-func":
+        func = value;
+        break;
+      case "kdebug-arg":
+        args.push(value);
+        break;
+    }
+    field2 = "";
+  });
+  for await (const chunk of xml) parser.write(chunk);
+  parser.close();
+  if (frameCount === 0 || traceEpoch <= 0 || Number.isFinite(tickNs) === false || tickNs <= 0) {
+    throw new Error("The trace is missing Core Animation frame timing.");
+  }
+  const events = [];
+  for (const stall of stalls.values()) {
+    if (stall.presentation === void 0 || stall.late === void 0) {
+      throw new Error("Incomplete Core Animation stall record.");
+    }
+    const time6 = (stall.presentation - traceEpoch) * tickNs / 1e9 + offsetSeconds;
+    if (time6 < 0 || time6 >= end || stall.late <= 0) continue;
+    if (stall.refresh === void 0 || stall.refresh <= 0 || stall.contexts.size !== stall.expectedContexts) {
+      throw new Error("Incomplete Core Animation stall attribution.");
+    }
+    if (stall.includesApp) events.push({ time: time6, lateMs: stall.late * tickNs / 1e6, refreshIntervalMs: stall.refresh * tickNs / 1e6 });
+  }
+  events.sort((left, right) => left.time - right.time);
+  return events;
+}
+
+// packages/core/src/fps/ios-hitch-trace.ts
+var execute12 = promisify14(execFile16);
+var tables = '/trace-toc/run[@number="1"]/data/table';
+var query = `${tables}[@schema="time-info"] | ${tables}[@schema="kdebug" and contains(@codes,'"0x31,0xca"')][1]`;
+function completed(child) {
+  return new Promise((resolve13, reject) => {
+    child.once("error", reject);
+    child.once("close", resolve13);
+  });
+}
+function traceClock(xml) {
+  const parser = new import_saxes2.SaxesParser();
+  let field2 = "";
+  let text9 = "";
+  let start = NaN;
+  let duration6 = NaN;
+  parser.on("opentag", (tag) => {
+    field2 = tag.name;
+    text9 = "";
+  });
+  parser.on("text", (value) => {
+    text9 += value;
+  });
+  parser.on("closetag", (tag) => {
+    if (tag.name !== field2) return;
+    if (field2 === "start-date") start = Date.parse(text9);
+    if (field2 === "duration") duration6 = Number(text9);
+    field2 = "";
+  });
+  parser.write(xml);
+  parser.close();
+  if (Number.isFinite(start) === false || Number.isFinite(duration6) === false || duration6 <= 0) throw new Error("Missing Instruments recording clock.");
+  return { start, duration: duration6 };
+}
+async function exportIosHitches(path, pid3, originMs, end, signal) {
+  const timeout = AbortSignal.timeout(18e4);
+  const exportSignal = AbortSignal.any([signal, timeout]);
+  const args = ["xctrace", "export", "--input", path];
+  const toc = await execute12("/usr/bin/xcrun", [...args, "--toc"], { signal: exportSignal, maxBuffer: 8 * 1024 * 1024 });
+  const clock = traceClock(toc.stdout);
+  const offset = (clock.start - originMs) / 1e3;
+  if (offset > 1e-3) throw new Error("Instruments missed the beginning of the recording.");
+  const coveredEnd = Math.min(end, offset + clock.duration);
+  if (coveredEnd <= 0) throw new Error("Instruments did not cover the recording.");
+  const child = spawn12("/usr/bin/xcrun", [...args, "--xpath", query], { signal: exportSignal, stdio: ["ignore", "pipe", "ignore"] });
+  const exit = completed(child);
+  const xml = child.stdout.setEncoding("utf8");
+  try {
+    const results = await Promise.all([exit, readIosHitchEvents(xml, pid3, offset, coveredEnd)]);
+    if (results[0] !== 0) throw new Error("Xcode could not export Core Animation frame events.");
+    return { status: "finished", end: coveredEnd, events: results[1] };
+  } finally {
+    child.kill("SIGKILL");
+    await exit.catch(() => {
+    });
+  }
+}
+async function startIosHitchTrace(deviceId3, duration6, signal) {
+  signal.throwIfAborted();
+  const tempRoot = tmpdir5();
+  const prefix3 = join44(tempRoot, "mobile-dev-hitches-");
+  const directory2 = await mkdtemp4(prefix3);
+  const trace2 = join44(directory2, "frames.trace");
+  const id3 = randomUUID12();
+  const notification = `dev.mobile.hitches.${id3}`;
+  const listener = new AbortController();
+  const timeout = AbortSignal.timeout(45e3);
+  const readySignal = AbortSignal.any([listener.signal, timeout, signal]);
+  const ready = execute12("/usr/bin/notifyutil", ["-1", notification], { signal: readySignal });
+  const child = spawn12("/usr/bin/xcrun", [
+    "xctrace",
+    "record",
+    "--instrument",
+    "Frame Lifetimes",
+    "--all-processes",
+    "--device",
+    deviceId3,
+    "--time-limit",
+    `${duration6 + 90}s`,
+    "--notify-tracing-started",
+    notification,
+    "--no-prompt",
+    "--output",
+    trace2
+  ], { stdio: "ignore" });
+  const exit = completed(child);
+  const interrupt = () => {
+    child.kill("SIGINT");
+  };
+  signal.addEventListener("abort", interrupt, { once: true });
+  async function close2() {
+    signal.removeEventListener("abort", interrupt);
+    listener.abort();
+    interrupt();
+    const kill = setTimeout(() => child.kill("SIGKILL"), 1e4);
+    try {
+      await exit.catch(() => {
+      });
+    } finally {
+      clearTimeout(kill);
+    }
+    await rm8(directory2, { recursive: true, force: true });
+  }
+  const started = performance.now();
+  try {
+    const earlyExit = exit.then(() => {
+      throw new Error("Xcode stopped before frame recording started.");
+    });
+    await Promise.race([ready, earlyExit]);
+    signal.throwIfAborted();
+    recordIosHitchOperation("connect", "success", performance.now() - started);
+  } catch (error113) {
+    await close2();
+    recordIosHitchOperation("connect", "failed", performance.now() - started);
+    throw error113;
+  }
+  async function finish2(pid3, originMs, end) {
+    const started2 = performance.now();
+    const watchdog = setTimeout(() => child.kill("SIGKILL"), 9e4);
+    try {
+      if (child.kill("SIGINT") === false) throw new Error("Instruments stopped during the recording.");
+      const code = await exit;
+      if (code !== 0) throw new Error("Instruments could not save the recording.");
+      const result4 = await exportIosHitches(trace2, pid3, originMs, end, signal);
+      recordIosHitchOperation("finish", "success", performance.now() - started2);
+      return result4;
+    } catch (error113) {
+      recordIosHitchOperation("finish", "failed", performance.now() - started2);
+      throw error113;
+    } finally {
+      clearTimeout(watchdog);
+    }
+  }
+  return { finish: finish2, close: close2 };
+}
+
+// packages/core/src/performance-recordings.ts
+init_telemetry2();
+var RECORDINGS_DIRECTORY = join45(homedir9(), "Library/Application Support/mobile-dev/recordings");
 var RecordingStore = class {
   directory;
   constructor(directory2 = RECORDINGS_DIRECTORY) {
@@ -154872,19 +157143,19 @@ var RecordingStore = class {
   async save(recording2) {
     const validated = recordingSchema.parse(recording2);
     await mkdir13(this.directory, { recursive: true, mode: 448 });
-    const filename = join44(this.directory, `${validated.id}.json`);
+    const filename = join45(this.directory, `${validated.id}.json`);
     const temporary = `${filename}.tmp`;
     const text9 = JSON.stringify(validated);
     try {
       await writeFile15(temporary, text9, { mode: 384 });
       await rename9(temporary, filename);
     } finally {
-      await rm8(temporary, { force: true });
+      await rm9(temporary, { force: true });
     }
   }
   async read(id3) {
     const validated = recordingIdSchema.parse(id3);
-    const filename = join44(this.directory, `${validated}.json`);
+    const filename = join45(this.directory, `${validated}.json`);
     const text9 = await readFile22(filename, "utf8");
     const parsed = JSON.parse(text9);
     const recording2 = recordingSchema.parse(parsed);
@@ -154905,7 +157176,7 @@ var RecordingStore = class {
       const id3 = entry2.name.slice(0, -5);
       const parsed = recordingIdSchema.safeParse(id3);
       if (parsed.success === false) continue;
-      const filename = join44(this.directory, entry2.name);
+      const filename = join45(this.directory, entry2.name);
       const metadata4 = await stat12(filename);
       candidates.push({ id: id3, modified: metadata4.mtimeMs });
     }
@@ -154924,17 +157195,19 @@ var PerformanceRecordings = class {
   disposed = false;
   cpu;
   fps;
+  startHitches;
   store;
-  constructor(cpu, fps, store2 = new RecordingStore()) {
+  constructor(cpu, fps, store2 = new RecordingStore(), startHitches = startIosHitchTrace) {
     this.cpu = cpu;
     this.fps = fps;
     this.store = store2;
+    this.startHitches = startHitches;
   }
   start(target3, title2, durationSeconds, deviceName) {
     if (this.disposed) throw new Error("The plugin server has closed.");
     const recording2 = {
       schemaVersion: 1,
-      id: randomUUID12(),
+      id: randomUUID13(),
       title: title2,
       target: target3,
       deviceName,
@@ -154946,8 +157219,11 @@ var PerformanceRecordings = class {
       fps: { status: "connecting", samples: [] }
     };
     recordingSchema.parse(recording2);
-    const sessionId5 = this.cpu.open(target3);
-    const active = { recording: recording2, stop: false, interrupted: false, job: Promise.resolve() };
+    const hitchAbort = new AbortController();
+    const active = { recording: recording2, stop: false, interrupted: false, hitchAbort, job: Promise.resolve() };
+    const sessionId5 = this.cpu.open(target3, (pid3) => {
+      active.pid = pid3;
+    });
     this.active.set(recording2.id, active);
     active.job = this.collect(active, sessionId5);
     return { ...recording2, samples: [], fps: { ...recording2.fps, samples: [] } };
@@ -155004,6 +157280,18 @@ var PerformanceRecordings = class {
     const recording2 = active.recording;
     const connectingAt = performance.now();
     const fps = { cursor: 0, pending: [] };
+    const physical3 = recording2.target.platform === "ios" && recording2.target.kind === "physical";
+    const signal = active.hitchAbort.signal;
+    let trace2;
+    let hitchAttempted = false;
+    let traceReadyAt = 0;
+    function hitchError(error113, stage2) {
+      const message3 = stage2 === "start" ? "Xcode could not start Frame Lifetimes on this iPhone." : "Xcode could not export complete Core Animation hitch timings.";
+      recording2.iosHitches = { status: "unavailable", error: message3 };
+      const reportAs = new Error(message3);
+      captureServerError(error113, "recording.ios_hitches", { signal, reportAs });
+    }
+    let hitchResult;
     let origin2;
     let latestCpu;
     let cpuOrigin;
@@ -155024,8 +157312,10 @@ var PerformanceRecordings = class {
       while (active.stop === false) {
         const now = performance.now();
         if (origin2 !== void 0 && now / 1e3 - origin2 >= recording2.durationSeconds) break;
-        const timedOut = origin2 === void 0 && now - connectingAt > 6e4;
-        if (timedOut && latestCpu === void 0) throw new Error("The CPU collector did not become ready within 60 seconds.");
+        const lastConnection = Math.max(connectingAt, traceReadyAt * 1e3);
+        const timedOut = origin2 === void 0 && now - lastConnection > 6e4;
+        const cpuReady = latestCpu !== void 0 && cpuOrigin !== void 0 && cpuOrigin + latestCpu.time >= traceReadyAt;
+        if (timedOut && cpuReady === false) throw new Error("The CPU collector did not become ready within 60 seconds.");
         if (timedOut && recording2.fps.status === "connecting") {
           recording2.fps.status = "unavailable";
           recording2.fps.error = "The Display FPS collector did not become ready within 60 seconds.";
@@ -155047,6 +157337,17 @@ var PerformanceRecordings = class {
         }
         await this.readFps(recording2, fps, origin2, recording2.durationSeconds);
         if (origin2 === void 0 && latestCpu !== void 0 && cpuOrigin !== void 0 && recording2.fps.status !== "connecting") {
+          if (physical3 && hitchAttempted === false) {
+            hitchAttempted = true;
+            try {
+              trace2 = await this.startHitches(recording2.target.deviceId, recording2.durationSeconds, signal);
+              traceReadyAt = performance.now() / 1e3;
+            } catch (error113) {
+              hitchError(error113, "start");
+            }
+            continue;
+          }
+          if (cpuOrigin + latestCpu.time < traceReadyAt) continue;
           origin2 = cpuOrigin + latestCpu.time;
           recording2.startedAt = (/* @__PURE__ */ new Date()).toISOString();
           recording2.status = "recording";
@@ -155068,6 +157369,13 @@ var PerformanceRecordings = class {
       const elapsed = performance.now() / 1e3 - origin2;
       const end = Math.min(recording2.durationSeconds, elapsed);
       recording2.status = "finishing";
+      if (trace2 && active.pid !== void 0) {
+        const originMs = performance.timeOrigin + origin2 * 1e3;
+        const exporting = trace2.finish(active.pid, originMs, end);
+        hitchResult = exporting.then((result4) => {
+          recording2.iosHitches = result4;
+        }, (error113) => hitchError(error113, "export"));
+      }
       await this.cpu.closeSession(sessionId5);
       const drainMs = recording2.target.platform === "android" ? 5e3 : 1500;
       const drainUntil = performance.now() + drainMs;
@@ -155076,15 +157384,29 @@ var PerformanceRecordings = class {
         const waitMs = Math.max(0, Math.min(1e3, remaining));
         await this.readFps(recording2, fps, origin2, end, waitMs);
       }
+      if (fps.sessionId !== void 0) {
+        const id3 = fps.sessionId;
+        fps.sessionId = void 0;
+        await this.fps.closeSession(id3);
+      }
+      await hitchResult;
       if (active.interrupted) throw new Error("Recording interrupted because the plugin server closed.");
       if (recording2.fps.status === "recording") recording2.fps.status = "finished";
-      recording2.status = "finished";
     } catch (error113) {
       recording2.status = "failed";
       recording2.error = errorMessage(error113);
       captureServerError(error113, "recording.collect");
     } finally {
+      active.hitchAbort.abort();
+      await hitchResult;
       const closing = [this.cpu.closeSession(sessionId5)];
+      if (trace2) {
+        const cleanup = trace2.close().catch((error113) => {
+          const reportAs = new Error("Could not clean up the temporary Instruments trace.");
+          captureServerError(error113, "recording.ios_hitches.close", { reportAs });
+        });
+        closing.push(cleanup);
+      }
       if (fps.sessionId !== void 0) {
         const closeFps = this.fps.closeSession(fps.sessionId);
         closing.push(closeFps);
@@ -155097,11 +157419,19 @@ var PerformanceRecordings = class {
         captureServerError(result4.reason, "recording.close");
       }
       if (recording2.fps.status === "connecting" || recording2.fps.status === "recording") recording2.fps.status = "unavailable";
-      recording2.completedAt = (/* @__PURE__ */ new Date()).toISOString();
+      const completionTime = /* @__PURE__ */ new Date();
+      const completedAt = completionTime.toISOString();
+      const completed2 = {
+        ...recording2,
+        completedAt,
+        status: recording2.status === "failed" ? "failed" : "finished"
+      };
       try {
-        await this.store.save(recording2);
+        await this.store.save(completed2);
+        active.recording = completed2;
         this.active.delete(recording2.id);
       } catch (error113) {
+        recording2.completedAt = completedAt;
         recording2.status = "failed";
         recording2.error = "The recording could not be saved to disk.";
         captureServerError(error113, "recording.save");
@@ -155122,14 +157452,19 @@ var PerformanceRecordings = class {
     const active = this.active.get(id3);
     if (active) {
       active.stop = true;
+      if (active.recording.status === "connecting") active.hitchAbort.abort();
       await active.job;
     }
     return this.read(id3);
   }
   async list(limit) {
+    const pending = new Map(this.active);
     const saved = await this.store.list(limit);
-    const pending = Array.from(this.active.values(), (active) => active.recording);
-    const all = [...pending, ...saved];
+    const activeRecordings = pending.values();
+    const all = Array.from(activeRecordings, (active) => active.recording);
+    for (const recording2 of saved) {
+      if (pending.has(recording2.id) === false) all.push(recording2);
+    }
     all.sort((left, right) => right.startedAt.localeCompare(left.startedAt));
     return all.slice(0, limit);
   }
@@ -155139,6 +157474,7 @@ var PerformanceRecordings = class {
     for (const active of pending) {
       active.interrupted = true;
       active.stop = true;
+      active.hitchAbort.abort();
     }
     const jobs = pending.map((active) => active.job);
     await Promise.all(jobs);
@@ -155249,6 +157585,7 @@ var summarySchema = external_exports.object({
   peakFps: external_exports.number().nullable(),
   fpsSampleCount: external_exports.number(),
   frameStats: nullableDisplayFrameStatsSchema,
+  hitchStats: hitchStatsSchema.nullable(),
   sampleCount: external_exports.number(),
   threads: external_exports.array(external_exports.object({ id: external_exports.string(), name: external_exports.string(), averageCpuPercent: external_exports.number(), peakCpuPercent: external_exports.number() }))
 });
@@ -155272,6 +157609,7 @@ function describeMeasurements(summary) {
   }
   if (summary.averageFps !== null) parts.push(`Display FPS average ${summary.averageFps.toFixed(1)}${summary.minimumFps === null ? "" : `, minimum ${summary.minimumFps.toFixed(1)}`}`);
   if (summary.frameStats?.jankRatePercent != null) parts.push(`jank rate ${percent(summary.frameStats.jankRatePercent)}`);
+  if (summary.hitchStats) parts.push(`${summary.hitchStats.count} visible hitches, ${summary.hitchStats.lateMs.toFixed(2)} ms late`);
   const threads = summary.threads.slice(0, 3).map((thread) => `${thread.name || `thread ${thread.id}`} ${percent(thread.averageCpuPercent)}`);
   if (threads.length > 0) parts.push(`busiest threads ${threads.join(", ")}`);
   return parts.length > 0 ? parts.join("; ") : "no samples yet";
@@ -155315,7 +157653,7 @@ function safe6(handler) {
 function registerRecordingTools(server, recordings, validateDevice) {
   K3(server, "mobile_record_performance", {
     title: "Record CPU, memory, and FPS for a timed run",
-    description: "Always record native process/thread CPU, memory, and device-wide Display FPS together, even when the user asks about only one metric. Returns immediately with recording.id and status connecting; wait for status recording before asking the user to perform the interaction. Recording stops automatically after durationSeconds of sampling, detaches both collectors, and saves original samples locally after a brief finishing phase for delayed FPS readings. Uses the same target and device/development prerequisites as mobile_cpu_session; stop any existing CPU monitor for this app and FPS monitor for this device first. FPS requires Android 12+ or physical iOS 17.4+; unsupported or failed FPS is omitted from the chart while CPU and memory still save. Device-wide FPS cannot attribute a slowdown to one app. Use mobile_read_performance_recording to check readiness and completion, then mobile_render_performance_recording to show the interactive chart in chat. 100% CPU is one core. Android memory is RSS; iOS memory is physical footprint.",
+    description: "Always record native process/thread CPU, memory, and device-wide Display FPS together, even when the user asks about only one metric. Returns immediately with recording.id and status connecting; wait for status recording before asking the user to perform the interaction. Recording stops automatically after durationSeconds of sampling, detaches the collectors, and saves original samples locally after delayed FPS readback and trace export. On a physical iPhone, Xcode Frame Lifetimes also captures visible hitches involving the selected app. Uses the same target and device/development prerequisites as mobile_cpu_session; stop any existing CPU monitor for this app and FPS monitor for this device first. FPS requires Android 12+ or physical iOS 17.4+; unsupported or failed FPS is omitted from the chart while CPU and memory still save. Device-wide FPS cannot attribute a slowdown to one app. Use mobile_read_performance_recording to check readiness and completion, then mobile_render_performance_recording to show the interactive chart in chat. 100% CPU is one core. Android memory is RSS; iOS memory is physical footprint.",
     inputSchema: { target: cpuTargetSchema, title: external_exports.string().min(1).max(160), durationSeconds: external_exports.number().int().min(1).max(300).default(30) },
     outputSchema,
     annotations: { ...read5, readOnlyHint: false },
@@ -155335,7 +157673,7 @@ function registerRecordingTools(server, recordings, validateDevice) {
   });
   K3(server, "mobile_read_performance_recording", {
     title: "Read a saved performance recording or range",
-    description: "Read original CPU, memory, FPS and thread samples, status, and summary for a recording ID. Android summary.frameStats includes jankRatePercent over classified presented display frames, classification coverage, separate dropped-frame count/rate, and frame-interval P50/P95/P99 in ms. Unknown jank classifications are excluded from the jank denominator; null means unavailable. Stats cover the entire requested range, not a frame page. Optional range uses recording-relative seconds; CPU/FPS/thread averages weight interval overlap. Android intervals retain exact frameTimeline data; mobile_read_performance_frames provides bounded frame pages. Show mobile_render_performance_recording when reporting jank so the user sees the chart. Device-wide frames cannot attribute a slowdown to one app. Works after plugin restarts.",
+    description: "Read original CPU, memory, FPS and thread samples, status, and summary for a recording ID. Physical iOS summary.hitchStats includes visible hitch count and milliseconds lost in the range. recording.iosHitches contains app-associated presentation times, lateMs and refreshIntervalMs. Android summary.frameStats includes jankRatePercent over classified presented display frames, classification coverage, separate dropped-frame count/rate, and frame-interval P50/P95/P99 in ms. Unknown jank classifications are excluded from the jank denominator; null means unavailable. Stats cover the entire requested range, not a frame page. Optional range uses recording-relative seconds; CPU/FPS/thread averages weight interval overlap. Android intervals retain exact frameTimeline data; mobile_read_performance_frames provides bounded frame pages. Show mobile_render_performance_recording when reporting jank so the user sees the chart. Device-wide frames cannot attribute a slowdown to one app. Works after plugin restarts.",
     inputSchema: inputSchema2,
     outputSchema,
     annotations: read5,
@@ -155375,11 +157713,29 @@ function registerRecordingTools(server, recordings, validateDevice) {
       summary: busiest(summary)
     };
     const result4 = { content: [{ type: "text", text: describeRecording(recording2, summary, range) }], structuredContent };
-    return withinResultBytes(result4, { preview: recordingPreview(recording2) });
+    const preview = recordingPreview(recording2);
+    const response3 = withinResultBytes(result4, { preview });
+    if (response3 === result4) return response3;
+    if (recording2.iosHitches) {
+      const withHitches = { ...preview, iosHitches: recording2.iosHitches };
+      return withinResultBytes(response3, { preview: withHitches });
+    }
+    if (recording2.target.platform === "android") {
+      let frameCount = 0;
+      let captured = false;
+      for (const sample of recording2.fps.samples) {
+        if (sample.frameTimeline === void 0) continue;
+        captured = true;
+        frameCount += sample.frameTimeline.frames.length;
+        if (frameCount * 60 > RESULT_BYTES) return response3;
+      }
+      if (captured) return withinResultBytes(response3, { preview: { ...preview, fps: recording2.fps } });
+    }
+    return response3;
   });
   K3(server, "mobile_render_performance_recording", {
     title: "Show an interactive performance chart in chat",
-    description: "Show a saved CPU/memory/FPS recording as an inline interactive chart with shared drag selection, thread breakdown and Ask. Android frame data adds jank rate, classification coverage, dropped frames and frame-interval P50/P95/P99, updating with the selected range. Call this when reporting scrolling FPS/jank or comparing implementations so the user sees the chart alongside the analysis. The full timeline stays visible; automatic change highlights do not select or limit a range. Omit range unless the user requested a selection. Pass recording.id from mobile_record_performance or mobile_list_performance_recordings. Active runs update until finished. Data tools return measurements without rendering a chart. Returns the recording ID and summary numbers; the chart reads the samples itself, so use mobile_read_performance_recording for sample-level detail.",
+    description: "Show a saved CPU/memory/FPS recording as an inline interactive chart with shared drag selection, thread breakdown and Ask. Completed physical iOS recordings overlay hitch markers on Display FPS, with per-sample hitch counts and range totals. Android FrameTimeline marks late, dropped and janky device-wide display frames. Range statistics include jank rate, classification coverage, dropped frames and frame-interval P50/P95/P99. Call this when reporting scrolling FPS/jank or comparing implementations so the user sees the chart alongside the analysis. The full timeline stays visible; automatic change highlights do not select or limit a range. Omit range unless the user requested a selection. Pass recording.id from mobile_record_performance or mobile_list_performance_recordings. Active runs update until finished. Data tools return measurements without rendering a chart. Returns the recording ID and summary numbers; the chart reads the samples itself, so use mobile_read_performance_recording for sample-level detail.",
     inputSchema: inputSchema2,
     outputSchema: referenceOutputSchema,
     annotations: read5,
@@ -155444,8 +157800,9 @@ function registerRecordingTools(server, recordings, validateDevice) {
     _meta: { ui: { visibility } }
   }, safe6(async ({ limit }) => {
     const recordingsList = await recordings.list(limit);
-    const items = recordingsList.map(({ samples, fps, ...metadata4 }) => ({
+    const items = recordingsList.map(({ samples, fps, iosHitches, ...metadata4 }) => ({
       ...metadata4,
+      ...iosHitches && { iosHitches: { status: iosHitches.status } },
       sampleCount: samples.length,
       fps: { status: fps.status, error: fps.error, sampleCount: fps.samples.length }
     }));
@@ -155621,12 +157978,12 @@ var traceSiftRestoreSchema = external_exports.discriminatedUnion("restored", [
 var traceSiftHandoffSchema = external_exports.object({ apiVersion: external_exports.literal(1), handoff: external_exports.string().min(1).max(1e6) });
 
 // packages/core/src/tracesift-client.ts
-import { spawn as spawn12 } from "node:child_process";
-import { createHash as createHash17, randomUUID as randomUUID13 } from "node:crypto";
+import { spawn as spawn13 } from "node:child_process";
+import { createHash as createHash17, randomUUID as randomUUID14 } from "node:crypto";
 import { openAsBlob } from "node:fs";
-import { mkdir as mkdir14, readFile as readFileAsync2, realpath as realpath3, rename as rename10, rm as rm9, stat as stat13, writeFile as writeFile16 } from "node:fs/promises";
+import { mkdir as mkdir14, readFile as readFileAsync2, realpath as realpath3, rename as rename10, rm as rm10, stat as stat13, writeFile as writeFile16 } from "node:fs/promises";
 import { homedir as homedir10 } from "node:os";
-import { basename as basename10, join as join45 } from "node:path";
+import { basename as basename10, join as join46 } from "node:path";
 import { createServer as createServer4 } from "node:net";
 import { setTimeout as delay6 } from "node:timers/promises";
 init_error_reporting();
@@ -155711,10 +158068,10 @@ var TraceSiftClient = class {
   command;
   constructor(command3 = process.env.TRACE_SIFT_COMMAND ?? "tracesift", home3) {
     this.command = command3;
-    this.home = home3 ?? process.env.TRACE_SIFT_HOME ?? join45(homedir10(), ".tracesift");
+    this.home = home3 ?? process.env.TRACE_SIFT_HOME ?? join46(homedir10(), ".tracesift");
   }
   async existing(signal) {
-    const descriptor = await parseDescriptor(join45(this.home, "service.json"));
+    const descriptor = await parseDescriptor(join46(this.home, "service.json"));
     return descriptor && await health(descriptor, signal) ? descriptor : void 0;
   }
   async start(signal) {
@@ -155724,7 +158081,7 @@ var TraceSiftClient = class {
     const port2 = await freePort();
     let child;
     try {
-      child = spawn12(this.command, ["start", "--port", String(port2), "--no-open"], {
+      child = spawn13(this.command, ["start", "--port", String(port2), "--no-open"], {
         stdio: ["ignore", "ignore", "pipe"],
         env: { ...process.env, TRACE_SIFT_HOME: this.home }
       });
@@ -155779,7 +158136,7 @@ var TraceSiftClient = class {
     return new Promise((resolve13, reject) => {
       let child;
       try {
-        child = spawn12(command3, args, { stdio: ["ignore", "pipe", "pipe"], env: env2 });
+        child = spawn13(command3, args, { stdio: ["ignore", "pipe", "pipe"], env: env2 });
       } catch {
         reject(new TraceSiftError(`${label} could not start because ${command3} is not available to Mobile Dev. Run the command in a terminal instead.`, "setup", "missing_cli"));
         return;
@@ -155836,47 +158193,47 @@ var TraceSiftClient = class {
     );
   }
   analysisPath(analysisId) {
-    return join45(this.home, "integrations", "mobile-dev", `${createHash17("sha256").update(analysisId).digest("hex")}.json`);
+    return join46(this.home, "integrations", "mobile-dev", `${createHash17("sha256").update(analysisId).digest("hex")}.json`);
   }
   viewPath(viewId) {
     const key2 = createHash17("sha256").update(JSON.stringify(viewId)).digest("hex");
-    return join45(this.home, "integrations", "mobile-dev", `view-${key2}.json`);
+    return join46(this.home, "integrations", "mobile-dev", `view-${key2}.json`);
   }
   inputPath(path, profileType) {
     const key2 = createHash17("sha256").update(JSON.stringify({ path, profileType })).digest("hex");
-    return join45(this.home, "integrations", "mobile-dev", `input-${key2}.json`);
+    return join46(this.home, "integrations", "mobile-dev", `input-${key2}.json`);
   }
   async writePrivateJson(file4, value) {
-    const directory2 = join45(this.home, "integrations", "mobile-dev");
-    const temporary = join45(directory2, `.analysis-${randomUUID13()}`);
+    const directory2 = join46(this.home, "integrations", "mobile-dev");
+    const temporary = join46(directory2, `.analysis-${randomUUID14()}`);
     try {
       await writeFile16(temporary, `${JSON.stringify(value)}
 `, { flag: "wx", mode: 384 });
       await rename10(temporary, file4);
     } finally {
-      await rm9(temporary, { force: true });
+      await rm10(temporary, { force: true });
     }
   }
   async persistAnalysis(analysis) {
-    const directory2 = join45(this.home, "integrations", "mobile-dev");
+    const directory2 = join46(this.home, "integrations", "mobile-dev");
     await mkdir14(directory2, { recursive: true, mode: 448 });
     await this.writePrivateJson(this.analysisPath(analysis.analysisId), analysis);
   }
   async remember(viewId, analysisId) {
     const analysis = await stat13(this.analysisPath(analysisId)).catch(() => void 0);
     if (!analysis?.isFile()) throw new TraceSiftError("This TraceSift analysis is no longer available. Run it again.", "request");
-    const directory2 = join45(this.home, "integrations", "mobile-dev");
+    const directory2 = join46(this.home, "integrations", "mobile-dev");
     await mkdir14(directory2, { recursive: true, mode: 448 });
     await this.writePrivateJson(this.viewPath(viewId), { apiVersion: 1, analysisId });
   }
   async rememberInput(path, profileType, analysisId) {
-    const directory2 = join45(this.home, "integrations", "mobile-dev");
+    const directory2 = join46(this.home, "integrations", "mobile-dev");
     await mkdir14(directory2, { recursive: true, mode: 448 });
     await this.writePrivateJson(this.inputPath(path, profileType), { apiVersion: 1, analysisId });
   }
   // The investigation's source folder: the plugin's choice, not TraceSift's, stored beside the analyses to inherit their 0700 directory.
   projectPath() {
-    return join45(this.home, "integrations", "mobile-dev", "project.json");
+    return join46(this.home, "integrations", "mobile-dev", "project.json");
   }
   async readProject() {
     let stored;
@@ -155895,7 +158252,7 @@ var TraceSiftClient = class {
     const directory2 = await stat13(path).catch(() => void 0);
     if (!directory2?.isDirectory()) throw new TraceSiftError("That project folder does not exist.", "request");
     const resolved = await realpath3(path);
-    await mkdir14(join45(this.home, "integrations", "mobile-dev"), { recursive: true, mode: 448 });
+    await mkdir14(join46(this.home, "integrations", "mobile-dev"), { recursive: true, mode: 448 });
     await this.writePrivateJson(this.projectPath(), { apiVersion: 1, path: resolved });
     return resolved;
   }
@@ -156017,7 +158374,7 @@ var TraceSiftClient = class {
     await new Promise((resolve13, reject) => {
       let diagnostics5 = "";
       let settled = false;
-      const child = spawn12(this.command, args, {
+      const child = spawn13(this.command, args, {
         stdio: ["ignore", "ignore", "pipe"],
         env: { ...process.env, TRACE_SIFT_HOME: this.home }
       });
@@ -156089,7 +158446,7 @@ var TraceSiftClient = class {
 init_zod();
 init_protocol();
 import { gzip as gzipCallback } from "node:zlib";
-import { promisify as promisify14 } from "node:util";
+import { promisify as promisify15 } from "node:util";
 
 // packages/shared/src/tracesift-explore.ts
 init_zod();
@@ -156119,7 +158476,7 @@ function traceSiftPayloadTooDeep(value, maxDepth2 = TRACE_SIFT_PAYLOAD_MAX_DEPTH
 
 // packages/core/src/tracesift-tools.ts
 init_telemetry2();
-var gzip = promisify14(gzipCallback);
+var gzip = promisify15(gzipCallback);
 var read6 = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 var persist2 = { readOnlyHint: false, destructiveHint: true, openWorldHint: false };
 var localService = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
@@ -156440,7 +158797,7 @@ function registerTraceSiftTools(server, client2) {
 // packages/core/src/storage-metrics.ts
 init_esm5();
 import { readdir as readdir17, stat as stat14 } from "node:fs/promises";
-import { join as join46 } from "node:path";
+import { join as join47 } from "node:path";
 async function directoryBytes(directory2) {
   let entries;
   try {
@@ -156451,7 +158808,7 @@ async function directoryBytes(directory2) {
   }
   let bytes = 0;
   for (const entry2 of entries) {
-    const path = join46(directory2, entry2.name);
+    const path = join47(directory2, entry2.name);
     if (entry2.isDirectory()) bytes += await directoryBytes(path);
     else if (entry2.isFile()) {
       try {
@@ -156501,17 +158858,17 @@ init_protocol();
 
 // packages/core/src/fps/source.ts
 init_zod();
-import { execFile as execFile17 } from "node:child_process";
-import { promisify as promisify16 } from "node:util";
+import { execFile as execFile18 } from "node:child_process";
+import { promisify as promisify17 } from "node:util";
 import { access as access9 } from "node:fs/promises";
 import { fileURLToPath as fileURLToPath14 } from "node:url";
 
 // packages/core/src/fps/process.ts
 init_native_telemetry();
-import { spawn as spawn13 } from "node:child_process";
+import { spawn as spawn14 } from "node:child_process";
 async function collectorProcess(command3, args, options) {
   options.signal.throwIfAborted();
-  const child = spawn13(command3, args, { stdio: "pipe", shell: false });
+  const child = spawn14(command3, args, { stdio: "pipe", shell: false });
   let diagnostics5 = "";
   let failure5;
   let stopping;
@@ -156621,12 +158978,12 @@ async function collectorProcess(command3, args, options) {
 // packages/core/src/fps/android-helper.ts
 init_zod();
 import { createHash as createHash18, randomBytes as randomBytes7 } from "node:crypto";
-import { execFile as execFile16 } from "node:child_process";
-import { promisify as promisify15 } from "node:util";
-import { mkdtemp as mkdtemp4, readFile as readFile23, rm as rm10, writeFile as writeFile17 } from "node:fs/promises";
-import { tmpdir as tmpdir5 } from "node:os";
-import { join as join47 } from "node:path";
-var execute12 = promisify15(execFile16);
+import { execFile as execFile17 } from "node:child_process";
+import { promisify as promisify16 } from "node:util";
+import { mkdtemp as mkdtemp5, readFile as readFile23, rm as rm11, writeFile as writeFile17 } from "node:fs/promises";
+import { tmpdir as tmpdir6 } from "node:os";
+import { join as join48 } from "node:path";
+var execute13 = promisify16(execFile17);
 var abiSchema2 = external_exports.enum(["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]);
 var checksumString = external_exports.string();
 var checksum = checksumString.regex(/^[a-f0-9]{64}$/);
@@ -156636,7 +158993,7 @@ var releaseSchema2 = external_exports.object({ binaries });
 async function deployFpsHelper(adb, deviceId3, signal, root) {
   const settings = { signal, timeout: 1e4, maxBuffer: 1024 * 1024 };
   const prefix3 = ["-s", deviceId3];
-  const raw = await execute12(adb, [...prefix3, "shell", "getprop", "ro.product.cpu.abi"], settings);
+  const raw = await execute13(adb, [...prefix3, "shell", "getprop", "ro.product.cpu.abi"], settings);
   const name2 = raw.stdout.trim();
   const abi = abiSchema2.parse(name2);
   const manifest = new URL("release.json", root);
@@ -156650,23 +159007,23 @@ async function deployFpsHelper(adb, deviceId3, signal, root) {
   const sha256 = hash5.digest("hex");
   if (sha256 !== release2.binaries[abi].sha256) throw new Error("The bundled Android FPS helper failed its integrity check.");
   const remote = `/data/local/tmp/mobile-dev-fps-${sha256}`;
-  const temporaryRoot = tmpdir5();
-  const temporaryPrefix = join47(temporaryRoot, "mobile-dev-fps-");
-  const directory2 = await mkdtemp4(temporaryPrefix);
-  const local = join47(directory2, "mobile-dev-fps");
+  const temporaryRoot = tmpdir6();
+  const temporaryPrefix = join48(temporaryRoot, "mobile-dev-fps-");
+  const directory2 = await mkdtemp5(temporaryPrefix);
+  const local = join48(directory2, "mobile-dev-fps");
   const token = randomBytes7(8);
   const id3 = token.toString("hex");
   const temporary = `${remote}-${id3}`;
   try {
     await writeFile17(local, bytes);
-    await execute12(adb, [...prefix3, "push", local, temporary], settings);
-    await execute12(adb, [...prefix3, "shell", `chmod 700 ${temporary} && mv ${temporary} ${remote}`], settings);
+    await execute13(adb, [...prefix3, "push", local, temporary], settings);
+    await execute13(adb, [...prefix3, "shell", `chmod 700 ${temporary} && mv ${temporary} ${remote}`], settings);
   } catch (error113) {
-    await execute12(adb, [...prefix3, "shell", "rm", "-f", temporary], { timeout: 3e3 }).catch(() => {
+    await execute13(adb, [...prefix3, "shell", "rm", "-f", temporary], { timeout: 3e3 }).catch(() => {
     });
     throw error113;
   } finally {
-    await rm10(directory2, { recursive: true, force: true });
+    await rm11(directory2, { recursive: true, force: true });
   }
   return remote;
 }
@@ -156936,7 +159293,7 @@ var WindowsAdbTrace = class {
 
 // packages/core/src/fps/source.ts
 init_native_telemetry();
-var execute13 = promisify16(execFile17);
+var execute14 = promisify17(execFile18);
 var fpsNumber = external_exports.number();
 var finiteFps = fpsNumber.finite();
 var nonnegativeFps = finiteFps.min(0);
@@ -156974,11 +159331,11 @@ async function startAndroid(options, root) {
   const adb = await adbPath();
   const prefix3 = ["-s", options.target.deviceId];
   const settings = { timeout: 5e3, maxBuffer: 1024 * 1024, signal: options.signal };
-  const version6 = await execute13(adb, [...prefix3, "shell", "getprop", "ro.build.version.sdk"], settings);
+  const version6 = await execute14(adb, [...prefix3, "shell", "getprop", "ro.build.version.sdk"], settings);
   const versionText = version6.stdout.trim();
   const sdk = Number(versionText);
   if (Number.isInteger(sdk) === false || sdk < 31) throw new Error("Display FPS requires Android 12 or newer (FrameTimeline).");
-  const sources = await execute13(adb, [...prefix3, "shell", "perfetto", "--query"], settings);
+  const sources = await execute14(adb, [...prefix3, "shell", "perfetto", "--query"], settings);
   if (sources.stdout.includes("android.surfaceflinger.frametimeline") === false) {
     throw new Error("This Android device does not expose the Perfetto FrameTimeline source.");
   }
@@ -157243,11 +159600,11 @@ function registerEarlierReleases(server, name2, page, read12) {
 // packages/core/src/simctl.ts
 init_zod();
 init_protocol();
-import { execFile as execFile18 } from "node:child_process";
-import { promisify as promisify17 } from "node:util";
-var execute14 = promisify17(execFile18);
+import { execFile as execFile19 } from "node:child_process";
+import { promisify as promisify18 } from "node:util";
+var execute15 = promisify18(execFile19);
 async function runSimctl(args) {
-  const { stdout } = await execute14("xcrun", args, { timeout: 15e3, maxBuffer: 8 * 1024 * 1024 });
+  const { stdout } = await execute15("xcrun", args, { timeout: 15e3, maxBuffer: 8 * 1024 * 1024 });
   return stdout;
 }
 function unavailableLocalIosStatus() {
@@ -157303,16 +159660,16 @@ var Simctl = class {
 };
 
 // packages/core/src/app-intelligence/service.ts
-import { randomUUID as randomUUID14 } from "node:crypto";
+import { randomUUID as randomUUID15 } from "node:crypto";
 import { Worker as Worker2 } from "node:worker_threads";
 
 // packages/core/src/app-intelligence/storage.ts
 import { createHash as createHash19 } from "node:crypto";
-import { mkdir as mkdir15, readFile as readFile24, realpath as realpath4, rename as rename11, rm as rm11, stat as stat15, writeFile as writeFile18 } from "node:fs/promises";
+import { mkdir as mkdir15, readFile as readFile24, realpath as realpath4, rename as rename11, rm as rm12, stat as stat15, writeFile as writeFile18 } from "node:fs/promises";
 import { homedir as homedir11 } from "node:os";
-import { join as join48 } from "node:path";
-var APP_INTEL_DIRECTORY = join48(homedir11(), "Library/Application Support/mobile-dev/app-intelligence");
-var preferencePath = join48(APP_INTEL_DIRECTORY, "preferences.json");
+import { join as join49 } from "node:path";
+var APP_INTEL_DIRECTORY = join49(homedir11(), "Library/Application Support/mobile-dev/app-intelligence");
+var preferencePath = join49(APP_INTEL_DIRECTORY, "preferences.json");
 var projectKey = (path) => createHash19("sha256").update(path).digest("hex");
 async function validateProjectPath(path) {
   if (!path || path.length > 4096) throw new Error("Choose a valid project folder.");
@@ -157349,7 +159706,7 @@ async function rememberProject(projectPath4) {
   const next = [projectPath4, ...recents.filter((entry2) => entry2 !== projectPath4)].slice(0, RECENT_LIMIT);
   await atomicWrite2(preferencePath, JSON.stringify({ projectPath: projectPath4, recents: next }));
 }
-var snapshotPath = (projectPath4) => join48(APP_INTEL_DIRECTORY, `${projectKey(projectPath4)}.json`);
+var snapshotPath = (projectPath4) => join49(APP_INTEL_DIRECTORY, `${projectKey(projectPath4)}.json`);
 async function readAppIntel(projectPath4) {
   try {
     const value = JSON.parse(await readFile24(snapshotPath(projectPath4), "utf8"));
@@ -157364,7 +159721,7 @@ async function writeAppIntel(projectPath4, snapshot2) {
   await atomicWrite2(snapshotPath(projectPath4), JSON.stringify(snapshot2));
 }
 async function clearAppIntel(projectPath4) {
-  await rm11(snapshotPath(projectPath4), { force: true });
+  await rm12(snapshotPath(projectPath4), { force: true });
 }
 
 // packages/core/src/app-intelligence/service.ts
@@ -157400,7 +159757,7 @@ var AppIntelligenceService = class {
     const controller = new AbortController();
     const abort = () => controller.abort(signal?.reason);
     signal?.addEventListener("abort", abort, { once: true });
-    const run5 = { runId: randomUUID14(), phase: "discovering", message: "Discovering project", controller };
+    const run5 = { runId: randomUUID15(), phase: "discovering", message: "Discovering project", controller };
     this.runs.set(projectPath4, run5);
     try {
       const snapshot2 = await new Promise((resolve13, reject) => {
@@ -157484,7 +159841,7 @@ var MAX_BYTES = 8e3;
 var screenItem = (id3, snapshot2) => ({ kind: "screen", id: id3, ...snapshot2.screens[id3] });
 var edgeItem = (edge2) => ({ kind: "relationship", from: edge2.from, to: edge2.to, relationship: edge2.kind, platforms: edge2.platforms, specifier: edge2.specifier });
 function lookupAppIntel(snapshot2, input2) {
-  const query = input2.query.toLowerCase();
+  const query2 = input2.query.toLowerCase();
   const items = [];
   let start;
   let note;
@@ -157492,15 +159849,15 @@ function lookupAppIntel(snapshot2, input2) {
     if (snapshot2.files[input2.query]) start = fileRef(input2.query);
     else note = "File not found. Search for its project-relative path.";
   } else if (input2.operation === "screen") {
-    const hits = snapshot2.screens[input2.query] ? [input2.query] : snapshot2.indexes.screens[query] ?? [];
+    const hits = snapshot2.screens[input2.query] ? [input2.query] : snapshot2.indexes.screens[query2] ?? [];
     if (hits.length === 1) start = screenRef(hits[0]);
     else {
       note = hits.length ? "Ambiguous screen. Use one of these exact IDs." : "Screen not found. Search by title or route.";
       for (const id3 of hits) items.push(screenItem(id3, snapshot2));
     }
   } else {
-    for (const [id3, screen] of Object.entries(snapshot2.screens)) if (`${id3} ${screen.title} ${screen.route ?? ""}`.toLowerCase().includes(query)) items.push(screenItem(id3, snapshot2));
-    for (const [path, file4] of Object.entries(snapshot2.files)) if (path.toLowerCase().includes(query)) items.push({ kind: "file", path, fileKind: file4.kind });
+    for (const [id3, screen] of Object.entries(snapshot2.screens)) if (`${id3} ${screen.title} ${screen.route ?? ""}`.toLowerCase().includes(query2)) items.push(screenItem(id3, snapshot2));
+    for (const [path, file4] of Object.entries(snapshot2.files)) if (path.toLowerCase().includes(query2)) items.push({ kind: "file", path, fileKind: file4.kind });
   }
   if (start) {
     const queue = [[start, 0]];
@@ -158126,8 +160483,8 @@ async function readBezel(baguette, udid, screen) {
 // packages/core/src/baguette.ts
 init_zod();
 init_protocol();
-import { execFile as execFile19, spawn as spawn14 } from "node:child_process";
-import { promisify as promisify18 } from "node:util";
+import { execFile as execFile20, spawn as spawn15 } from "node:child_process";
+import { promisify as promisify19 } from "node:util";
 import { access as access10 } from "node:fs/promises";
 import { constants as constants6 } from "node:fs";
 import { createServer as createServer5 } from "node:net";
@@ -158163,15 +160520,15 @@ async function launchBundledBaguette(host2, port2, signal) {
     throw new ExpectedOperationError("unsupported_platform", "Starting Baguette requires an Apple Silicon Mac with Xcode 26 or later.");
   }
   const executable4 = await bundledExecutable();
-  const environment = await baguetteEnvironment(executable4, signal);
-  return spawn14(executable4, ["serve", "--host", host2, "--port", port2, "--no-plugins"], {
+  const environment = await baguetteEnvironment(executable4, signal, 2e4);
+  return spawn15(executable4, ["serve", "--host", host2, "--port", port2, "--no-plugins"], {
     stdio: ["ignore", "pipe", "pipe"],
     shell: false,
     env: environment
   });
 }
 async function kickstartAccessibilityBridge(udid, signal) {
-  await promisify18(execFile19)("/usr/bin/xcrun", ["simctl", "spawn", udid, "launchctl", "kickstart", "-k", "user/foreground/com.apple.CoreSimulator.bridge"], {
+  await promisify19(execFile20)("/usr/bin/xcrun", ["simctl", "spawn", udid, "launchctl", "kickstart", "-k", "user/foreground/com.apple.CoreSimulator.bridge"], {
     timeout: 1e4,
     maxBuffer: 64 * 1024,
     encoding: "utf8",
@@ -158482,8 +160839,8 @@ var Baguette = class {
     await this.device(udid, true);
     const executable4 = await bundledExecutable();
     const environment = await baguetteEnvironment(executable4, this.lifecycle.signal);
-    const execute20 = promisify18(execFile19);
-    const { stdout, stderr } = await execute20(executable4, ["heal", "--udid", udid], {
+    const execute21 = promisify19(execFile20);
+    const { stdout, stderr } = await execute21(executable4, ["heal", "--udid", udid], {
       timeout: 45e3,
       maxBuffer: 1024 * 1024,
       encoding: "utf8",
@@ -158780,7 +161137,7 @@ init_protocol();
 init_zod();
 import { readFile as readFile26 } from "node:fs/promises";
 import { homedir as homedir12 } from "node:os";
-import { join as join49 } from "node:path";
+import { join as join50 } from "node:path";
 
 // packages/shared/src/android-devices.ts
 init_zod();
@@ -158797,7 +161154,7 @@ async function readBookingName(directory2, device3) {
   if (device3.model !== "ADC" && device3.model?.startsWith("ADC ") !== true) return;
   const match2 = /^127\.0\.0\.1:([1-9]\d{0,4})$/.exec(device3.udid);
   if (!match2 || Number(match2[1]) > 65535) return;
-  const path = join49(directory2, `${match2[1]}.json`);
+  const path = join50(directory2, `${match2[1]}.json`);
   try {
     const contents = await readFile26(path, "utf8");
     const data = JSON.parse(contents);
@@ -158809,7 +161166,7 @@ async function readBookingName(directory2, device3) {
   }
 }
 async function androidBookingNames(devices3) {
-  const directory2 = join49(homedir12(), ".local", "state", "agent-device-cloud", "adb-labels");
+  const directory2 = join50(homedir12(), ".local", "state", "agent-device-cloud", "adb-labels");
   const names = {};
   await Promise.all(devices3.map(async (device3) => {
     const name2 = await readBookingName(directory2, device3);
@@ -158980,7 +161337,7 @@ import { randomBytes as randomBytes10 } from "node:crypto";
 // packages/core/src/ios-mirror-client.ts
 init_error_reporting();
 import { createConnection as createConnection2 } from "node:net";
-import { spawn as spawn15 } from "node:child_process";
+import { spawn as spawn16 } from "node:child_process";
 import { fileURLToPath as fileURLToPath16 } from "node:url";
 import { setTimeout as delay8 } from "node:timers/promises";
 
@@ -159046,7 +161403,7 @@ async function startService() {
   starting2 = (async () => {
     const bundled = import.meta.url.endsWith(".mjs");
     const path = bundled ? await panelRuntimePath("ios-mirror-service.mjs") : fileURLToPath16(new URL("./ios-mirror-service.ts", import.meta.url));
-    const child = spawn15(process.execPath, [path], { detached: true, stdio: "ignore", env: process.env });
+    const child = spawn16(process.execPath, [path], { detached: true, stdio: "ignore", env: process.env });
     let failure5;
     child.on("error", (error113) => {
       failure5 = error113;
@@ -159274,15 +161631,15 @@ var IosMirrorSessions = class {
 
 // packages/core/src/physical-ios-bezel.ts
 init_zod();
-import { execFile as execFile20 } from "node:child_process";
-import { mkdtemp as mkdtemp5, readFile as readFile27, rm as rm12 } from "node:fs/promises";
-import { tmpdir as tmpdir6 } from "node:os";
-import { join as join50 } from "node:path";
+import { execFile as execFile21 } from "node:child_process";
+import { mkdtemp as mkdtemp6, readFile as readFile27, rm as rm13 } from "node:fs/promises";
+import { tmpdir as tmpdir7 } from "node:os";
+import { join as join51 } from "node:path";
 import { fileURLToPath as fileURLToPath17 } from "node:url";
-import { promisify as promisify19 } from "node:util";
+import { promisify as promisify20 } from "node:util";
 init_error_reporting();
 init_telemetry2();
-var execute15 = promisify19(execFile20);
+var execute16 = promisify20(execFile21);
 var text8 = external_exports.string();
 var deviceTypeSchema = external_exports.object({ name: text8, modelIdentifier: text8, bundlePath: text8 });
 var deviceTypes = external_exports.array(deviceTypeSchema);
@@ -159305,16 +161662,16 @@ function pngDataUri(bytes) {
   return `data:image/png;base64,${encoded2}`;
 }
 async function readMask(identifier3, run5) {
-  const prefix3 = join50(tmpdir6(), "mobile-dev-device-mask-");
-  const directory2 = await mkdtemp5(prefix3);
+  const prefix3 = join51(tmpdir7(), "mobile-dev-device-mask-");
+  const directory2 = await mkdtemp6(prefix3);
   try {
     const input2 = `/Library/Developer/DeviceKit/FramebufferMasks/${identifier3}.pdf`;
-    const output2 = join50(directory2, "mask.png");
+    const output2 = join51(directory2, "mask.png");
     await run5("/usr/bin/sips", ["-s", "format", "png", input2, "--out", output2], commandOptions);
     const bytes = await readFile27(output2);
     return pngDataUri(bytes);
   } finally {
-    await rm12(directory2, { recursive: true, force: true });
+    await rm13(directory2, { recursive: true, force: true });
   }
 }
 async function renderBezel(device3, run5, runtime2) {
@@ -159331,7 +161688,7 @@ async function renderBezel(device3, run5, runtime2) {
   });
   let selected;
   for (const type2 of candidates) {
-    const profilePath = join50(type2.bundlePath, "Contents", "Resources", "profile.plist");
+    const profilePath = join51(type2.bundlePath, "Contents", "Resources", "profile.plist");
     const profileOutput = await run5("/usr/bin/plutil", ["-convert", "json", "-o", "-", profilePath], commandOptions);
     const profileJson = profileOutput.stdout.toString("utf8");
     const profilePayload = JSON.parse(profileJson);
@@ -159360,7 +161717,7 @@ async function renderBezel(device3, run5, runtime2) {
   if (profile.framebufferMask !== void 0) bezel.mask = await readMask(profile.framebufferMask, run5);
   return bezel;
 }
-function createPhysicalIosBezelReader(run5 = execute15, runtime2 = baguetteEnvironment) {
+function createPhysicalIosBezelReader(run5 = execute16, runtime2 = baguetteEnvironment) {
   const cache = /* @__PURE__ */ new Map();
   async function read12(device3) {
     try {
@@ -159382,20 +161739,20 @@ function createPhysicalIosBezelReader(run5 = execute15, runtime2 = baguetteEnvir
 var readPhysicalIosBezel = createPhysicalIosBezelReader();
 
 // packages/core/src/clipboard.ts
-import { execFile as execFile21 } from "node:child_process";
-import { mkdtemp as mkdtemp6, writeFile as writeFile19, rm as rm13 } from "node:fs/promises";
-import { tmpdir as tmpdir7 } from "node:os";
-import { join as join51 } from "node:path";
-import { promisify as promisify20 } from "node:util";
-var execute16 = promisify20(execFile21);
+import { execFile as execFile22 } from "node:child_process";
+import { mkdtemp as mkdtemp7, writeFile as writeFile19, rm as rm14 } from "node:fs/promises";
+import { tmpdir as tmpdir8 } from "node:os";
+import { join as join52 } from "node:path";
+import { promisify as promisify21 } from "node:util";
+var execute17 = promisify21(execFile22);
 async function copyPNGToClipboard(bytes) {
-  const directory2 = await mkdtemp6(join51(tmpdir7(), "mobile-dev-screenshot-"));
+  const directory2 = await mkdtemp7(join52(tmpdir8(), "mobile-dev-screenshot-"));
   try {
-    const path = join51(directory2, "screenshot.png");
+    const path = join52(directory2, "screenshot.png");
     await writeFile19(path, bytes, { mode: 384 });
     const options = { timeout: 5e3, maxBuffer: 64 * 1024 };
     if (process.platform === "win32") {
-      await execute16("powershell.exe", ["-NoProfile", "-NonInteractive", "-STA", "-Command", `
+      await execute17("powershell.exe", ["-NoProfile", "-NonInteractive", "-STA", "-Command", `
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 $image = [System.Drawing.Image]::FromFile($env:MOBILE_DEV_SCREENSHOT_FILE)
@@ -159403,11 +161760,11 @@ try { [System.Windows.Forms.Clipboard]::SetImage($image) } finally { $image.Disp
 `], { ...options, windowsHide: true, env: { ...process.env, MOBILE_DEV_SCREENSHOT_FILE: path } });
       return;
     }
-    await execute16("/usr/bin/osascript", ["-e", `on run argv
+    await execute17("/usr/bin/osascript", ["-e", `on run argv
 set the clipboard to (read (POSIX file (item 1 of argv)) as \xABclass PNGf\xBB)
 end run`, path], options);
   } finally {
-    await rm13(directory2, { recursive: true, force: true });
+    await rm14(directory2, { recursive: true, force: true });
   }
 }
 
@@ -159524,7 +161881,7 @@ init_zod();
 // packages/core/src/react-native-inspector.ts
 init_wrapper();
 init_zod();
-import { randomUUID as randomUUID15 } from "node:crypto";
+import { randomUUID as randomUUID16 } from "node:crypto";
 
 // packages/core/src/react-native-snapshot.js
 function collectReactNativeTree(complete2) {
@@ -159805,7 +162162,7 @@ function readSnapshot(url3, signal) {
   return new Promise((resolve13, reject) => {
     const origin2 = new URL(url3);
     origin2.protocol = "http:";
-    const binding = `__mobile_dev_inspection_${randomUUID15().replaceAll("-", "")}`;
+    const binding = `__mobile_dev_inspection_${randomUUID16().replaceAll("-", "")}`;
     const socket = new import_websocket.default(url3, { origin: origin2.origin, handshakeTimeout: 3e3, maxPayload: 1024 * 1024, followRedirects: false });
     let settled = false, cleanup;
     const finish2 = (error113, result4) => {
@@ -159975,7 +162332,7 @@ var deviceSettingSchema = external_exports.discriminatedUnion("setting", [
 ]);
 
 // packages/core/src/network-throttle/proxy.ts
-import { randomUUID as randomUUID16 } from "node:crypto";
+import { randomUUID as randomUUID17 } from "node:crypto";
 import { createServer as createServer6, request as httpRequest } from "node:http";
 import { connect as connect4, isIP as isIP3 } from "node:net";
 var LinkPacer = class {
@@ -160046,7 +162403,7 @@ function isLocalDestination(host2) {
 var hostAddress = (host2) => /^(?:10\.0\.2\.2|localhost)$/i.test(host2) ? "127.0.0.1" : host2.replace(/^\[|\]$/g, "");
 var healthPath = "/mobile-dev-network-throttle";
 var ThrottleProxy = class {
-  token = randomUUID16();
+  token = randomUUID17();
   server;
   sockets = /* @__PURE__ */ new Set();
   link;
@@ -160535,18 +162892,18 @@ init_protocol();
 
 // packages/core/src/resource-saving.ts
 init_zod();
-import { execFile as execFile22 } from "node:child_process";
-import { createHash as createHash20, randomUUID as randomUUID17 } from "node:crypto";
-import { access as access11, mkdir as mkdir16, readFile as readFile28, rename as rename12, rm as rm14, writeFile as writeFile20 } from "node:fs/promises";
+import { execFile as execFile23 } from "node:child_process";
+import { createHash as createHash20, randomUUID as randomUUID18 } from "node:crypto";
+import { access as access11, mkdir as mkdir16, readFile as readFile28, rename as rename12, rm as rm15, writeFile as writeFile20 } from "node:fs/promises";
 import { constants as constants7 } from "node:fs";
 import { homedir as homedir13 } from "node:os";
-import { dirname as dirname18, isAbsolute as isAbsolute14, join as join52 } from "node:path";
-import { promisify as promisify21 } from "node:util";
+import { dirname as dirname18, isAbsolute as isAbsolute14, join as join53 } from "node:path";
+import { promisify as promisify22 } from "node:util";
 init_install_integrity();
 init_telemetry2();
-var execute17 = promisify21(execFile22);
+var execute18 = promisify22(execFile23);
 var home2 = homedir13();
-var directory = join52(home2, "Library/Application Support/mobile-dev/resource-saving");
+var directory = join53(home2, "Library/Application Support/mobile-dev/resource-saving");
 var preferenceSchema = external_exports.object({ enabled: external_exports.boolean() });
 var androidStateSchema = external_exports.object({ disabled_packages: external_exports.array(external_exports.string()), settings: external_exports.record(external_exports.string(), external_exports.string().nullable()) });
 var IOS_RESOURCE_SAVING_EXCEPT = "store,web,pim,photos,connectivity,telemetry";
@@ -160586,7 +162943,7 @@ var ResourceSaving = class {
   constructor(options = {}) {
     this.supported = options.executable !== void 0 || process.platform === "darwin" && process.arch === "arm64";
     this.directory = options.directory ?? directory;
-    this.run = options.run ?? execute17;
+    this.run = options.run ?? execute18;
     this.locate = options.executable ?? executable3;
     this.adb = options.adb ?? adbPath;
   }
@@ -160594,7 +162951,7 @@ var ResourceSaving = class {
     const hash5 = createHash20("sha256");
     hash5.update(`${device3.platform}:${device3.key}`);
     const key2 = hash5.digest("hex");
-    return join52(this.directory, `${key2}.json`);
+    return join53(this.directory, `${key2}.json`);
   }
   async enabled(device3) {
     const path = this.filename(device3);
@@ -160618,14 +162975,14 @@ var ResourceSaving = class {
   async set(device3, enabled) {
     await mkdir16(this.directory, { recursive: true, mode: 448 });
     const path = this.filename(device3);
-    const suffix = randomUUID17();
+    const suffix = randomUUID18();
     const temporary = `${path}.${suffix}.tmp`;
     const text9 = JSON.stringify({ enabled });
     try {
       await writeFile20(temporary, text9, { mode: 384 });
       await rename12(temporary, path);
     } finally {
-      await rm14(temporary, { force: true });
+      await rm15(temporary, { force: true });
     }
     return this.state(device3);
   }
@@ -160681,10 +163038,10 @@ var ResourceSaving = class {
     const adb = await this.adb();
     const adbDirectory = dirname18(adb);
     const sdk = dirname18(adbDirectory);
-    const cliHome = join52(this.directory, "avdslim-home");
+    const cliHome = join53(this.directory, "avdslim-home");
     await mkdir16(cliHome, { recursive: true, mode: 448 });
-    const androidHome = process.env.ANDROID_USER_HOME ?? join52(home2, ".android");
-    const adbKeys = process.env.ADB_VENDOR_KEYS ?? join52(androidHome, "adbkey");
+    const androidHome = process.env.ANDROID_USER_HOME ?? join53(home2, ".android");
+    const adbKeys = process.env.ADB_VENDOR_KEYS ?? join53(androidHome, "adbkey");
     const env2 = { ...process.env, HOME: cliHome, ANDROID_USER_HOME: androidHome, ADB_VENDOR_KEYS: adbKeys };
     if (isAbsolute14(adb)) {
       env2.ANDROID_HOME = sdk;
@@ -161066,12 +163423,12 @@ var StreamSessions = class {
 
 // packages/core/src/simulator-input.ts
 init_protocol();
-import { execFile as execFile23 } from "node:child_process";
-import { promisify as promisify22 } from "node:util";
-var execute18 = promisify22(execFile23);
+import { execFile as execFile24 } from "node:child_process";
+import { promisify as promisify23 } from "node:util";
+var execute19 = promisify23(execFile24);
 var deviceHubKey = "com.apple.coredevice.dtuhidd.active";
 async function readDeviceHubState(udid) {
-  const { stdout } = await execute18("/usr/bin/xcrun", ["simctl", "spawn", udid, "notifyutil", "-g", deviceHubKey], {
+  const { stdout } = await execute19("/usr/bin/xcrun", ["simctl", "spawn", udid, "notifyutil", "-g", deviceHubKey], {
     timeout: 5e3,
     maxBuffer: 1024 * 1024,
     encoding: "utf8"
@@ -162431,18 +164788,18 @@ var StdioClientTransport = class {
 
 // packages/core/src/agent-device-runtime.ts
 init_esm5();
-import { execFile as execFile24 } from "node:child_process";
-import { mkdir as mkdir17, mkdtemp as mkdtemp7 } from "node:fs/promises";
-import { homedir as homedir14, tmpdir as tmpdir8 } from "node:os";
-import { join as join53, resolve as resolve12 } from "node:path";
+import { execFile as execFile25 } from "node:child_process";
+import { mkdir as mkdir17, mkdtemp as mkdtemp8 } from "node:fs/promises";
+import { homedir as homedir14, tmpdir as tmpdir9 } from "node:os";
+import { join as join54, resolve as resolve12 } from "node:path";
 import { fileURLToPath as fileURLToPath18 } from "node:url";
-import { promisify as promisify23 } from "node:util";
+import { promisify as promisify24 } from "node:util";
 init_telemetry2();
-var run4 = promisify23(execFile24);
-async function claimAgentDeviceStateDirectory(env2 = process.env, create3 = mkdtemp7) {
+var run4 = promisify24(execFile25);
+async function claimAgentDeviceStateDirectory(env2 = process.env, create3 = mkdtemp8) {
   const configured = env2.AGENT_DEVICE_STATE_DIR?.trim();
   if (configured) return resolve12(configured);
-  const directory2 = await create3(join53(tmpdir8(), "mobile-dev-agent-device-"));
+  const directory2 = await create3(join54(tmpdir9(), "mobile-dev-agent-device-"));
   const concurrentlyConfigured = env2.AGENT_DEVICE_STATE_DIR?.trim();
   if (concurrentlyConfigured) return resolve12(concurrentlyConfigured);
   env2.AGENT_DEVICE_STATE_DIR = directory2;
@@ -162458,8 +164815,8 @@ var AgentDeviceRuntime = class {
   closing = false;
   constructor(root = new URL("./agent-device/", import.meta.url)) {
     const directory2 = fileURLToPath18(root);
-    this.cli = join53(directory2, "node_modules/agent-device/bin/agent-device.mjs");
-    this.config = join53(directory2, "config.json");
+    this.cli = join54(directory2, "node_modules/agent-device/bin/agent-device.mjs");
+    this.config = join54(directory2, "config.json");
   }
   /** Starts the runtime if it is not running. Callers report a failed start. */
   async connect() {
@@ -162492,7 +164849,7 @@ var AgentDeviceRuntime = class {
     const directory2 = await claimAgentDeviceStateDirectory();
     await mkdir17(directory2, { recursive: true, mode: 448 });
     console.error(`[mobile-dev] agent-device state directory: ${directory2}`);
-    const stopStorageMetrics = startStorageMetrics({ agent_device_state: directory2, apple_runner_cache: join53(homedir14(), ".agent-device/apple-runner") });
+    const stopStorageMetrics = startStorageMetrics({ agent_device_state: directory2, apple_runner_cache: join54(homedir14(), ".agent-device/apple-runner") });
     return { directory: directory2, stopStorageMetrics };
   }
   async start() {
@@ -162640,7 +164997,7 @@ function stepIssue(name2, input2, schemas) {
 }
 
 // packages/core/src/browser-panel.ts
-import { randomBytes as randomBytes12, randomUUID as randomUUID18 } from "node:crypto";
+import { randomBytes as randomBytes12, randomUUID as randomUUID19 } from "node:crypto";
 import { readFile as readFile30 } from "node:fs/promises";
 import { createServer as createServer8 } from "node:http";
 
@@ -164772,6 +167129,9 @@ var PAGE = new URL("./browser-panel.html", import.meta.url);
 var BROWSER_SESSION_IDLE_MS = 5 * 6e4;
 var BROWSER_CONTEXT_MAX_BYTES = 16 * 1024 * 1024;
 var NO_CONTEXT = "No Mobile Dev browser panel has shared context. Open Mobile Dev, or ask the user to select a device in the panel.";
+var SHOW_PANE = "A browser tool that reports the page opened, or a tab that is still open, can sit in a hidden pane, where the user sees only a card in the chat. When your host has a tool that brings its browser or preview pane into view, such as a show_pane tool for its preview pane, load it if it is deferred and call it now, unless your host reports that pane already in view. If it says the user is not viewing this chat, the pane stays closed: say the panel is in the browser pane, and show the pane again the next time you use Mobile Dev's tools.";
+var REOPEN = "Mobile Dev's panel is already open in a browser tab.";
+var CONTEXT_PANE = "If your host's browser or preview pane is hidden, show it now, such as with a show_pane tool for its preview pane, so the user sees the panel.";
 var contextSchema = external_exports.object({
   content: external_exports.array(external_exports.union([
     external_exports.object({ type: external_exports.literal("text"), text: external_exports.string() }),
@@ -164789,7 +167149,7 @@ function browserPanel({ template = PAGE, always = false } = {}) {
       page ??= startPanelPage(connections, host2, template);
       const opened = await page;
       const url3 = opened.url(tool, target3);
-      const instructions = `Mobile Dev's panel is a page to show beside the chat, not in it, and it is not open yet. Show it to the user now: open ${url3} in your in-app browser or side panel, in the foreground, so the page is visible without another click. This page is how Mobile Dev shows its panel, so opening it is part of opening the panel. Use your host's own browser or preview tool, and load it first if it is deferred. Never open the page with a computer-use tool that drives the screen. Opening a page can leave the browser pane hidden: when your host has a tool that brings its browser or preview pane into view, such as a show_pane tool for its preview pane, load it if needed and call it right after. A host can also show the page as a floating preview and report it as not visible. That still counts as shown, so do not open it again. Leave the tab open after you reply. Reuse a tab that already shows Mobile Dev. Open no other address for it, such as the backend's baseUrl. If you cannot open pages, give the user the link. The page shares the user's devices and what they add to chat through mobile_read_panel_context; read it before device work.`;
+      const instructions = openingInstructions(url3, opened.connected());
       return { url: url3, instructions };
     });
     server.registerTool("mobile_read_panel_context", {
@@ -164800,13 +167160,18 @@ function browserPanel({ template = PAGE, always = false } = {}) {
     }, async () => {
       const opened = await page?.catch(() => void 0);
       const content = opened?.context() ?? [];
-      return { content: content.length ? content : [{ type: "text", text: NO_CONTEXT }] };
+      if (content.length === 0) return { content: [{ type: "text", text: NO_CONTEXT }] };
+      return { content: [...content, { type: "text", text: CONTEXT_PANE }] };
     });
     return async () => {
       const opened = await page?.catch(() => void 0);
       await opened?.close();
     };
   };
+}
+function openingInstructions(url3, connected) {
+  const open3 = connected ? `${REOPEN} Show ${url3} in the tab that already shows Mobile Dev, in the foreground, rather than opening another tab.` : `Mobile Dev's panel is a page to show beside the chat, not in it, and it is not open yet. Show it to the user now: open ${url3} in your in-app browser or side panel, in the foreground, so the page is visible without another click. This page is how Mobile Dev shows its panel, so opening it is part of opening the panel.`;
+  return `${open3} Use your host's own browser or preview tool, and load it first if it is deferred. Never open the page with a computer-use tool that drives the screen. ${SHOW_PANE} A host can also show the page as a floating preview and report it as not visible. That still counts as shown, so do not open it again. Leave the tab open after you reply. Reuse a tab that already shows Mobile Dev. Open no other address for it, such as the backend's baseUrl. If you cannot open pages, give the user the link. The page shares the user's devices and what they add to chat through mobile_read_panel_context; read it before device work.`;
 }
 async function startPanelPage(connections, host2, page = PAGE) {
   const template = await readFile30(page, "utf8");
@@ -164905,7 +167270,7 @@ async function startPanelPage(connections, host2, page = PAGE) {
     }
     const transport2 = new StreamableHTTPServerTransport({
       // Per-request SSE supports associated server requests and releases completed streams.
-      sessionIdGenerator: randomUUID18,
+      sessionIdGenerator: randomUUID19,
       onsessioninitialized: (id3) => {
         sessions2.set(id3, { transport: transport2, touched: Date.now(), requests: 0 });
         recordBrowserPanelSessions(sessions2.size);
@@ -164924,13 +167289,14 @@ async function startPanelPage(connections, host2, page = PAGE) {
   }
   return {
     url(tool, target3) {
-      const query = new URLSearchParams({ tool });
+      const query2 = new URLSearchParams({ tool });
       const entries = Object.entries(target3);
       for (const [key2, value] of entries) {
-        if (typeof value === "string") query.set(key2, value);
+        if (typeof value === "string") query2.set(key2, value);
       }
-      return `${origins2[0]}${base2}?${query}`;
+      return `${origins2[0]}${base2}?${query2}`;
     },
+    connected: () => sessions2.size > 0,
     context() {
       const shared = Array.from(sessions2.values()).flatMap((session) => session.context ? [session.context] : []);
       shared.sort((a2, b2) => b2.updated - a2.updated);
@@ -164975,13 +167341,13 @@ function panelPlacement(fallback, env2 = process.env) {
 }
 
 // apps/codex-plugin/server/plugin-updates.ts
-import { execFile as execFile25 } from "node:child_process";
-import { mkdir as mkdir18, readFile as readFile31, rename as rename13, rm as rm15, writeFile as writeFile21 } from "node:fs/promises";
-import { randomUUID as randomUUID19 } from "node:crypto";
+import { execFile as execFile26 } from "node:child_process";
+import { mkdir as mkdir18, readFile as readFile31, rename as rename13, rm as rm16, writeFile as writeFile21 } from "node:fs/promises";
+import { randomUUID as randomUUID20 } from "node:crypto";
 import { homedir as homedir15 } from "node:os";
-import { basename as basename11, dirname as dirname19, isAbsolute as isAbsolute15, join as join54 } from "node:path";
+import { basename as basename11, dirname as dirname19, isAbsolute as isAbsolute15, join as join55 } from "node:path";
 import { fileURLToPath as fileURLToPath19 } from "node:url";
-import { promisify as promisify24 } from "node:util";
+import { promisify as promisify25 } from "node:util";
 init_zod();
 init_esm5();
 
@@ -165026,7 +167392,7 @@ function recordPluginUpdate(operation, outcome, duration6, failure5) {
   public_api_exports.count("plugin.update.operations", 1, { attributes: attributes2 });
   public_api_exports.gauge("plugin.update.duration", duration6, { unit: "millisecond", attributes: attributes2 });
 }
-var execute19 = promisify24(execFile25);
+var execute20 = promisify25(execFile26);
 var RELEASE_REPOSITORY_ID = 1398055406;
 var storeMarketplace = "openai-curated-remote";
 var githubPlugin = "mobile-dev@mobile-dev";
@@ -165097,7 +167463,7 @@ async function resolveCodexCli(parentPid = process.ppid, cwd = homedir15()) {
   const launcher = fileURLToPath19(new URL("../scripts/launch-mcp.cmd", import.meta.url));
   let path;
   try {
-    const result4 = windows ? await execute19(join54(process.env.SystemRoot ?? "C:\\Windows", "System32/WindowsPowerShell/v1.0/powershell.exe"), [
+    const result4 = windows ? await execute20(join55(process.env.SystemRoot ?? "C:\\Windows", "System32/WindowsPowerShell/v1.0/powershell.exe"), [
       "-NoProfile",
       "-NonInteractive",
       "-Command",
@@ -165108,7 +167474,7 @@ async function resolveCodexCli(parentPid = process.ppid, cwd = homedir15()) {
         "if ($p.Name -eq 'cmd.exe' -and $p.CommandLine.EndsWith($launch, [StringComparison]::OrdinalIgnoreCase)) { $p = Get-CimInstance Win32_Process -Filter ('ProcessId = ' + $p.ParentProcessId) }",
         "$p.ExecutablePath"
       ].join("; ")
-    ], { ...options, env: { ...process.env, MOBILE_DEV_PARENT_PID: String(parentPid), MOBILE_DEV_LAUNCHER: launcher } }) : await execute19("/bin/ps", ["-p", String(parentPid), "-o", "comm="], options);
+    ], { ...options, env: { ...process.env, MOBILE_DEV_PARENT_PID: String(parentPid), MOBILE_DEV_LAUNCHER: launcher } }) : await execute20("/bin/ps", ["-p", String(parentPid), "-o", "comm="], options);
     path = result4.stdout.trim();
   } catch {
     path = "";
@@ -165125,7 +167491,7 @@ function createCodexRunner(cwd, options = {}) {
     const path = options.path ?? await resolveCodexCli(process.ppid, cwd);
     let stdout;
     try {
-      const result4 = await execute19(path, args, { cwd, timeout: 12e4, maxBuffer: 1024 * 1024, env: env2, signal: options.signal, windowsHide: true });
+      const result4 = await execute20(path, args, { cwd, timeout: 12e4, maxBuffer: 1024 * 1024, env: env2, signal: options.signal, windowsHide: true });
       stdout = result4.stdout;
     } catch {
       throw new PluginUpdateError("Codex could not complete the Mobile Dev update command. Try again.", "command-failed");
@@ -165233,15 +167599,15 @@ var PluginUpdates = class {
     this.enabled = options.enabled ?? resolveTelemetryEnvironment() === "release";
     this.currentVersion = options.currentVersion ?? PLUGIN_VERSION;
     const home3 = homedir15();
-    const defaultProfile = join54(home3, ".codex");
+    const defaultProfile = join55(home3, ".codex");
     this.profile = options.profile ?? process.env.CODEX_HOME ?? defaultProfile;
     const modulePath2 = fileURLToPath19(import.meta.url);
     const moduleDirectory2 = dirname19(modulePath2);
     const pluginRoot = options.pluginRoot ?? dirname19(moduleDirectory2);
     const pluginParent = dirname19(pluginRoot);
-    const githubCache = join54("plugins", "cache", "mobile-dev", "mobile-dev");
+    const githubCache = join55("plugins", "cache", "mobile-dev", "mobile-dev");
     this.runningGithub = pluginParent.endsWith(githubCache);
-    this.cachePath = join54(this.profile, "mobile-dev", "updates.json");
+    this.cachePath = join55(this.profile, "mobile-dev", "updates.json");
     this.run = options.run ?? createCodexRunner(this.profile, { signal: this.abort.signal });
     this.readStore = options.readStore ?? (() => readPluginStore({ signal: this.abort.signal }));
     this.readRepository = options.readRepository ?? ((source) => isReleaseRepository(source, { signal: this.abort.signal }));
@@ -165274,7 +167640,7 @@ var PluginUpdates = class {
   }
   async saveCache(cache) {
     const directory2 = dirname19(this.cachePath);
-    const id3 = randomUUID19();
+    const id3 = randomUUID20();
     const temporary = `${this.cachePath}.${id3}.tmp`;
     try {
       await mkdir18(directory2, { recursive: true });
@@ -165284,7 +167650,7 @@ var PluginUpdates = class {
     } catch {
       throw new PluginUpdateError("Could not save the update status. Check free disk space and try again.", "cache-write");
     } finally {
-      await rm15(temporary, { force: true });
+      await rm16(temporary, { force: true });
     }
   }
   async catalog() {
@@ -165318,7 +167684,7 @@ var PluginUpdates = class {
     const version6 = entry2.localVersion;
     if (entry2.installed === false || entry2.enabled === false || version6 === null) return false;
     if (compareReleaseVersions(version6, STORE_MIGRATION_VERSION) < 0 || compareReleaseVersions(version6, this.currentVersion) < 0) return false;
-    const path = join54(this.profile, "plugins/cache", storeMarketplace, "mobile-dev", version6, ".codex-plugin/plugin.json");
+    const path = join55(this.profile, "plugins/cache", storeMarketplace, "mobile-dev", version6, ".codex-plugin/plugin.json");
     try {
       const text9 = await readFile31(path, "utf8");
       const data = JSON.parse(text9);
@@ -165573,6 +167939,33 @@ undici/lib/web/fetch/body.js:
 undici/lib/web/websocket/frame.js:
   (*! ws. MIT License. Einar Otto Stangvik <einaros@gmail.com> *)
 
+xmlchars/xml/1.0/ed5.js:
+  (**
+   * Character classes and associated utilities for the 5th edition of XML 1.0.
+   *
+   * @author Louis-Dominique Dubeau
+   * @license MIT
+   * @copyright Louis-Dominique Dubeau
+   *)
+
+xmlchars/xml/1.1/ed2.js:
+  (**
+   * Character classes and associated utilities for the 2nd edition of XML 1.1.
+   *
+   * @author Louis-Dominique Dubeau
+   * @license MIT
+   * @copyright Louis-Dominique Dubeau
+   *)
+
+xmlchars/xmlns/1.0/ed3.js:
+  (**
+   * Character class utilities for XML NS 1.0 edition 3.
+   *
+   * @author Louis-Dominique Dubeau
+   * @license MIT
+   * @copyright Louis-Dominique Dubeau
+   *)
+
 content-type/index.js:
   (*!
    * content-type
@@ -165581,4 +167974,4 @@ content-type/index.js:
    *)
 */
 
-//# debugId=8a1c7fe2-9496-58ea-a417-20afdc1e0481
+//# debugId=b67a9f36-bb7d-56ed-9384-059fe1b650f4

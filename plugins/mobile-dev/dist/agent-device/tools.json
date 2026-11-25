@@ -666,7 +666,7 @@
  },
  {
   "name": "close",
-  "description": "Close the named app, or close the active session app when app is omitted. If the session booted a local simulator or emulator, add shutdown when you finish, unless the user asks to keep it running; close alone never stops the device. Android ADB close fails with android-app-close-timeout if the app stays foreground past 2s, a killed process does not exit within 10s, or a new process runs past 2s. It fails with android-process-probe-unavailable when adb pidof cannot list the app processes; if that happens before the force-stop, the app keeps running. If close cannot confirm its cleanup on a session that holds a device claim, the session and its claim stay; run close again with the same options to retry the cleanup, leaving out save-script once the script is published. Times out after 90s.",
+  "description": "End the named local iOS or Android session and release its device claim. Omit app and shutdown to keep the app running in its current foreground state and leave the device booted, so another session can acquire it. Pass app only to intentionally close that app; set shutdown only to stop the simulator or emulator too. If cleanup fails, the session and claim may remain; retry close with the same options. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
