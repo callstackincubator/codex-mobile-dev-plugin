@@ -875,13 +875,13 @@ test("a capture launches a browser, records what the person reached, and analyze
   assert.equal(controller.getSnapshot().capture.step, "launched");
   assert.deepEqual(calls.map(call => call.name), [
     "mobile_tracesift_launch_browser", "mobile_tracesift_start_recording",
-    "mobile_tracesift_stop_recording", "mobile_analyze_profile",
+    "mobile_tracesift_stop_recording", "mobile_tracesift_recorded_profiles", "mobile_analyze_profile",
   ]);
   // Launching navigates; starting does not, so the trace covers the state the
   // person reached rather than a fresh page load.
   assert.deepEqual(calls[0]!.arguments, { url: "https://example.com" });
   assert.deepEqual(calls[1]!.arguments, {});
-  assert.deepEqual(calls[3]!.arguments, { path: "/traces/one.json.gz", profileType: "cpu" });
+  assert.deepEqual(calls[4]!.arguments, { path: "/traces/one.json.gz", profileType: "cpu" });
   assert.equal(controller.getSnapshot().analysis?.analysisId, "private-analysis");
 });
 
@@ -964,10 +964,10 @@ test("a React Native capture records the app that is already running and analyze
   assert.equal(controller.getSnapshot().capture.step, "idle");
   assert.deepEqual(calls.map(call => call.name), [
     "mobile_tracesift_capture_state", "mobile_tracesift_list_react_native_targets",
-    "mobile_tracesift_record_react_native", "mobile_tracesift_stop_recording", "mobile_analyze_profile",
+    "mobile_tracesift_record_react_native", "mobile_tracesift_stop_recording", "mobile_tracesift_recorded_profiles", "mobile_analyze_profile",
   ]);
   assert.deepEqual(calls[2]!.arguments, { targetId: "device-1" });
-  assert.deepEqual(calls[4]!.arguments, { path: "/traces/rn.json.gz", profileType: "cpu" });
+  assert.deepEqual(calls[5]!.arguments, { path: "/traces/rn.json.gz", profileType: "cpu" });
   assert.equal(controller.getSnapshot().analysis?.analysisId, "private-analysis");
 });
 
@@ -1012,7 +1012,8 @@ test("a profiling build closes the device menu and refreshes until the app conne
       if (input.name === "mobile_get_tracesift_project") return { content: [], structuredContent: { path: "/project/app" } };
       if (input.name === "mobile_tracesift_profiler_setup") return { content: [], structuredContent: { installed: true, command: "", platforms: ["ios"] } };
       if (input.name === "mobile_tracesift_profile_devices") return { content: [], structuredContent: { devices: [] } };
-      if (input.name === "mobile_tracesift_profile_build") { await buildGate; return { content: [], structuredContent: {} }; }
+      if (input.name === "mobile_tracesift_profile_build") return { content: [], structuredContent: { runId: "build-1", status: "running" } };
+      if (input.name === "mobile_tracesift_profile_build_status") { await buildGate; return { content: [], structuredContent: { runId: "build-1", status: "completed" } }; }
       if (input.name === "mobile_tracesift_list_react_native_targets") return { content: [], structuredContent: {
         ...rnTargets, targets: ++listings < 2 ? [] : rnTargets.targets,
       } };

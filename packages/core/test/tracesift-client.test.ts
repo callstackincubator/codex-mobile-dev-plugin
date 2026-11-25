@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { chmod, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -283,6 +283,8 @@ async function fakeRecorder(home: string, body: string) {
 
 test("a recording launches a browser, traces what is on screen, and reports the trace it wrote", async t => {
   const fake = await fixture(); t.after(fake.close);
+  const trace = join(fake.home, "one.json.gz"); await writeFile(trace, "trace");
+  const recordings = join(fake.home, "mobile-dev", "tracesift");
   const browser = join(fake.home, "browser.json");
   const record = join(fake.home, "record.json");
   const command = await fakeRecorder(fake.home, [
@@ -291,11 +293,11 @@ test("a recording launches a browser, traces what is on screen, and reports the 
     // recorder's state, exactly as the CLI's own state files do.
     `  launch) printf '%s' '{"apiVersion":1,"pid":'$PPID',"url":"https://example.com/","userDataDir":"/tmp/p","ownsProfile":true,"port":1,"webSocketDebuggerUrl":"ws://x","startedAt":1}' > ${JSON.stringify(browser)} ;;`,
     `  start) printf '%s' '{"apiVersion":1,"pid":'$PPID',"state":"recording","mode":"local"}' > ${JSON.stringify(record)} ;;`,
-    `  stop) printf '%s' '{"apiVersion":1,"pid":'$PPID',"state":"captured","mode":"local","export":{"path":"/traces/one.json.gz","sizeBytes":612345,"eventCount":35924}}' > ${JSON.stringify(record)} ;;`,
+    `  stop) printf '%s' '{"apiVersion":1,"pid":'$PPID',"state":"captured","mode":"local","export":{"path":"${trace}","sizeBytes":612345,"eventCount":35924}}' > ${JSON.stringify(record)} ;;`,
     `  close) rm -f ${JSON.stringify(browser)} ;;`,
     `esac`,
   ].join("\n"));
-  const client = new TraceSiftClient(command, fake.home); t.after(() => client.close());
+  const client = new TraceSiftClient(command, fake.home, recordings); t.after(() => client.close());
 
   assert.deepEqual(await client.captureState(), { apiVersion: 1, recording: false });
   const launched = await client.launchBrowser("https://example.com");
@@ -305,7 +307,11 @@ test("a recording launches a browser, traces what is on screen, and reports the 
   assert.equal((await client.captureState()).recording, true);
 
   const capture = await client.stopRecording();
-  assert.deepEqual(capture, { path: "/traces/one.json.gz", sizeBytes: 612345, eventCount: 35924 });
+  assert.match(capture.path, /mobile-dev\/tracesift\/profile-.*\.json\.gz$/);
+  assert.equal(await readFile(capture.path, "utf8"), "trace");
+  assert.deepEqual((await client.listRecordedProfiles()).map(profile => profile.path), [capture.path]);
+  assert.equal(capture.sizeBytes, 612345);
+  assert.equal(capture.eventCount, 35924);
   // Stopping leaves the browser open, so another recording can follow.
   assert.equal((await client.captureState()).browser?.url, "https://example.com/");
   assert.equal((await client.captureState()).recording, false);
@@ -353,6 +359,8 @@ test("a recorder state file that is not readable JSON is named rather than treat
 
 test("a React Native recording lists the connected apps, attaches to one, and reports the trace it wrote", async t => {
   const fake = await fixture(); t.after(fake.close);
+  const trace = join(fake.home, "rn.json.gz"); await writeFile(trace, "trace");
+  const recordings = join(fake.home, "mobile-dev", "tracesift");
   const record = join(fake.home, "record.json");
   const targets = JSON.stringify({
     apiVersion: 1, platform: "rn", metro: "http://127.0.0.1:8081",
@@ -365,10 +373,10 @@ test("a React Native recording lists the connected apps, attaches to one, and re
     // own state file is ever written.
     `  targets) printf '%s' ${JSON.stringify(targets)} ;;`,
     `  start) printf '%s' '{"apiVersion":1,"pid":'$PPID',"state":"recording","mode":"local","targetLabel":"AwesomeApp (Hermes) — iPhone 17 Pro"}' > ${JSON.stringify(record)} ;;`,
-    `  stop) printf '%s' '{"apiVersion":1,"pid":'$PPID',"state":"captured","mode":"local","export":{"path":"/traces/rn.json.gz","sizeBytes":90210,"eventCount":1204}}' > ${JSON.stringify(record)} ;;`,
+    `  stop) printf '%s' '{"apiVersion":1,"pid":'$PPID',"state":"captured","mode":"local","export":{"path":"${trace}","sizeBytes":90210,"eventCount":1204}}' > ${JSON.stringify(record)} ;;`,
     `esac`,
   ].join("\n"));
-  const client = new TraceSiftClient(command, fake.home); t.after(() => client.close());
+  const client = new TraceSiftClient(command, fake.home, recordings); t.after(() => client.close());
 
   const listed = await client.reactNativeTargets();
   assert.equal(listed.metro, "http://127.0.0.1:8081");
@@ -384,7 +392,10 @@ test("a React Native recording lists the connected apps, attaches to one, and re
   assert.equal(running.browser, undefined);
   assert.deepEqual(running.app, { targetLabel: "AwesomeApp (Hermes) — iPhone 17 Pro" });
 
-  assert.deepEqual(await client.stopRecording(), { path: "/traces/rn.json.gz", sizeBytes: 90210, eventCount: 1204 });
+  const saved = await client.stopRecording();
+  assert.match(saved.path, /mobile-dev\/tracesift\/profile-.*\.json\.gz$/);
+  assert.equal(await readFile(saved.path, "utf8"), "trace");
+  assert.equal(saved.eventCount, 1204);
   // A finished recording is no longer attached to anything.
   assert.equal((await client.captureState()).app, undefined);
 
@@ -583,4 +594,30 @@ fi
     { kind: "android", id: "R5CT83DJM1Z", name: "SM-S908E", note: "USB" },
   ]);
   await assert.rejects(client.profileBuild({ projectPath: home, platform: "ios" }), /No provisioning profile covers this phone\./);
+});
+
+test("an iOS profiling build links a manually installed profiler with the project's Bundler", async t => {
+  const root = await mkdtemp(join(tmpdir(), "mobile-dev-bundled-pods-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, "ios"));
+  await mkdir(join(root, "node_modules", "@callstack", "tracesift-rn-profiler"), { recursive: true });
+  await writeFile(join(root, "package.json"), "{}");
+  await writeFile(join(root, "Gemfile"), "gem 'cocoapods'");
+  await writeFile(join(root, "ios", "Podfile.lock"), "PODS:\n");
+  const cli = join(root, "tracesift");
+  await writeFile(cli, `#!/bin/sh\ngrep -q TracesiftProfiler ios/Podfile.lock || exit 127\nprintf 'built\\n'\n`, { mode: 0o755 });
+  const client = new TraceSiftClient(cli, root);
+  let bundled: { command: string; args: string[]; cwd: string | undefined; path: string | undefined } | undefined;
+  (client as unknown as { runSetupCommand: (command: string, args: string[], label: string, signal: AbortSignal | undefined, env: NodeJS.ProcessEnv, cwd: string) => Promise<void> }).runSetupCommand = async (command, args, _label, _signal, env, cwd) => {
+    bundled = { command, args, cwd, path: env.PATH };
+    await writeFile(join(root, "ios", "Podfile.lock"), "TracesiftProfiler\n");
+  };
+  assert.deepEqual(await client.profileBuild({ projectPath: root, platform: "ios" }), { log: "built\n" });
+  assert.deepEqual(bundled?.command, "bundle");
+  assert.deepEqual(bundled?.args, ["exec", "pod", "install"]);
+  assert.equal(bundled?.cwd, join(await realpath(root), "ios"));
+  assert.match(bundled?.path ?? "", /\.rbenv\/shims/);
+  bundled = undefined;
+  await client.profileBuild({ projectPath: root, platform: "ios" });
+  assert.equal(bundled, undefined);
 });

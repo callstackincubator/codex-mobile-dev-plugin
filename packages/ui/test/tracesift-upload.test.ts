@@ -34,11 +34,13 @@ test("TraceSift keeps one workspace while readiness changes its inspector", asyn
     getHostCapabilities: () => ({ serverTools: {} }),
     getHostContext: () => ({ theme: "dark", availableDisplayModes: ["inline", "fullscreen"] }),
     async callServerTool(input: { name: string }) {
+      if (input.name === "mobile_tracesift_recorded_profiles") return { content: [], structuredContent: { profiles: [{ path: "/saved/profile.json.gz", name: "profile.json.gz", recordedAt: "2026-11-25T08:00:00.000Z", sizeBytes: 100 }] } };
       if (input.name === "mobile_get_tracesift_project") return { content: [], structuredContent: { path: "/project/expoapp57" } };
       if (input.name === "mobile_tracesift_profiler_setup") return { content: [], structuredContent: { installed: profilerInstalled, command: "npm install @callstack/tracesift-rn-profiler", platforms: ["ios"] } };
       if (input.name === "mobile_tracesift_install_profiler") { profilerInstalled = true; return { content: [], structuredContent: {} }; }
       if (input.name === "mobile_tracesift_profile_devices") return { content: [], structuredContent: { devices: [{ kind: "simulator", id: "sim-1", name: "iPhone Simulator", note: "booted" }] } };
-      if (input.name === "mobile_tracesift_profile_build") { appLaunched = true; return { content: [], structuredContent: {} }; }
+      if (input.name === "mobile_tracesift_profile_build") return { content: [], structuredContent: { runId: "build-1", status: "running" } };
+      if (input.name === "mobile_tracesift_profile_build_status") { appLaunched = true; return { content: [], structuredContent: { runId: "build-1", status: "completed" } }; }
       if (input.name === "mobile_tracesift_list_react_native_targets") return { content: [], structuredContent: {
         apiVersion: 1, platform: "rn", metro: "http://127.0.0.1:8081",
         targets: appLaunched ? [{ id: "running-app", title: "Test app", deviceName: "iPhone Simulator", supportsMultipleDebuggers: true, recommended: true }] : [],
@@ -94,6 +96,10 @@ test("TraceSift keeps one workspace while readiness changes its inspector", asyn
   assert.doesNotMatch(workspace.textContent ?? "", /How to export a profile/);
   assert.deepEqual(tabs().map(tab => tab.textContent?.trim()), ["Record", "Upload"]);
   assert.equal(tabs().filter(disabled).length, 0);
+  mounted.flushSync(() => tabs()[1]!.click());
+  assert.match(workspace.textContent ?? "", /Recorded profiles/);
+  assert.match(workspace.querySelector("#tracesift-saved-profile")?.textContent ?? "", /profile\.json\.gz/);
+  mounted.flushSync(() => tabs()[0]!.click());
 
   const sections = () => [...dom.window.document.querySelectorAll<HTMLButtonElement>(".tracesift-record-section-toggle")];
   assert.equal(sections().length, 2);

@@ -5,6 +5,8 @@ import { z } from "zod";
 import { errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { TRACESIFT_URI, traceSiftAnalysisSchema, traceSiftCaptureSchema, traceSiftCaptureUrlSchema, traceSiftHandoffSchema, traceSiftMetroUrlSchema, traceSiftProfileInputSchema, traceSiftReactCardSchema, traceSiftRnTargetsSchema, traceSiftSetupActionResultSchema, traceSiftSetupReasonSchema, traceSiftTaskCardSchema } from "@mobile-dev/shared/tracesift.ts";
 import { gzip as gzipCallback } from "node:zlib";
+import { randomUUID } from "node:crypto";
+import { statfs } from "node:fs/promises";
 import { promisify } from "node:util";
 import { TRACE_SIFT_PAYLOAD_GZIP_MIN_BYTES, TRACE_SIFT_PAYLOAD_MAX_BYTES, traceSiftExploreEnvelopeSchema, TRACE_SIFT_PAYLOAD_TOO_LARGE, traceSiftPayloadTooDeep } from "@mobile-dev/shared/tracesift-explore.ts";
 import { captureServerError, recordTraceSiftOperation, recordTraceSiftPayload } from "./telemetry.ts";
@@ -34,6 +36,8 @@ function failure(error: unknown, operation: "ready" | "install" | "init" | "anal
 }
 
 export function registerTraceSiftTools(server: McpServer, client: TraceSiftClient) {
+  type Build = { id: string; projectPath: string; status: "running" | "completed" | "failed"; log?: string; error?: string };
+  let build: Build | undefined;
   registerAppTool(server, "mobile_tracesift_status", {
     title: "Check TraceSift readiness",
     description: "Check whether TraceSift is installed, initialized, compatible, and ready for profile analysis. Reuses a compatible local service or starts `tracesift start --no-open`. Call this before asking the user to capture or choose a profile when no profile path has been provided yet. Setup requirements are returned as a normal structured status with the exact next step.",
@@ -207,6 +211,22 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
     } catch (error) { return failure(error, "record", startedAt, context.signal); }
   });
 
+  registerAppTool(server, "mobile_tracesift_recorded_profiles", {
+    title: "List locally recorded TraceSift profiles",
+    description: "List saved profiles from the local mobile-dev/tracesift folder for reopening in the panel.",
+    inputSchema: {},
+    outputSchema: { profiles: z.array(z.object({ path: z.string(), name: z.string(), recordedAt: z.string(), sizeBytes: z.number() })) },
+    annotations: read,
+    _meta: { ui: { visibility: ["app"] } },
+  }, async (_input, context) => {
+    const startedAt = performance.now();
+    try {
+      const profiles = await client.listRecordedProfiles();
+      recordTraceSiftOperation("record", "success", performance.now() - startedAt);
+      return { content: [{ type: "text", text: `${profiles.length} recorded profiles available.` }], structuredContent: { profiles } };
+    } catch (error) { return failure(error, "record", startedAt, context.signal); }
+  });
+
   registerAppTool(server, "mobile_tracesift_close_browser", {
     title: "Close the browser TraceSift launched",
     description: "Quit the Chrome opened for recording and delete the throwaway profile it used. Refuses while a recording is still running. Traces already written are left alone.",
@@ -307,18 +327,47 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
 
   registerAppTool(server, "mobile_tracesift_profile_build", {
     title: "Build and launch a profiling build",
-    description: "Run `tracesift profile build` in the chosen project for iOS or Android: build a release variant with the profiler armed, install it on the target and launch it. App-only: called after the user chooses a project and a run target. Takes minutes, writes build output under the project's ios/ or android/ folder, and installs an app on the chosen simulator, emulator or device. Returns the end of the build log.",
+    description: "Start a profiling build, install and launch in the background. Poll mobile_tracesift_profile_build_status for completion. App-only: called after the user chooses a project and target.",
     inputSchema: { projectPath: z.string().min(1).max(4096), platform: z.enum(["ios", "android"]), device: z.string().min(1).max(256).optional() },
-    outputSchema: { built: z.literal(true), log: z.string() },
+    outputSchema: { runId: z.string().uuid(), status: z.literal("running") },
     annotations: setupMutation,
     _meta: { ui: { visibility: ["app"] } },
   }, async ({ projectPath, platform, device }, context) => {
     const startedAt = performance.now();
     try {
-      const { log } = await client.profileBuild({ projectPath, platform, device }, context.signal);
-      recordTraceSiftOperation("profile", "success", performance.now() - startedAt);
-      return { content: [{ type: "text", text: "The profiling build is installed and launched." }], structuredContent: { built: true as const, log } };
+      if (build?.status === "running") throw new TraceSiftError("A profiling build is already running. Wait for it to finish.", "request");
+      if (platform === "ios") {
+        const disk = await statfs(projectPath);
+        const free = disk.bavail * disk.bsize;
+        if (free < 8 * 1024 ** 3) throw new TraceSiftError(`The iOS profiling build needs at least 8 GB free. This disk has ${Math.round(free / 1024 ** 3 * 10) / 10} GB. Free space and retry.`, "request");
+      }
+      const current: Build = { id: randomUUID(), projectPath, status: "running" };
+      build = current;
+      void client.profileBuild({ projectPath, platform, device }).then(({ log }) => {
+        current.status = "completed";
+        current.log = log;
+        recordTraceSiftOperation("profile", "success", performance.now() - startedAt);
+      }, error => {
+        current.status = "failed";
+        current.error = errorMessage(error);
+        recordTraceSiftOperation("profile", "failed", performance.now() - startedAt);
+        captureServerError(error, "tracesift.profile");
+      });
+      return { content: [{ type: "text", text: "Profiling build started. Check its status to learn when the app launches." }], structuredContent: { runId: current.id, status: "running" as const } };
     } catch (error) { return failure(error, "profile", startedAt, context.signal); }
+  });
+
+  registerAppTool(server, "mobile_tracesift_profile_build_status", {
+    title: "Check a profiling build",
+    description: "Read whether the background profiling build is still running, launched, or failed.",
+    inputSchema: { runId: z.string().uuid().optional() },
+    outputSchema: { runId: z.string().uuid().optional(), status: z.enum(["idle", "running", "completed", "failed"]), log: z.string().optional(), error: z.string().optional() },
+    annotations: read,
+    _meta: { ui: { visibility: ["app"] } },
+  }, async ({ runId }) => {
+    const current = build && (!runId || runId === build.id) ? build : undefined;
+    const status = current?.status ?? "idle";
+    return { content: [{ type: "text", text: `Profiling build ${status}.` }], structuredContent: { ...(current ? { runId: current.id, ...(current.log ? { log: current.log } : {}), ...(current.error ? { error: current.error } : {}) } : {}), status } };
   });
 
   registerAppTool(server, "mobile_get_tracesift_project", {

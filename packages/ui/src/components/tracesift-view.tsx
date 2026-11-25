@@ -270,6 +270,7 @@ function RunWithTraceSift({ controller, busy }: { controller: TraceSiftControlle
 function TraceSiftUpload({ controller, available }: { controller: TraceSiftController; available: boolean }) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   useEffect(() => { void controller.loadRunProject().then(() => controller.checkRun()); }, [controller]);
+  useEffect(() => { void controller.loadRecordedProfiles(); }, [controller]);
   useEffect(() => {
     if (state.capture.source === "chrome" && state.capture.step === "idle") controller.setCaptureSource("rn");
   }, [controller, state.capture.source, state.capture.step]);
@@ -368,10 +369,20 @@ function TraceSiftUpload({ controller, available }: { controller: TraceSiftContr
           {analyzing
             ? <p className="upload-analyzing" role="status">Analyzing {analyzing.name} with TraceSift…</p>
             : <UploadPane controller={controller} profileType={profileType} busy={!ready} />}
+          {profileType === "cpu" && state.recordedProfiles.length > 0 && <div className="tracesift-saved-profiles">
+            <label htmlFor="tracesift-saved-profile">Recorded profiles</label>
+            <select id="tracesift-saved-profile" value="" disabled={!ready || Boolean(analyzing)} onChange={event => {
+              const profile = state.recordedProfiles.find(item => item.path === event.currentTarget.value);
+              if (profile) void controller.analyze(profile.path, "cpu");
+            }}>
+              <option value="">Choose a saved profile…</option>
+              {state.recordedProfiles.map(profile => <option key={profile.path} value={profile.path}>{profile.name} · {new Date(profile.recordedAt).toLocaleString()}</option>)}
+            </select>
+          </div>}
         </> : <>
           {/* Recording yields JS CPU samples only: a React profile comes out of
               React DevTools, which this cannot drive. */}
-          <div className="tracesift-record-intro"><span className="tracesift-rn-badge">React Native</span><span>JavaScript CPU · captured locally</span></div>
+          <div className="tracesift-record-intro"><span className="tracesift-rn-badge">React Native</span><span>Hermes CPU Profile</span></div>
           <section className="tracesift-record-section">
             <button type="button" className="tracesift-record-section-toggle" aria-expanded={buildExpanded} aria-controls="tracesift-build-steps" onClick={() => { if (buildExpanded) controller.closeRun(); setBuildExpanded(value => !value); }}>
               <span className="workflow-label"><span>1</span><strong>Prepare a profiling build</strong>{state.run.building && <small>Building for {state.run.building.name}…</small>}</span>

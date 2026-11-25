@@ -38,6 +38,7 @@ type RunState = {
 };
 
 type State = {
+  recordedProfiles: { path: string; name: string; recordedAt: string; sizeBytes: number }[];
   analysis?: TraceSiftAnalysis;
   canInvestigate: boolean;
   /** Explore, the project and hand-offs need the host to let cards call the server. */
@@ -112,7 +113,7 @@ function composerUnavailable(error: unknown) {
 }
 
 export class TraceSiftController {
-  private state: State = { canInvestigate: false, canCallTools: false, dark: false, error: "", notice: "", setupNotice: "", checkingReadiness: false, chartKind: "bar",
+  private state: State = { recordedProfiles: [], canInvestigate: false, canCallTools: false, dark: false, error: "", notice: "", setupNotice: "", checkingReadiness: false, chartKind: "bar",
     capture: { source: "rn", step: "idle", url: "", targets: [], targetId: "", metro: "", targetsError: "", loadingTargets: false, error: "" },
     run: { open: false, projectPath: "", pickingProject: false, checking: false, installing: false, targets: [], error: "", notice: "" } };
   private listeners = new Set<() => void>();
@@ -126,6 +127,9 @@ export class TraceSiftController {
   private inputKey?: string;
   private copiedTimer?: ReturnType<typeof setTimeout>;
   private reconnectTimer?: ReturnType<typeof setTimeout>;
+  private buildPollTimer?: ReturnType<typeof setTimeout>;
+  private buildRunId?: string;
+  private buildStartedAt = 0;
   private reconnectGeneration = 0;
   /** Serializes `mobile_remember_tracesift_analysis` calls so out-of-order completions cannot write a stale analysis over a newer one. */
   private rememberChain: Promise<void> = Promise.resolve();
@@ -613,6 +617,19 @@ export class TraceSiftController {
     }
   };
 
+  loadRecordedProfiles = async () => {
+    if (this.disposed) return;
+    try {
+      const result = await this.app.callServerTool({ name: "mobile_tracesift_recorded_profiles", arguments: {} });
+      if (result.isError) throw new Error("Saved profiles could not be listed.");
+      const profiles = result.structuredContent?.profiles;
+      if (!Array.isArray(profiles) || !profiles.every(profile => typeof profile?.path === "string" && typeof profile?.name === "string" && typeof profile?.recordedAt === "string" && typeof profile?.sizeBytes === "number")) return;
+      if (!this.disposed) this.update({ recordedProfiles: profiles });
+    } catch {
+      // File picking and recording remain available if the local list cannot be read.
+    }
+  };
+
   /** Preflight the local service before the upload pane asks the user for a profile. */
   checkReadiness = async () => {
     if (this.disposed || this.state.checkingReadiness) return;
@@ -918,20 +935,49 @@ export class TraceSiftController {
     if (this.reconnectTimer !== undefined) clearTimeout(this.reconnectTimer);
     const generation = ++this.reconnectGeneration;
     this.runUpdate({ open: false, building: target, error: "", notice: "" });
-    const startedAt = performance.now();
+    this.buildStartedAt = performance.now();
     try {
-      await this.captureTool("mobile_tracesift_profile_build",
-        { projectPath, platform: target.platform, ...(target.id ? { device: target.id } : {}) }, "The profiling build failed.");
+      const result = await this.captureTool("mobile_tracesift_profile_build",
+        { projectPath, platform: target.platform, ...(target.id ? { device: target.id } : {}) }, "The profiling build could not start.") as { runId?: unknown } | undefined;
       if (this.disposed) return;
-      recordUiTiming("ui.tracesift.run_build", performance.now() - startedAt);
-      countUiEvent("ui.tracesift.run_build");
-      this.runUpdate({ building: undefined, notice: `Launched on ${target.name}. Use the app, then press Start profile when it appears below.`, error: "" });
-      // The build can finish before the app connects, so try a few times.
-      void this.refreshAfterBuild(generation);
+      if (typeof result?.runId !== "string") throw new Error("TraceSift did not return a build ID.");
+      this.buildRunId = result.runId;
+      void this.pollBuild(generation);
     } catch (error) {
       countUiEvent("ui.tracesift.run_build_failed");
       captureUiError(new Error("TraceSift profiling build failed."), "tracesift.run");
       if (!this.disposed) this.runUpdate({ building: undefined, error: error instanceof Error ? error.message : "The profiling build failed." });
+    }
+  };
+
+  private pollBuild = async (generation: number) => {
+    if (this.disposed || generation !== this.reconnectGeneration || !this.buildRunId) return;
+    try {
+      const result = await this.captureTool("mobile_tracesift_profile_build_status", { runId: this.buildRunId }, "The build status could not be read.") as { status?: unknown; error?: unknown } | undefined;
+      if (this.disposed || generation !== this.reconnectGeneration) return;
+      if (result?.status === "running") {
+        this.buildPollTimer = setTimeout(() => { void this.pollBuild(generation); }, 2000);
+        return;
+      }
+      if (result?.status === "failed" || result?.status === "idle") {
+        this.buildRunId = undefined;
+        countUiEvent("ui.tracesift.run_build_failed");
+        captureUiError(new Error("TraceSift profiling build failed."), "tracesift.run");
+        this.runUpdate({ building: undefined, error: typeof result.error === "string" ? result.error : "The profiling build ended without launching the app." });
+        return;
+      }
+      if (result?.status !== "completed") throw new Error("TraceSift returned an invalid build status.");
+      this.buildRunId = undefined;
+      recordUiTiming("ui.tracesift.run_build", performance.now() - this.buildStartedAt);
+      countUiEvent("ui.tracesift.run_build");
+      const target = this.state.run.building;
+      this.runUpdate({ building: undefined, notice: `Launched on ${target?.name ?? "the device"}. Use the app, then press Start profile when it appears below.`, error: "" });
+      void this.refreshAfterBuild(generation);
+    } catch (error) {
+      if (this.disposed || generation !== this.reconnectGeneration) return;
+      // A transient status request should not claim the app failed to launch.
+      this.buildPollTimer = setTimeout(() => { void this.pollBuild(generation); }, 4000);
+      this.runUpdate({ error: error instanceof Error ? error.message : "The build status could not be read." });
     }
   };
 
@@ -1007,6 +1053,7 @@ export class TraceSiftController {
     }
     // A trace is only worth recording for the cards it becomes, so the reading
     // follows the stop without a second press.
+    await this.loadRecordedProfiles();
     await this.analyze(path, "cpu");
   };
 
@@ -1048,6 +1095,7 @@ export class TraceSiftController {
     this.disposed = true;
     if (this.copiedTimer !== undefined) clearTimeout(this.copiedTimer);
     if (this.reconnectTimer !== undefined) clearTimeout(this.reconnectTimer);
+    if (this.buildPollTimer !== undefined) clearTimeout(this.buildPollTimer);
     this.listeners.clear();
   }
 }

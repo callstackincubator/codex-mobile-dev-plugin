@@ -1,9 +1,9 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { openAsBlob } from "node:fs";
-import { mkdir, readFile as readFileAsync, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, readFile as readFileAsync, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, delimiter, dirname, join } from "node:path";
 import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import { traceSiftAnalysisSchema, traceSiftHandoffSchema, traceSiftRnTargetsSchema, type TraceSiftAnalysis, type TraceSiftCapture, type TraceSiftProfileType, type TraceSiftReactHandoff, type TraceSiftSetupReason, type TraceSiftRnTargets, type TraceSiftTaskHandoff } from "@mobile-dev/shared/tracesift.ts";
@@ -152,9 +152,34 @@ export class TraceSiftClient {
   private child?: ChildProcess;
   private readonly home: string;
   private readonly command: string;
-  constructor(command = process.env.TRACE_SIFT_COMMAND ?? "tracesift", home?: string) {
+  private readonly recordingsDirectory: string;
+  constructor(command = process.env.TRACE_SIFT_COMMAND ?? "tracesift", home?: string, recordingsDirectory = join(homedir(), "Library/Application Support/mobile-dev/tracesift")) {
     this.command = command;
     this.home = home ?? process.env.TRACE_SIFT_HOME ?? join(homedir(), ".tracesift");
+    this.recordingsDirectory = recordingsDirectory;
+  }
+
+  /** Recorded traces belong to Mobile Dev so they survive TraceSift service restarts. */
+  async listRecordedProfiles() {
+    const entries = await readdir(this.recordingsDirectory, { withFileTypes: true }).catch(error => {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return [];
+      throw error;
+    });
+    const profiles = await Promise.all(entries.filter(entry => entry.isFile() && /\.json(?:\.gz)?$/.test(entry.name)).map(async entry => {
+      const path = join(this.recordingsDirectory, entry.name);
+      const info = await stat(path);
+      return { path, name: entry.name, recordedAt: info.mtime.toISOString(), sizeBytes: info.size };
+    }));
+    return profiles.sort((a, b) => b.recordedAt.localeCompare(a.recordedAt)).slice(0, 100);
+  }
+
+  private async keepRecording(path: string) {
+    await mkdir(this.recordingsDirectory, { recursive: true, mode: 0o700 });
+    const extension = path.endsWith(".json.gz") ? ".json.gz" : ".json";
+    const destination = join(this.recordingsDirectory, `profile-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 8)}${extension}`);
+    await copyFile(path, destination);
+    await chmod(destination, 0o600);
+    return destination;
   }
 
   private async existing(signal?: AbortSignal) {
@@ -209,7 +234,7 @@ export class TraceSiftClient {
   async readyService(signal?: AbortSignal) { await this.service(signal); }
 
   private runSetupCommand(command: string, args: string[], label: string, signal?: AbortSignal,
-    env: NodeJS.ProcessEnv = process.env, cwd?: string) {
+    env: NodeJS.ProcessEnv = process.env, cwd?: string, timeoutMs = SETUP_TIMEOUT_MS) {
     return new Promise<void>((resolve, reject) => {
       let child: ChildProcess;
       try { child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], env, ...(cwd ? { cwd } : {}) }); }
@@ -231,7 +256,7 @@ export class TraceSiftClient {
         if (error) reject(error); else resolve();
       };
       const abort = () => { child.kill("SIGTERM"); finish(signal?.reason instanceof Error ? signal.reason : new Error(`${label} was cancelled.`)); };
-      const timeout = setTimeout(() => { child.kill("SIGTERM"); finish(new TraceSiftError(`${label} did not finish within five minutes. Run the command in a terminal to continue.`, "setup", "startup_failed")); }, SETUP_TIMEOUT_MS);
+      const timeout = setTimeout(() => { child.kill("SIGTERM"); finish(new TraceSiftError(`${label} did not finish within ${Math.round(timeoutMs / 60_000)} minutes.`, "setup", "startup_failed")); }, timeoutMs);
       child.once("error", error => {
         const missing = "code" in error && error.code === "ENOENT";
         finish(missing
@@ -460,6 +485,7 @@ export class TraceSiftClient {
     cwd?: string;
     /** Keep the end of the output, not the start: a long build reports its failure last. */
     maxOutputTail?: boolean;
+    env?: NodeJS.ProcessEnv;
   }): Promise<string> {
     const { signal } = messages;
     return await new Promise<string>((resolve, reject) => {
@@ -467,7 +493,7 @@ export class TraceSiftClient {
       let output = "";
       let settled = false;
       const child = spawn(this.command, args, {
-        stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, TRACE_SIFT_HOME: this.home },
+        stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ...messages.env, TRACE_SIFT_HOME: this.home },
         ...(messages.cwd ? { cwd: messages.cwd } : {}),
       });
       child.stdout?.setEncoding("utf8");
@@ -633,7 +659,7 @@ export class TraceSiftClient {
     });
     const state = await this.captureState();
     if (!state.capture) throw new TraceSiftError("The recording stopped without writing a trace. Try recording again.", "response");
-    return state.capture;
+    return { ...state.capture, path: await this.keepRecording(state.capture.path) };
   }
 
   /**
@@ -806,8 +832,22 @@ export class TraceSiftClient {
     const cwd = await this.projectRoot(options.projectPath);
     const args = ["profile", "build", "--platform", options.platform, ...(options.device ? ["--device", options.device] : [])];
     try {
+      // Desktop hosts often launch without the login shell's CocoaPods/Ruby paths.
+      const iosPath = options.platform === "ios" ? [dirname(process.execPath), join(homedir(), ".rbenv/shims"), join(homedir(), ".rbenv/bin"), "/opt/homebrew/bin", "/usr/local/bin", process.env.PATH ?? ""].join(delimiter) : process.env.PATH;
+      if (options.platform === "ios") {
+        const profiler = await stat(join(cwd, "node_modules", "@callstack", "tracesift-rn-profiler")).catch(() => undefined);
+        const lock = await readFileAsync(join(cwd, "ios", "Podfile.lock"), "utf8").catch(() => "");
+        const gemfile = await stat(join(cwd, "Gemfile")).catch(() => undefined);
+        // The CLI uses plain `pod`, which can be absent under a project's pinned
+        // Ruby even when its bundled CocoaPods is installed and ready.
+        if (profiler?.isDirectory() && gemfile?.isFile() && !lock.includes("TracesiftProfiler")) {
+          await this.runSetupCommand("bundle", ["exec", "pod", "install"], "Linking the TraceSift profiler pod", signal,
+            { ...process.env, PATH: iosPath, LANG: "en_US.UTF-8", LC_ALL: "en_US.UTF-8" }, join(cwd, "ios"), PROFILE_BUILD_TIMEOUT_MS);
+        }
+      }
       const output = await this.runCommand(args, {
         timeoutMs: PROFILE_BUILD_TIMEOUT_MS, signal, cwd, maxOutputTail: true,
+        ...(iosPath ? { env: { PATH: iosPath } } : {}),
         cancelled: "The build was cancelled.", timedOut: "The build did not finish within 30 minutes.",
         missing: "TraceSift is not installed or could not run `tracesift profile build`.",
         failed: code => `The profiling build failed (exit code ${code}).`,

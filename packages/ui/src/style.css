@@ -311,8 +311,9 @@ html[data-theme="dark"] .tracesift-explorer { color-scheme: dark; }
 .tracesift-pick-bar > span { flex: 1; min-width: 0; }
 
 /* Upload workspace shown until a profile is read; its inspector carries through to the results layout. */
-.tracesift-upload { --tracesift-blue: #85baff; --tracesift-blue-ink: #215f9f; --tracesift-note-ink: #985600; --tracesift-note: #efa943; display: grid; align-content: start; gap: 18px; width: 100%; padding: 20px; color: var(--foreground); font-size: 13px; }
-html[data-theme="dark"] .tracesift-upload { --tracesift-blue-ink: var(--tracesift-blue); --tracesift-note-ink: #ffc476; }
+.tracesift-upload { --tracesift-blue: #85baff; --tracesift-blue-ink: #215f9f; --tracesift-note-ink: #a46313; --tracesift-note: #f7c777; display: grid; align-content: start; gap: 18px; width: 100%; padding: 20px; color: var(--foreground); font-size: 13px; }
+html[data-theme="dark"] .tracesift-upload { --tracesift-blue-ink: var(--tracesift-blue); --tracesift-note-ink: #ffd49a; }
+.tracesift-upload button:not(:disabled), .tracesift-upload select:not(:disabled) { cursor: pointer; }
 .tracesift-upload .results-header { padding-bottom: 14px; border-bottom: 1px solid var(--border); }
 .tracesift-upload .intro { min-width: 0; text-align: left; }
 .tracesift-upload .eyebrow { display: inline-block; color: var(--primary); font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
@@ -330,12 +331,14 @@ html[data-theme="dark"] .tracesift-upload { --tracesift-blue-ink: var(--tracesif
 .tracesift-upload .workflow-label > span { display: grid; place-items: center; width: 18px; height: 18px; flex: none; align-self: center; border-radius: 50%; background: var(--accent); color: var(--primary); font-size: 10px; font-weight: 700; }
 .tracesift-upload .workflow-label strong { font-size: 13px; }
 .tracesift-upload .workflow-label small { color: var(--muted-foreground); font-size: 11.5px; }
-.tracesift-upload .tracesift-record-intro { display: flex; align-items: center; gap: 9px; color: var(--muted-foreground); font-size: 11px; }
+.tracesift-upload .tracesift-record-intro { display: flex; align-items: center; justify-content: center; gap: 9px; text-align: center; color: var(--muted-foreground); font-size: 11px; }
 .tracesift-upload .tracesift-rn-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border: 1px solid color-mix(in srgb, var(--ring) 55%, var(--border)); border-radius: 999px; background: color-mix(in srgb, var(--ring) 10%, transparent); color: var(--ring); font-size: 10px; font-weight: 650; line-height: 1.2; }
 .tracesift-upload .tracesift-rn-badge::before { content: ""; width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
 .tracesift-upload .tracesift-record-section { border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
-.tracesift-upload .tracesift-record-section-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 12px 14px; border: 0; background: transparent; color: var(--foreground); font: inherit; text-align: left; cursor: pointer; }
-.tracesift-upload .tracesift-record-section-toggle:hover { background: color-mix(in srgb, var(--tracesift-blue) 6%, transparent); }
+.tracesift-upload .tracesift-record-section-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 12px 14px; border: 0; background: color-mix(in srgb, var(--tracesift-blue) 6%, transparent); color: var(--foreground); font: inherit; text-align: left; cursor: pointer; }
+.tracesift-upload .tracesift-saved-profiles { display: grid; gap: 6px; }
+.tracesift-upload .tracesift-saved-profiles label { font-size: 12px; font-weight: 600; }
+.tracesift-upload .tracesift-saved-profiles select { min-width: 0; width: 100%; padding: 8px 10px; color: var(--foreground); background: var(--card); border: 1px solid var(--border); border-radius: 7px; font: inherit; }
 .tracesift-upload .tracesift-record-section-toggle:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
 .tracesift-upload .tracesift-record-section-toggle > svg { width: 15px; height: 15px; flex: none; color: var(--muted-foreground); }
 .tracesift-upload .tracesift-record-section-body { display: grid; gap: 12px; padding: 14px; border-top: 1px solid var(--border); }

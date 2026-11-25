@@ -48,6 +48,34 @@ test("the TraceSift status tool returns setup guidance as structured data", asyn
   });
 });
 
+test("a profiling build starts promptly and reports its eventual launch", async t => {
+  let complete!: (result: { log: string }) => void;
+  const pending = new Promise<{ log: string }>(resolve => { complete = resolve; });
+  const { mcp, close } = await connect({ async profileBuild() { return pending; } });
+  t.after(close);
+  const started = await mcp.callTool({ name: "mobile_tracesift_profile_build", arguments: { projectPath: "/tmp", platform: "android" } });
+  assert.equal(started.isError, undefined);
+  const runId = (started.structuredContent as { runId: string }).runId;
+  assert.equal((await mcp.callTool({ name: "mobile_tracesift_profile_build_status", arguments: { runId } })).structuredContent?.status, "running");
+  complete({ log: "installed and launched" });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual((await mcp.callTool({ name: "mobile_tracesift_profile_build_status", arguments: { runId } })).structuredContent,
+    { runId, status: "completed", log: "installed and launched" });
+});
+
+test("an iOS profiling build reports insufficient disk before starting", async t => {
+  const { statfs } = await import("node:fs/promises");
+  const disk = await statfs("/tmp");
+  if (disk.bavail * disk.bsize >= 8 * 1024 ** 3) return t.skip("At least 8 GB is free on the test disk.");
+  let started = false;
+  const { mcp, close } = await connect({ async profileBuild() { started = true; return { log: "" }; } });
+  t.after(close);
+  const result = await mcp.callTool({ name: "mobile_tracesift_profile_build", arguments: { projectPath: "/tmp", platform: "ios" } });
+  assert.equal(result.isError, true);
+  assert.match((result.content as { text: string }[])[0]!.text, /at least 8 GB free/);
+  assert.equal(started, false);
+});
+
 test("the TraceSift setup tools run only their fixed client operations", async t => {
   const calls: string[] = [];
   const { mcp, close } = await connect({
@@ -192,6 +220,7 @@ test("published TraceSift annotations distinguish saved references, service star
     mobile_tracesift_launch_browser: [false, false],
     mobile_tracesift_start_recording: [false, false],
     mobile_tracesift_stop_recording: [false, true],
+    mobile_tracesift_recorded_profiles: [true, false],
     mobile_tracesift_close_browser: [false, true],
     mobile_tracesift_list_react_native_targets: [true, false],
     mobile_tracesift_record_react_native: [false, false],
@@ -199,6 +228,7 @@ test("published TraceSift annotations distinguish saved references, service star
     mobile_tracesift_install_profiler: [false, true],
     mobile_tracesift_profile_devices: [true, false],
     mobile_tracesift_profile_build: [false, true],
+    mobile_tracesift_profile_build_status: [true, false],
     mobile_get_tracesift_project: [true, false],
     mobile_pick_tracesift_project: [false, true],
     mobile_remember_tracesift_analysis: [false, true],
