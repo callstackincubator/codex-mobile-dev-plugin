@@ -112,6 +112,39 @@ test.describe("MCP Apps hosts", () => {
     expect(pageErrors).toEqual([]);
   });
 
+  for (const width of [320, 1280]) {
+    test(`the tools menu leaves room for the checkmark at ${width}px`, async ({ openView, server }) => {
+      test.skip(hasPanel(server) === false, "This target's server renders no panel in the chat.");
+      const { view } = await openView("mobile_open_workspace", { width });
+      const trigger = view.getByRole("combobox", { name: "Developer tools" });
+      const performance = view.getByRole("option", { name: "Performance", exact: true });
+      await trigger.click();
+      await performance.click();
+      await trigger.click();
+
+      const selected = view.getByRole("option", { name: "Performance", selected: true });
+      const checkmark = selected.locator(".lucide-check");
+      await expect(checkmark).toBeVisible();
+      const gaps = await checkmark.evaluate(icon => {
+        const checkLeft = icon.getBoundingClientRect().left;
+        const menu = icon.closest('[role="listbox"]')!;
+        const options = menu.querySelectorAll('[role="option"]');
+        return Array.from(options, option => {
+          // Measure the rendered text itself. Its flex container can extend beyond the label.
+          const walker = document.createTreeWalker(option, NodeFilter.SHOW_TEXT);
+          const text = walker.nextNode()!;
+          const range = document.createRange();
+          range.selectNodeContents(text);
+          const labelRight = range.getBoundingClientRect().right;
+          return { label: option.textContent, gap: Math.round(checkLeft - labelRight) };
+        });
+      });
+      for (const { label, gap } of gaps) {
+        expect(gap, `space after "${label}"`).toBeGreaterThanOrEqual(8);
+      }
+    });
+  }
+
   test("Testing Studio downloads on open and recovers from a failed installation", async ({ openView, server, target, pageErrors }) => {
     test.skip(target !== "codex");
     let phase = "downloading";
