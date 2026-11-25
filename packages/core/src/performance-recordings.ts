@@ -268,7 +268,6 @@ export class PerformanceRecordings {
       await hitchResult;
       if (active.interrupted) throw new Error("Recording interrupted because the plugin server closed.");
       if (recording.fps.status === "recording") recording.fps.status = "finished";
-      recording.status = "finished";
     } catch (error) {
       recording.status = "failed";
       recording.error = errorMessage(error);
@@ -296,11 +295,17 @@ export class PerformanceRecordings {
         captureServerError(result.reason, "recording.close");
       }
       if (recording.fps.status === "connecting" || recording.fps.status === "recording") recording.fps.status = "unavailable";
-      recording.completedAt = new Date().toISOString();
+      const completionTime = new Date();
+      const completedAt = completionTime.toISOString();
+      const completed: PerformanceRecording = {
+        ...recording, completedAt, status: recording.status === "failed" ? "failed" : "finished",
+      };
       try {
-        await this.store.save(recording);
+        await this.store.save(completed);
+        active.recording = completed;
         this.active.delete(recording.id);
       } catch (error) {
+        recording.completedAt = completedAt;
         recording.status = "failed";
         recording.error = "The recording could not be saved to disk.";
         captureServerError(error, "recording.save");
@@ -327,9 +332,13 @@ export class PerformanceRecordings {
   }
 
   async list(limit: number) {
+    const pending = new Map(this.active);
     const saved = await this.store.list(limit);
-    const pending = Array.from(this.active.values(), active => active.recording);
-    const all = [...pending, ...saved];
+    const activeRecordings = pending.values();
+    const all = Array.from(activeRecordings, active => active.recording);
+    for (const recording of saved) {
+      if (pending.has(recording.id) === false) all.push(recording);
+    }
     all.sort((left, right) => right.startedAt.localeCompare(left.startedAt));
     return all.slice(0, limit);
   }
