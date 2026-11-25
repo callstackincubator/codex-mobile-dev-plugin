@@ -77,7 +77,12 @@ if [[ $FULL_CHECK -eq 1 ]]; then
 fi
 
 MARKETPLACE_ROOT="$ROOT/release/marketplace"
-MARKETPLACES_JSON="$(codex plugin marketplace list --json)"
+# `marketplace list` loads every registered marketplace, so it exits non-zero
+# and prints no JSON when one of them points at a directory that has gone — a
+# worktree deleted since its last run, say. That is the exact case the
+# repointing below exists to handle, so neither the listing nor parsing it may
+# be fatal; an unreadable registration is simply one we have to replace.
+MARKETPLACES_JSON="$(codex plugin marketplace list --json 2>/dev/null || true)"
 CONFIGURED_ROOT="$(
   printf '%s' "$MARKETPLACES_JSON" |
     node -e '
@@ -85,17 +90,30 @@ CONFIGURED_ROOT="$(
       process.stdin.setEncoding("utf8");
       process.stdin.on("data", chunk => { input += chunk; });
       process.stdin.on("end", () => {
-        const entry = JSON.parse(input).marketplaces?.find(value => value.name === "mobile-dev-local");
-        process.stdout.write(entry?.root ?? "");
+        try {
+          const entry = JSON.parse(input).marketplaces?.find(value => value.name === "mobile-dev-local");
+          process.stdout.write(entry?.root ?? "");
+        } catch {
+          process.stdout.write("");
+        }
       });
-    '
+    ' || true
 )"
 
-if [[ -z "$CONFIGURED_ROOT" ]]; then
-  codex plugin marketplace add "$MARKETPLACE_ROOT"
-elif [[ "$CONFIGURED_ROOT" != "$MARKETPLACE_ROOT" ]]; then
-  echo "Repointing mobile-dev-local from $CONFIGURED_ROOT to this worktree."
-  codex plugin marketplace remove mobile-dev-local
+if [[ "$CONFIGURED_ROOT" == "$MARKETPLACE_ROOT" ]]; then
+  : # Already pointed here.
+else
+  if [[ -n "$CONFIGURED_ROOT" ]]; then
+    echo "Repointing mobile-dev-local from $CONFIGURED_ROOT to this worktree."
+  elif [[ -n "$MARKETPLACES_JSON" ]]; then
+    echo "Registering mobile-dev-local at this worktree."
+  else
+    echo "Could not read the installed marketplaces; re-registering mobile-dev-local at this worktree." >&2
+  fi
+  # `add` refuses to replace a registration, and a broken one still counts, so
+  # clear it first. Removing one that was never there is not an error worth
+  # stopping for.
+  codex plugin marketplace remove mobile-dev-local >/dev/null 2>&1 || true
   codex plugin marketplace add "$MARKETPLACE_ROOT"
 fi
 

@@ -567,7 +567,7 @@ test("profile devices are parsed from the CLI's rows, and a failing build report
   const command = join(home, "tracesift");
   await writeFile(command, `#!/bin/sh
 if [ "$2" = devices ]; then
-  printf 'device     00008150-AAA  Hur iPhone  (USB, tunnel up)\\nsimulator  UUID-1  iPhone 17 Pro  (booted)\\nnoise\\n'
+  printf 'device     00008150-AAA  Hur iPhone  (USB, tunnel up)\\nsimulator  UUID-1  iPhone 17 Pro  (booted)\\nandroid    R5CT83DJM1Z  SM-S908E  (USB)\\nnoise\\n'
 else
   echo 'xcodebuild chatter' >&2
   echo 'tracesift: No provisioning profile covers this phone.' >&2
@@ -580,6 +580,7 @@ fi
   assert.deepEqual(await client.profileDevices(), [
     { kind: "device", id: "00008150-AAA", name: "Hur iPhone", note: "USB, tunnel up" },
     { kind: "simulator", id: "UUID-1", name: "iPhone 17 Pro", note: "booted" },
+    { kind: "android", id: "R5CT83DJM1Z", name: "SM-S908E", note: "USB" },
   ]);
   await assert.rejects(client.profileBuild({ projectPath: home, platform: "ios" }), /No provisioning profile covers this phone\./);
 });

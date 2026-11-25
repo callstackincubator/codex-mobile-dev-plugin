@@ -783,15 +783,15 @@ export class TraceSiftClient {
   }
 
   /** What `tracesift profile devices` can build for, parsed from its one-row-per-device output. */
-  async profileDevices(signal?: AbortSignal): Promise<{ kind: "device" | "simulator"; id: string; name: string; note: string }[]> {
+  async profileDevices(signal?: AbortSignal): Promise<{ kind: "device" | "simulator" | "android"; id: string; name: string; note: string }[]> {
     const output = await this.runCommand(["profile", "devices"], {
       timeoutMs: 30_000, signal, cancelled: "Listing devices was cancelled.", timedOut: "Listing devices took longer than 30 seconds.",
       missing: "TraceSift is not installed or could not run `tracesift profile`.",
       failed: code => `TraceSift could not list devices (exit code ${code}).`,
     });
     return output.split("\n").flatMap(line => {
-      const row = /^(device|simulator)\s+(\S+)\s{2}(.+?)\s{2}\((.+)\)\s*$/.exec(line);
-      return row ? [{ kind: row[1] as "device" | "simulator", id: row[2], name: row[3], note: row[4] }] : [];
+      const row = /^(device|simulator|android)\s+(\S+)\s{2}(.+?)\s{2}\((.+)\)\s*$/.exec(line);
+      return row ? [{ kind: row[1] as "device" | "simulator" | "android", id: row[2], name: row[3], note: row[4] }] : [];
     }).slice(0, 50);
   }
 

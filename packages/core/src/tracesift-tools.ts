@@ -290,10 +290,10 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
   });
 
   registerAppTool(server, "mobile_tracesift_profile_devices", {
-    title: "List the iOS targets a profiling build can go to",
-    description: "Return the booted iOS simulators and USB-attached iPhones `tracesift profile devices` reports, each with the id `mobile_tracesift_profile_build` takes as its device. Starts nothing.",
+    title: "List the targets a profiling build can go to",
+    description: "Return the booted iOS simulators, USB-attached iPhones and Android devices and emulators `tracesift profile devices` reports, each with the id `mobile_tracesift_profile_build` takes as its device. Starts nothing.",
     inputSchema: {},
-    outputSchema: { devices: z.array(z.object({ kind: z.enum(["device", "simulator"]), id: z.string(), name: z.string(), note: z.string() })) },
+    outputSchema: { devices: z.array(z.object({ kind: z.enum(["device", "simulator", "android"]), id: z.string(), name: z.string(), note: z.string() })) },
     annotations: read,
     _meta: { ui: { visibility: ["app"] } },
   }, async (_input, context) => {
@@ -301,7 +301,7 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
     try {
       const devices = await client.profileDevices(context.signal);
       recordTraceSiftOperation("profile", "success", performance.now() - startedAt);
-      return { content: [{ type: "text", text: `${devices.length} iOS target(s) found.` }], structuredContent: { devices } };
+      return { content: [{ type: "text", text: `${devices.length} target(s) found.` }], structuredContent: { devices } };
     } catch (error) { return failure(error, "profile", startedAt, context.signal); }
   });
 

@@ -851,20 +851,30 @@ export class TraceSiftController {
 
   private async loadRunTargets(platforms: ("ios" | "android")[]) {
     const targets: TraceSiftRunTarget[] = [];
-    let iosError = "";
-    if (platforms.includes("ios")) {
-      try {
-        const listed = await this.captureTool("mobile_tracesift_profile_devices", {}, "The iOS targets could not be listed.") as { devices?: unknown } | undefined;
-        for (const entry of Array.isArray(listed?.devices) ? listed.devices : []) {
-          const device = entry as { kind?: unknown; id?: unknown; name?: unknown; note?: unknown };
-          if ((device.kind !== "device" && device.kind !== "simulator") || typeof device.id !== "string" || typeof device.name !== "string") continue;
-          targets.push({ platform: "ios", kind: device.kind, id: device.id, name: device.name, note: typeof device.note === "string" ? device.note : "" });
+    let listError = "";
+    // One listing covers both platforms: a phone the developer has plugged in
+    // should appear by name whichever one it is, and the popup shows them in
+    // a single list.
+    try {
+      const listed = await this.captureTool("mobile_tracesift_profile_devices", {}, "The targets could not be listed.") as { devices?: unknown } | undefined;
+      for (const entry of Array.isArray(listed?.devices) ? listed.devices : []) {
+        const device = entry as { kind?: unknown; id?: unknown; name?: unknown; note?: unknown };
+        if (typeof device.id !== "string" || typeof device.name !== "string") continue;
+        const note = typeof device.note === "string" ? device.note : "";
+        if ((device.kind === "device" || device.kind === "simulator") && platforms.includes("ios")) {
+          targets.push({ platform: "ios", kind: device.kind, id: device.id, name: device.name, note });
+        } else if (device.kind === "android" && platforms.includes("android")) {
+          targets.push({ platform: "android", kind: "android", id: device.id, name: device.name, note });
         }
-      } catch (error) { iosError = error instanceof Error ? error.message : "The iOS targets could not be listed."; }
+      }
+    } catch (error) { listError = error instanceof Error ? error.message : "The targets could not be listed."; }
+    // Still offer Android when adb listed nothing, so a device attached after
+    // this check can be built for without reopening the popup; adb picks the
+    // one it sees and says so itself if there is none.
+    if (platforms.includes("android") && !targets.some((target) => target.platform === "android")) {
+      targets.push({ platform: "android", kind: "android", name: "Android emulator or device", note: "none attached yet — the one adb sees" });
     }
-    // adb picks the one attached emulator or phone itself, so Android needs no id here.
-    if (platforms.includes("android")) targets.push({ platform: "android", kind: "android", name: "Android emulator or device", note: "the one adb sees" });
-    if (!this.disposed) this.runUpdate({ targets, ...(iosError ? { error: iosError } : {}) });
+    if (!this.disposed) this.runUpdate({ targets, ...(listError ? { error: listError } : {}) });
   }
 
   /** Add the package with the project's own package manager: the command the popup shows beside its run button. */

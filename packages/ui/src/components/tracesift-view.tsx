@@ -257,7 +257,12 @@ function CapturePane({ controller, busy }: { controller: TraceSiftController; bu
 
 const folderName = (path: string) => path.split("/").filter(Boolean).at(-1) || path;
 
-const runTargetIcon = (target: TraceSiftRunTarget) => target.kind === "device" ? <SmartphoneIcon /> : <MonitorSmartphoneIcon />;
+// A real phone gets the phone; a simulator or emulator gets the screen. An
+// Android row is either, so it is told apart by adb's own serial.
+const runTargetIcon = (target: TraceSiftRunTarget) =>
+  target.kind === "device" || (target.kind === "android" && target.id !== undefined && !target.id.startsWith("emulator-"))
+    ? <SmartphoneIcon />
+    : <MonitorSmartphoneIcon />;
 
 /**
  * "Run with TraceSift": make a profiling build from the panel instead of from
