@@ -3,7 +3,7 @@ title: Privacy Policy
 description: Read how Mobile Dev processes local development data, shares results with your host, collects diagnostics, and provides privacy controls.
 ---
 
-Last updated: 23 November 2026
+Last updated: 25 November 2026
 
 ## 1. Who we are and what this policy covers
 
@@ -91,15 +91,15 @@ uploads of your app's recorded CPU/memory/FPS samples.
 
 Error and crash reports include a random installation ID, persistent across
 updates and restarts, and a random process-session ID. They are not derived from
-your name, email, OpenAI account, device ID, or machine name. Because the
+your name, email, host account, device ID, or machine name. Because the
 installation ID links reports over time, we treat it as pseudonymous information,
 not a guarantee of anonymity. These IDs are excluded from performance metrics
 and span attributes.
 
 The reporting code excludes MCP arguments/results, screenshots, screen video,
 app log content, typed/pasted text, App Intelligence graph contents, test source
-and step contents, app storage contents, profile contents, and device performance recordings. It scrubs common
-secrets, email addresses, URLs,
+and step contents, app storage contents, profile contents, and device performance
+recordings. It scrubs common secrets, email addresses, URLs,
 and local home paths from error text. Session Replay, minidumps, and profiling
 are disabled in the configured Sentry integrations. Scrubbing is a safeguard,
 not a reason to put secrets into your test data.
@@ -192,6 +192,8 @@ and [OpenAI's privacy policy](https://openai.com/policies/privacy-policy/).
 | Local live logs | Held in bounded memory buffers. A server log session expires after five minutes without reads or keep-alives; closing the session stops collection. Copies already attached to the host follow the host's retention. |
 | Saved App Intelligence graphs and project history | Stored under `~/Library/Application Support/mobile-dev/app-intelligence` until you clear a graph or remove the files. Clearing a graph keeps the project in the recent-project list. |
 | Testing Studio project history and unsaved recordings | Stored under `~/Library/Application Support/mobile-dev/testing` until you delete a recording or remove the files. Saving a recording into the project removes the local draft it replaced; the draft store keeps at most 30 recordings. Tests saved into the project's `tests/` folder follow your repository's retention. |
+| agent-device session state, logs and artifacts | Kept in a `mobile-dev-agent-device-` directory in the system temporary folder after a session, so they stay readable, until the operating system or you remove them. |
+| agent-device's iOS test runner | Built from the plugin's included source and cached in `~/.agent-device/apple-runner` until you remove it. |
 | Saved performance recordings | Stored under `~/Library/Application Support/mobile-dev/recordings` until you remove them; the recording store has no automatic age-based expiry. |
 | TraceSift integration results/references and the chosen project folder | Stored under `~/.tracesift/integrations/mobile-dev` by default, or the corresponding `TRACE_SIFT_HOME` directory, until removed. Original profiles and the TraceSift service's own data are separate. |
 | Installation ID | Stored at `~/Library/Application Support/mobile-dev/telemetry/anonymous-user-id` until you remove it. Process-session IDs last for the process; copies in sent reports follow Sentry retention. |

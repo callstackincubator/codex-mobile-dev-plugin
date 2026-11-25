@@ -117,8 +117,9 @@ What the Claude version runs on your Mac, besides its Node.js server:
 - **A Node.js launcher and a session check** in the Claude Code plugin, which find
   Node.js and start the server.
 
-It sends plugin errors and aggregate measurements to Sentry, as described under
-[Privacy and support](#privacy-and-support), and nothing else to Callstack;
+It sends plugin errors and aggregate measurements to Sentry and basic product
+analytics to Anal, as described under [Privacy and support](#privacy-and-support),
+and nothing else to Callstack;
 profiles go only to the TraceSift service on your Mac.
 
 ### T3 Code
@@ -274,9 +275,14 @@ Mobile Dev reports plugin errors, crashes, usage counters, sampled traces, and
 aggregate plugin performance measurements to Sentry by default. App logs,
 screenshots, input content, tool payloads, app storage contents, profiles, and
 device performance recordings are excluded from that telemetry. Errors and
-crashes use a randomly generated persistent installation ID. Set
-`MOBILE_DEV_TELEMETRY=off` in the MCP launch environment and restart the plugin
-processes to disable reporting. For the Mac app, start it with
+crashes use a randomly generated persistent installation ID. Release builds also
+send basic product analytics to Anal at `anal.margelo.com`: that a session started
+or a tool was called, with the tool's name, whether it succeeded, the host, the
+plugin version, the operating system type, and the same installation ID. Analytics
+exclude tool arguments and results, app and device content, device names, project
+paths, and account details. Set `MOBILE_DEV_TELEMETRY=off` in the MCP launch
+environment and restart the plugin processes to disable reporting, or set
+`MOBILE_DEV_ANALYTICS=off` to disable only product analytics. For the Mac app, start it with
 `open --env MOBILE_DEV_TELEMETRY=off "Mobile Dev.app"`. Tool results and content sent to chat are handled
 by the host separately. Read the [Privacy Policy](PRIVACY.md) and
 [Terms of Service](TERMS.md), or see

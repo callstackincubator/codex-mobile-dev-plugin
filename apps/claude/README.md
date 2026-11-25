@@ -90,9 +90,15 @@ Mobile Dev reports plugin errors, crashes, usage counters, sampled traces, and
 aggregate plugin performance measurements to Sentry by default. App logs,
 screenshots, input content, tool payloads, app storage contents, profiles, and device
 performance recordings are excluded from that telemetry. Errors and crashes use a
-randomly generated persistent installation ID. Nothing else goes to Callstack, and
-profiles go only to the TraceSift service on your Mac. Set `MOBILE_DEV_TELEMETRY=off`
-in the environment Claude starts from, then restart Claude, to turn reporting off.
+randomly generated persistent installation ID. Mobile Dev also sends basic product
+analytics to Anal at `anal.margelo.com`: that a session started or a tool was called,
+with the tool's name, whether it succeeded, the host, the plugin version, the
+operating system type, and the same installation ID. Analytics exclude tool arguments
+and results, app and device content, device names, project paths, and account details.
+Nothing else goes to Callstack, and profiles go only to the TraceSift service on your
+Mac. Set `MOBILE_DEV_TELEMETRY=off` in the environment Claude starts from, then restart
+Claude, to turn reporting off, or `MOBILE_DEV_ANALYTICS=off` to turn off only product
+analytics.
 Read the [Privacy Policy](PRIVACY.md) and [Terms of Service](TERMS.md).
 
 For help, email [hello@callstack.com](mailto:hello@callstack.com) or see
