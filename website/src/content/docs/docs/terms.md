@@ -85,9 +85,10 @@ Naming them does not imply endorsement.
 ## 5. Privacy
 
 The [Privacy Policy](/docs/privacy) explains local processing, tool results supplied
-to the host, Sentry diagnostics enabled by default, saved data, and your controls.
-You can disable new telemetry by setting `MOBILE_DEV_TELEMETRY=off` in the MCP
-launch environment and restarting the plugin processes. Agreeing to these terms
+to the host, Sentry diagnostics and product analytics enabled by default, saved data, and
+your controls. You can disable new telemetry by setting `MOBILE_DEV_TELEMETRY=off`
+in the MCP launch environment and restarting the plugin processes, or only
+product analytics with `MOBILE_DEV_ANALYTICS=off` or `DO_NOT_TRACK=1`. Agreeing to these terms
 does not substitute for consent where the law requires it.
 
 ## 6. Updates, availability, and ending use
