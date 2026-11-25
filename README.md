@@ -1,6 +1,6 @@
 <p align="center">
-  <a href="https://incubator.callstack.com/codex-mobile-dev-plugin/">
-    <img src="https://incubator.callstack.com/codex-mobile-dev-plugin/banner.jpg" alt="Mobile Dev by Callstack. Mobile development in your ADE. Supports Codex, Claude, Cursor, and more." width="100%" />
+  <a href="https://incubator.callstack.com/mobile-dev/">
+    <img src="https://incubator.callstack.com/mobile-dev/banner.jpg" alt="Mobile Dev by Callstack. Mobile development in your ADE. Supports Codex, Claude, Cursor, and more." width="100%" />
   </a>
 </p>
 
@@ -128,7 +128,7 @@ the Mobile Dev plugin that each of them has installed. On the Mac that runs T3 C
 install the [Claude Code plugin](#claude-code-and-claude-desktop) for Claude threads
 (run the two `claude plugin` commands in a terminal, then start a new Claude thread)
 and the [Codex plugin](#codex) for Codex threads. In both, the panel opens in T3 Code's
-Browser. See the [T3 Code setup guide](https://incubator.callstack.com/codex-mobile-dev-plugin/docs/getting-started#t3-code)
+Browser. See the [T3 Code setup guide](https://incubator.callstack.com/mobile-dev/docs/getting-started#t3-code)
 for the settings each provider needs.
 
 Turn off T3 Code's own device integration while you use Mobile Dev. In
@@ -242,8 +242,8 @@ Detailed guides are available for
 [devices](https://github.com/callstackincubator/mobile-dev/blob/main/docs/devices.md),
 [logs](https://github.com/callstackincubator/mobile-dev/blob/main/docs/logs.md),
 [performance](https://github.com/callstackincubator/mobile-dev/blob/main/docs/performance.md),
-[App Intelligence](https://incubator.callstack.com/codex-mobile-dev-plugin/docs/app-intelligence),
-[Testing](https://incubator.callstack.com/codex-mobile-dev-plugin/docs/testing),
+[App Intelligence](https://incubator.callstack.com/mobile-dev/docs/app-intelligence),
+[Testing](https://incubator.callstack.com/mobile-dev/docs/testing),
 and [MCP tools](https://github.com/callstackincubator/mobile-dev/blob/main/docs/mcp-tools.md).
 [Architecture](https://github.com/callstackincubator/mobile-dev/blob/main/docs/architecture.md) explains how the hosts share the server
 and panel.

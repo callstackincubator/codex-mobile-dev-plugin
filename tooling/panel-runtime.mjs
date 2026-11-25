@@ -40,5 +40,5 @@ export async function packPanelRuntime(version, { release = false, repository = 
 
 // The release workflow names the repository it publishes to.
 function defaultRepository() {
-  return process.env.GITHUB_REPOSITORY ?? "callstackincubator/codex-mobile-dev-plugin";
+  return process.env.GITHUB_REPOSITORY ?? "callstackincubator/mobile-dev";
 }

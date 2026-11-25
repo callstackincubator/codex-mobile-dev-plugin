@@ -121,7 +121,7 @@ try {
   assert.equal(pin.sha256, createHash("sha256").update(bytes).digest("hex"));
   assert.equal(pin.version, manifest.version);
   if (telemetryConfig.environment === "release") {
-    const repository = process.env.GITHUB_REPOSITORY || "callstackincubator/codex-mobile-dev-plugin";
+    const repository = process.env.GITHUB_REPOSITORY || "callstackincubator/mobile-dev";
     assert.equal(pin.url, `https://github.com/${repository}/releases/download/v${manifest.version}/${runtimeName}`);
   }
   // Serve the exact release bytes from a local file before the GitHub release exists.

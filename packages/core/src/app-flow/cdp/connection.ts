@@ -6,7 +6,7 @@
  * `nav-state.ts` built to live with that. Here a command's reply never travels as an evaluation
  * result at all: the app calls a per-connection binding installed with `Runtime.addBinding`, and the
  * payload arrives as a `Runtime.bindingCalled` event with no length limit short of the socket's
- * `maxPayload`. The design follows `codex-mobile-dev-plugin/src/server/app-flow/connection.ts`; this
+ * `maxPayload`. The design follows `mobile-dev/src/server/app-flow/connection.ts`; this
  * file is that module minus its presentation/portal orchestration, plus the reconnect it leaves to
  * its callers.
  *

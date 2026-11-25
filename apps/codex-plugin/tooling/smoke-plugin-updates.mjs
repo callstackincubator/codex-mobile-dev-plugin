@@ -18,6 +18,8 @@ const profile = join(directory, "profile");
 const fixtureHome = join(directory, "home");
 const codexCli = process.env.CODEX_CLI_PATH ?? "codex";
 const env = { ...process.env, HOME: fixtureHome, CODEX_HOME: profile, MOBILE_DEV_TELEMETRY: "off", GIT_TERMINAL_PROMPT: "0" };
+// Installs made before the repository was renamed to mobile-dev keep the old URL,
+// which GitHub redirects to the same repository ID.
 const repositoryUrl = "https://github.com/callstackincubator/codex-mobile-dev-plugin.git";
 const originalCwd = process.cwd();
 const codex = createCodexRunner(profile, { path: codexCli, env });
@@ -66,7 +68,7 @@ try {
       }
       if (url.pathname === `/repositories/${RELEASE_REPOSITORY_ID}`) {
         repositoryRedirects++;
-        const body = JSON.stringify({ id: RELEASE_REPOSITORY_ID, full_name: "callstackincubator/mobile-dev-plugin" });
+        const body = JSON.stringify({ id: RELEASE_REPOSITORY_ID, full_name: "callstackincubator/mobile-dev" });
         response.writeHead(200, { "Content-Type": "application/json" });
         response.end(body);
         return;
