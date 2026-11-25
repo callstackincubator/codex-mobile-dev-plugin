@@ -56,7 +56,7 @@ async function launchBundledBaguette(host: string, port: string, signal: AbortSi
     throw new ExpectedOperationError("unsupported_platform", "Starting Baguette requires an Apple Silicon Mac with Xcode 26 or later.");
   }
   const executable = await bundledExecutable();
-  const environment = await baguetteEnvironment(executable, signal);
+  const environment = await baguetteEnvironment(executable, signal, 20_000);
   return spawn(executable, ["serve", "--host", host, "--port", port, "--no-plugins"], {
     stdio: ["ignore", "pipe", "pipe"], shell: false, env: environment,
   });

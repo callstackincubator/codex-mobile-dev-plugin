@@ -687,8 +687,11 @@ handled failures retain their tool error paths. Since 0.1.170, physical iOS beze
 failures report under `ios-mirror.bezel` instead. Setup failures use fixed messages without
 developer directories or scanner output. Native telemetry initialization and
 matching dSYMs are preserved; rebuilds remove build-toolchain rpaths and re-sign
-the executable before retaining symbols. No additional telemetry fields or
-measurement boundaries are introduced.
+the executable before retaining symbols. Since 0.1.197,
+`baguette.runtime.command.duration` measures each discovery command in milliseconds,
+including commands that fail or time out. The `operation` attribute identifies
+`xcode-select`, `otool` or `swift-stdlib-tool`. The latter two run concurrently,
+so their durations can overlap.
 
 Since 0.1.117, Android's bundled serve-emu backend runs under Node.js. Existing MCP error capture, sampled tool traces, UI readiness, and input acknowledgement measurements remain on the active paths. `android.backend.startup.samples` and `android.backend.startup.duration` measure owned backend launches from process spawn through matching device health readiness or startup failure, in milliseconds, with a fixed `outcome` of `ready` or `failed`. These measure plugin backend startup, excluding emulator boot. They carry only product attributes, never device IDs, process diagnostics, paths, or input content, and honor telemetry opt-out. The child backend retains its local frame, queue, and recovery diagnostics without emitting per-frame Sentry events.
 

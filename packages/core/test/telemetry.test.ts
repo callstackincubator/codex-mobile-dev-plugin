@@ -11,7 +11,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { z } from "zod";
 import { MeasurementWindow, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan, sampleMetric, createErrorEventFilter, METRIC_SAMPLE_RATE, TELEMETRY_META_KEY } from "../../shared/src/telemetry.ts";
-import { captureServerError, installTracePropagation, instrumentMcpServer, IOSLogProcessingTelemetry, recordAndroidBackendStartup, recordAndroidBootWait, recordIosMirrorSharing, recordIosHitchOperation, recordBrowserPanelContext, recordBrowserPanelSessions, recordPanelRuntime, recordResourceSaving } from "../src/telemetry.ts";
+import { captureServerError, installTracePropagation, instrumentMcpServer, IOSLogProcessingTelemetry, recordAndroidBackendStartup, recordAndroidBootWait, recordIosMirrorSharing, recordIosHitchOperation, recordBrowserPanelContext, recordBrowserPanelSessions, recordPanelRuntime, recordBaguetteDiscoveryTime, recordResourceSaving } from "../src/telemetry.ts";
 import { recordPluginUpdate } from "../../../apps/codex-plugin/server/plugin-updates.ts";
 import { deferEpisodeReport, ExpectedOperationError, FailureEpisodes } from "../../shared/src/error-reporting.ts";
 import { parseResourceInput } from "../src/resource-input.ts";
@@ -1451,6 +1451,7 @@ test("browser session counts describe plugin resources and honor telemetry opt-o
   recordBrowserPanelContext("too_large");
   recordPanelRuntime("testing", "downloaded", 1200, 7_000_000);
   recordPanelRuntime("panel", "failed", 30, undefined, "network");
+  recordBaguetteDiscoveryTime("otool", 2362);
   recordResourceSaving("ios", true, "success", 2500);
   recordResourceSaving("android", false, "failed", 100);
   await Sentry.flush();
@@ -1461,6 +1462,8 @@ test("browser session counts describe plugin resources and honor telemetry opt-o
   contains(sent, '"outcome":{"value":"too_large"');
   contains(sent, "panel_runtime.ready");
   contains(sent, "panel_runtime.download_bytes");
+  contains(sent, "baguette.runtime.command.duration");
+  contains(sent, '"operation":{"value":"otool"');
   contains(sent, '"runtime":{"value":"testing"');
   contains(sent, "resource_saving.apply");
   contains(sent, "resource_saving.duration");
@@ -1471,6 +1474,7 @@ test("browser session counts describe plugin resources and honor telemetry opt-o
   recordBrowserPanelSessions(3);
   recordBrowserPanelContext("stored", 10);
   recordPanelRuntime("panel", "cached", 5);
+  recordBaguetteDiscoveryTime("swift-stdlib-tool", 3442);
   recordResourceSaving("ios", false, "success", 10);
   await Sentry.flush();
   assert.equal(JSON.stringify(envelopes), sent);
