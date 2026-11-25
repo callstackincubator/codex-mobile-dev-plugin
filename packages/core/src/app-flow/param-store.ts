@@ -398,7 +398,7 @@ function normalizePath(url: string): string | null {
  *
  * `index` and Expo Router group segments (`(tabs)`) are spelled in a route's *file* path but never
  * appear in the URL the app navigates to, so a template carrying them would never match a real
- * link on length alone. Dropped from both sides, as `codex-mobile-dev-plugin`'s `matchFlowLink`
+ * link on length alone. Dropped from both sides, as `mobile-dev`'s `matchFlowLink`
  * does, so `(tabs)/profile/[name]/index` and `/profile/alice.test` line up.
  */
 function routeSegments(path: string): string[] {

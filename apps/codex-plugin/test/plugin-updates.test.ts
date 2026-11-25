@@ -42,7 +42,7 @@ type FixtureOptions = {
 function cliFixture(directory: string, calls: string[][], options: FixtureOptions = {}) {
   let github = options.github ?? true;
   let marketplace = github;
-  const source = options.source ?? "https://github.com/callstackincubator/codex-mobile-dev-plugin.git";
+  const source = options.source ?? "https://github.com/callstackincubator/mobile-dev.git";
   const run: RunCodex = async args => {
     calls.push(args);
     if (args[1] === "marketplace") {
@@ -248,7 +248,7 @@ test("migration removes only GitHub, preserves data, deduplicates clicks and per
 test("wrong marketplaces, failed deletion and unremoved GitHub installations never report success", async t => {
   for (const fixture of [
     { source: "https://github.com/other/repo" },
-    { source: "https://github.com/callstackincubator/codex-mobile-dev-plugin.git", repositoryId: 1 },
+    { source: "https://github.com/callstackincubator/mobile-dev.git", repositoryId: 1 },
     { source: "https://github.com/callstackincubator/mobile-dev-plugin.git", repositoryStatus: 503 },
     { removeFails: true }, { keepGithub: true },
   ]) {

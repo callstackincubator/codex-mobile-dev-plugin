@@ -59,7 +59,7 @@ its Node.js server, it runs:
 - **The device and Testing Studio runtime, downloaded once.** On first use,
   Mobile Dev downloads one archive from this project's GitHub release for the
   installed version (`mobile-dev-<version>-panel-runtime-darwin-arm64.tar.gz`, from
-  `github.com/callstackincubator/codex-mobile-dev-plugin/releases`). The plugin pins
+  `github.com/callstackincubator/mobile-dev/releases`). The plugin pins
   the archive's size and SHA-256 checksum and refuses any other file. It holds
   [Baguette](https://github.com/tddworks/baguette), which streams and controls iOS
   simulators, serve-emu with scrcpy for Android streaming, and the physical iPhone

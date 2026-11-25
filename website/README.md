@@ -24,9 +24,11 @@ The social-card script needs Playwright Chromium (`pnpm --dir website exec playw
 
 ## GitHub Pages
 
-Production is published at https://incubator.callstack.com/codex-mobile-dev-plugin/.
+Production is published at https://incubator.callstack.com/mobile-dev/.
 The organization owns `incubator.callstack.com`; this repository inherits that
-host and uses its repository name as the path. Leave the repository's **Custom
+host and uses its repository name as the path. The repository was named
+`codex-mobile-dev-plugin` before, and GitHub does not redirect Pages paths after a
+rename, so links to `/codex-mobile-dev-plugin/` stop resolving. Leave the repository's **Custom
 domain** field empty and set **Settings → Pages → Source** to **GitHub Actions**.
 The suggested Jekyll and Static HTML templates are unnecessary.
 
@@ -37,7 +39,7 @@ project with Node.js 24 and the pinned pnpm version. Pushes to `main` affecting
 publishing. The workflow can also be run manually on `main`.
 
 The build sets `SITE_URL=https://incubator.callstack.com` and
-`SITE_BASE=/codex-mobile-dev-plugin`. Astro's base, navigation, Markdown links,
+`SITE_BASE=/mobile-dev`. Astro's base, navigation, Markdown links,
 icons, social images, sitemap, and robots.txt share those values. Local dev and
 Vercel builds use their own origin and an empty base. Pages remain `.html` files,
 served at extensionless paths by GitHub Pages, matching Simlock's setup.

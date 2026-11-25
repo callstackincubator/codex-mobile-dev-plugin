@@ -10,7 +10,7 @@ export const site = {
   name: 'Mobile Dev',
   wordmark: 'Mobile Dev',
   url: process.env.SITE_URL ?? buildOrigin,
-  repo: 'https://github.com/callstackincubator/codex-mobile-dev-plugin',
+  repo: 'https://github.com/callstackincubator/mobile-dev',
   subtitle: 'Mobile development in your ADE',
   headline: ['Mobile development.', 'In your ADE.'],
   lede: 'A plugin for mobile development in your ADE. Bring your app structure, testing, running app, devices, logs, performance, and storage into Codex, Claude, Cursor, and more.',
@@ -22,7 +22,7 @@ export const site = {
   callstack: 'https://callstack.com/?utm_source=mobile-dev&utm_medium=referral',
   license: {
     name: 'MIT',
-    url: 'https://github.com/callstackincubator/codex-mobile-dev-plugin/blob/main/LICENSE',
+    url: 'https://github.com/callstackincubator/mobile-dev/blob/main/LICENSE',
     spdx: 'https://opensource.org/licenses/MIT',
   },
   platforms: ['iOS', 'Android'],
