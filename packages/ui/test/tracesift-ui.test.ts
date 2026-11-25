@@ -1002,6 +1002,40 @@ test("a release build with no Metro is offered for recording like any other targ
   assert.deepEqual(calls.at(-1)!.arguments, { targetId: "release" });
 });
 
+test("a profiling build closes the device menu and refreshes until the app connects", async t => {
+  let finishBuild!: () => void;
+  const buildGate = new Promise<void>(resolve => { finishBuild = resolve; });
+  let listings = 0;
+  const app = {
+    getHostCapabilities: () => ({ serverTools: {} }), getHostContext: () => hostContext,
+    async callServerTool(input: { name: string }) {
+      if (input.name === "mobile_get_tracesift_project") return { content: [], structuredContent: { path: "/project/app" } };
+      if (input.name === "mobile_tracesift_profiler_setup") return { content: [], structuredContent: { installed: true, command: "", platforms: ["ios"] } };
+      if (input.name === "mobile_tracesift_profile_devices") return { content: [], structuredContent: { devices: [] } };
+      if (input.name === "mobile_tracesift_profile_build") { await buildGate; return { content: [], structuredContent: {} }; }
+      if (input.name === "mobile_tracesift_list_react_native_targets") return { content: [], structuredContent: {
+        ...rnTargets, targets: ++listings < 2 ? [] : rnTargets.targets,
+      } };
+      throw new Error(`unexpected tool ${input.name}`);
+    },
+  };
+  const controller = new TraceSiftController(app as never);
+  t.after(() => controller.dispose());
+  await controller.loadRunProject();
+  await controller.openRun();
+  const building = controller.buildForTarget({ platform: "ios", kind: "simulator", id: "sim-1", name: "iPhone Simulator", note: "booted" });
+  assert.equal(controller.getSnapshot().run.open, false);
+  assert.equal(controller.getSnapshot().run.building?.name, "iPhone Simulator");
+  finishBuild();
+  await building;
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(listings, 1);
+  assert.equal(controller.getSnapshot().capture.targets.length, 0);
+  await new Promise(resolve => setTimeout(resolve, 2100));
+  assert.equal(listings, 2);
+  assert.equal(controller.getSnapshot().capture.targets[0]?.id, "device-1");
+});
+
 test("a React Native capture with no app connected refuses to start and says the app is not there", async () => {
   const { app, calls } = captureApp({
     mobile_tracesift_list_react_native_targets: {

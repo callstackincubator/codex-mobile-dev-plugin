@@ -23,6 +23,13 @@ for (const theme of themes) test.describe(`${theme}`, { tag: "@visual" }, () => 
       await view.getByRole("option", { name: label }).press("Enter");
       await expect(view.locator("#tool-select")).toContainText(label);
       await expect.soft(view.locator("body")).toHaveScreenshot(`workspace-${name}-${theme}.png`);
+      if (name === "tracesift") {
+        await view.getByRole("button", { name: "Hide TraceSift metadata" }).click();
+        await expect(view.locator(".tracesift-workspace")).toHaveAttribute("data-inspector", "hidden");
+        const tabsWidth = await view.locator('[data-slot="tabs-list"]').evaluate(element => element.getBoundingClientRect().width);
+        expect(tabsWidth).toBeLessThanOrEqual(720);
+        await expect.soft(view.locator("body")).toHaveScreenshot(`workspace-tracesift-collapsed-${theme}.png`);
+      }
     }
   });
 

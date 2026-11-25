@@ -125,6 +125,8 @@ export class TraceSiftController {
   private viewId?: string | number;
   private inputKey?: string;
   private copiedTimer?: ReturnType<typeof setTimeout>;
+  private reconnectTimer?: ReturnType<typeof setTimeout>;
+  private reconnectGeneration = 0;
   /** Serializes `mobile_remember_tracesift_analysis` calls so out-of-order completions cannot write a stale analysis over a newer one. */
   private rememberChain: Promise<void> = Promise.resolve();
   /** Bumped by every restore attempt; a response only applies while it still matches the latest one requested. */
@@ -898,11 +900,24 @@ export class TraceSiftController {
     }
   };
 
-  /** Build, install and launch for one target. Minutes long; the popup stays open and says so. */
+  /** Give a newly launched app a short window to connect to the recorder. */
+  private refreshAfterBuild = async (generation: number, attempt = 0) => {
+    if (this.disposed || generation !== this.reconnectGeneration) return;
+    await this.loadReactNativeTargets();
+    if (this.disposed || generation !== this.reconnectGeneration || this.state.capture.targets.length || attempt >= 6) return;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = undefined;
+      void this.refreshAfterBuild(generation, attempt + 1);
+    }, 2000);
+  };
+
+  /** Build, install and launch for one target, then look for the app as it connects. */
   buildForTarget = async (target: TraceSiftRunTarget) => {
     const { projectPath } = this.state.run;
     if (this.disposed || !projectPath || this.state.run.building) return;
-    this.runUpdate({ building: target, error: "", notice: "" });
+    if (this.reconnectTimer !== undefined) clearTimeout(this.reconnectTimer);
+    const generation = ++this.reconnectGeneration;
+    this.runUpdate({ open: false, building: target, error: "", notice: "" });
     const startedAt = performance.now();
     try {
       await this.captureTool("mobile_tracesift_profile_build",
@@ -910,9 +925,9 @@ export class TraceSiftController {
       if (this.disposed) return;
       recordUiTiming("ui.tracesift.run_build", performance.now() - startedAt);
       countUiEvent("ui.tracesift.run_build");
-      this.runUpdate({ building: undefined, notice: `Launched on ${target.name}. Use the app, then press Refresh and Start profile.`, error: "" });
-      // The build's own app is now running, so the recorder can see it.
-      void this.loadReactNativeTargets();
+      this.runUpdate({ building: undefined, notice: `Launched on ${target.name}. Use the app, then press Start profile when it appears below.`, error: "" });
+      // The build can finish before the app connects, so try a few times.
+      void this.refreshAfterBuild(generation);
     } catch (error) {
       countUiEvent("ui.tracesift.run_build_failed");
       captureUiError(new Error("TraceSift profiling build failed."), "tracesift.run");
@@ -1032,6 +1047,7 @@ export class TraceSiftController {
   dispose() {
     this.disposed = true;
     if (this.copiedTimer !== undefined) clearTimeout(this.copiedTimer);
+    if (this.reconnectTimer !== undefined) clearTimeout(this.reconnectTimer);
     this.listeners.clear();
   }
 }

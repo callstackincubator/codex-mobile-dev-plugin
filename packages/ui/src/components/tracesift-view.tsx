@@ -1,7 +1,7 @@
-import { useState, useSyncExternalStore, type DragEvent } from "react";
-import { CheckCircle2Icon, ChevronLeftIcon, ChevronRightIcon, CircleDotIcon, FileJson2Icon, FolderOpenIcon, HardDriveIcon, LoaderCircleIcon, MonitorSmartphoneIcon, PlayIcon, RocketIcon, SmartphoneIcon, UploadIcon } from "lucide-react";
+import { useEffect, useState, useSyncExternalStore, type DragEvent } from "react";
+import { CheckCircle2Icon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronUpIcon, CircleDotIcon, FileJson2Icon, FolderOpenIcon, HardDriveIcon, LoaderCircleIcon, MonitorSmartphoneIcon, PlayIcon, RocketIcon, SmartphoneIcon, UploadIcon } from "lucide-react";
 import type { TraceSiftPanel } from "../tracesift-panel.ts";
-import type { TraceSiftCaptureSource, TraceSiftController, TraceSiftRunTarget } from "../tracesift-controller.ts";
+import type { TraceSiftController, TraceSiftRunTarget } from "../tracesift-controller.ts";
 import type { TraceSiftProfileType, TraceSiftRnTarget } from "@mobile-dev/shared/tracesift.ts";
 import { TraceSiftCards } from "./tracesift-cards.tsx";
 import { Button } from "./ui/button.tsx";
@@ -11,12 +11,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover.tsx";
 const options: { value: Extract<TraceSiftProfileType, "cpu" | "react">; title: string; detail: string; accepts: string; drop: string }[] = [
   { value: "cpu", title: "JavaScript CPU", detail: "Find slow functions and heavy execution paths", accepts: ".json", drop: "Chrome Performance .json" },
   { value: "react", title: "React components", detail: "Find expensive commits, wasted re-renders and cascades", accepts: "React DevTools JSON", drop: "React DevTools profiling .json" },
-];
-
-/** React Native first: it is the one an agent can also drive, and the common case here. */
-const sources: { value: TraceSiftCaptureSource; title: string }[] = [
-  { value: "rn", title: "React Native" },
-  { value: "chrome", title: "Web app" },
 ];
 
 /** Whether the "Before you record" details are collapsed. localStorage can be blocked, so this is best effort. */
@@ -113,17 +107,14 @@ function targetWhere(target: TraceSiftRnTarget | undefined, metro: string) {
 /**
  * Record the React Native app that is already running.
  *
- * One press, not the browser's two: nothing is launched and no window opens,
- * so there is no signed-in state to reach first. This never tells the person
- * to open anything — if no app is connected, the app is theirs to start and
- * the pane only offers to look again.
+ * A running React Native app can be recorded directly. The setup flow above
+ * handles preparing and launching a profiling build when none is connected.
  */
 function ReactNativePane({ controller, capture, busy }: { controller: TraceSiftController; capture: CaptureState; busy: boolean }) {
-  const { step, targets, targetId, metro, targetsError, loadingTargets } = capture;
+  const { step, targets, targetId, metro, loadingTargets } = capture;
   const recording = step === "recording" || step === "stopping";
   const working = step === "starting" || step === "stopping";
   const selected = targets.find(target => target.id === targetId) ?? targets[0];
-  const where = metro || "the Metro dev server";
 
   if (recording) {
     return <div className="capture-row">
@@ -137,11 +128,11 @@ function ReactNativePane({ controller, capture, busy }: { controller: TraceSiftC
   }
 
   if (!targets.length) {
-    return <div className="capture-row">
+    return <div className="capture-row capture-empty">
       <p className="capture-status" role="status">
-        {targetsError || (loadingTargets
-          ? `Looking for apps on ${where} and for a release build…`
-          : `No React Native app found. Start a debug build so it connects to ${where}, or a profiling build made with \`tracesift profile build\`, then refresh.`)}
+        {loadingTargets
+          ? "Looking for running apps…"
+          : "Follow the steps above to prepare and run a profiling app, then refresh."}
       </p>
       <button type="button" className="capture-close" disabled={busy || loadingTargets} onClick={() => void controller.loadReactNativeTargets()}>
         {loadingTargets ? "Looking…" : "Refresh"}
@@ -184,62 +175,19 @@ function ReactNativePane({ controller, capture, busy }: { controller: TraceSiftC
   </div>;
 }
 
-/**
- * Record a running app instead of reading a profile someone already has.
- *
- * The web route takes two presses: Chrome opens first and the recording starts
- * when the person says so, because the state worth profiling is usually behind
- * a sign-in or a few clicks, and a trace that began at page load would be
- * mostly the sign-in. React Native takes one, because the app is already
- * running. Stopping analyzes what was recorded either way.
- */
+/** Record a running React Native app. An already active browser session stays controllable until it ends. */
 function CapturePane({ controller, busy }: { controller: TraceSiftController; busy: boolean }) {
   const { capture } = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   const { step, source } = capture;
   const working = step === "launching" || step === "starting" || step === "stopping" || step === "closing";
-  const open = step !== "idle" && step !== "launching";
-  // Switching sources mid-recording would leave a live recorder with no
-  // control pointed at it.
-  const live = open || working;
+  const legacyBrowserSession = source === "chrome" && step !== "idle";
 
   return <div className="capture-pane">
-    <div className="capture-sources" role="radiogroup" aria-label="What to record">
-      {sources.map(option => <button
-        key={option.value}
-        type="button"
-        role="radio"
-        aria-checked={source === option.value}
-        disabled={busy || live}
-        className={`profile-chip${source === option.value ? " selected" : ""}`}
-        onClick={() => controller.setCaptureSource(option.value)}
-      >
-        {option.title}
-      </button>)}
-    </div>
-    {source === "rn"
-      ? <ReactNativePane controller={controller} capture={capture} busy={busy} />
-      : !open
+    {legacyBrowserSession
       ? <div className="capture-row">
-        <input
-          type="url"
-          className="capture-url"
-          placeholder="https://localhost:3000"
-          aria-label="Web app address to record"
-          value={capture.url}
-          disabled={busy || working}
-          onChange={event => controller.setCaptureUrl(event.target.value)}
-          onKeyDown={event => { if (event.key === "Enter") void controller.launchCapture(); }}
-        />
-        <button type="button" className="capture-button" disabled={busy || working} onClick={() => void controller.launchCapture()}>
-          {step === "launching" ? "Opening Chrome…" : "Launch web app"}
-        </button>
-      </div>
-      : <div className="capture-row">
-        <p className="capture-status" role="status">
-          {step === "recording" || step === "stopping"
-            ? "Recording. Use the app, then stop."
-            : "Chrome is open. Sign in or navigate, then start."}
-        </p>
+        <p className="capture-status" role="status">{step === "recording" || step === "stopping"
+          ? "Recording. Use the app, then stop."
+          : "Chrome is open. Sign in or navigate, then start."}</p>
         {step === "recording" || step === "stopping"
           ? <button type="button" className="capture-button is-recording" disabled={busy || step === "stopping"} onClick={() => void controller.stopCapture()}>
             {step === "stopping" ? "Writing the trace…" : "Stop and analyze"}
@@ -250,7 +198,8 @@ function CapturePane({ controller, busy }: { controller: TraceSiftController; bu
         <button type="button" className="capture-close" disabled={busy || working || step === "recording"} onClick={() => void controller.closeCapture()}>
           {step === "closing" ? "Closing…" : "Close browser"}
         </button>
-      </div>}
+      </div>
+      : <ReactNativePane controller={controller} capture={capture} busy={busy} />}
     {capture.error && <p className="tracesift-error" role="alert">{capture.error}</p>}
   </div>;
 }
@@ -264,75 +213,74 @@ const runTargetIcon = (target: TraceSiftRunTarget) =>
     ? <SmartphoneIcon />
     : <MonitorSmartphoneIcon />;
 
-/**
- * "Run with TraceSift": make a profiling build from the panel instead of from
- * a terminal. The popup asks for the project, then where to run it, and shows
- * the one install command only when the project still needs it.
- */
+/** Prepare a profiling build in order, then choose the device from the Run popover. */
 function RunWithTraceSift({ controller, busy }: { controller: TraceSiftController; busy: boolean }) {
   const { run } = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   const { setup } = run;
   const working = run.checking || run.installing || run.pickingProject;
-  return <div className="tracesift-run">
-    <Popover open={run.open} onOpenChange={open => { if (open) void controller.openRun(); else controller.closeRun(); }}>
-      <PopoverTrigger asChild>
-        <Button type="button" variant="outline" size="sm" disabled={busy || Boolean(run.building)} title="Build and launch a release build with the profiler on">
-          {run.building ? <LoaderCircleIcon className="tracesift-command-spinner" /> : <RocketIcon />}
-          {run.building ? "Building…" : "Run with TraceSift"}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="tracesift-run-popup flex w-96 max-w-(--radix-popover-content-available-width) flex-col gap-2 p-3" aria-label="Run with TraceSift">
-        <div className="flex items-center gap-1">
-          <Button type="button" variant="outline" size="sm" className="min-w-0 max-w-72 justify-start gap-1.5 font-normal" data-project-picker
-            aria-label="TraceSift project" title={run.projectPath || "Choose a React Native project"}
-            disabled={working || Boolean(run.building)} onClick={() => void controller.pickRunProject()}>
-            <FolderOpenIcon /><span className="min-w-0 truncate">{run.projectPath ? folderName(run.projectPath) : "Choose project"}</span>
+  return <div className="tracesift-run-steps">
+    <div className="tracesift-run-step">
+      <span className="tracesift-step-index">1</span>
+      <div className="tracesift-run-step-content"><strong>Select project</strong><small>Choose the React Native app to profile.</small></div>
+      <Button type="button" variant="outline" size="sm" className="min-w-0 max-w-56 gap-1.5" data-project-picker
+        aria-label="TraceSift project" title={run.projectPath || "Choose a React Native project"}
+        disabled={busy || working || Boolean(run.building)} onClick={() => void controller.pickRunProject()}>
+        {run.pickingProject ? <LoaderCircleIcon className="tracesift-command-spinner" /> : <FolderOpenIcon />}
+        <span className="min-w-0 truncate">{run.projectPath ? folderName(run.projectPath) : "Choose project"}</span>
+      </Button>
+    </div>
+    {run.checking && <p className="tracesift-run-progress" role="status"><LoaderCircleIcon className="tracesift-command-spinner" /> Checking the project…</p>}
+    {setup && !setup.installed && <div className="tracesift-run-step">
+      <span className="tracesift-step-index">2</span>
+      <div className="tracesift-run-step-content"><strong>Install TraceSift profiler</strong><small><code>{setup.command}</code></small></div>
+      <Button type="button" variant="outline" size="sm" disabled={busy || working || Boolean(run.building)} onClick={() => void controller.installRunProfiler()}>
+        {run.installing ? <LoaderCircleIcon className="tracesift-command-spinner" /> : <PlayIcon />}
+        {run.installing ? "Installing…" : "Install"}
+      </Button>
+    </div>}
+    {run.projectPath && <div className="tracesift-run-step">
+      <span className="tracesift-step-index">{setup?.installed ? "2" : "3"}</span>
+      <div className="tracesift-run-step-content"><strong>Run with TraceSift</strong><small>Build and install on a connected device.</small></div>
+      <Popover open={run.open} onOpenChange={open => { if (open) void controller.openRun(); else controller.closeRun(); }}>
+        <PopoverTrigger asChild>
+          <Button type="button" size="sm" className="tracesift-primary-action" disabled={busy || working || !setup?.installed || Boolean(run.building)}>
+            {run.building ? <LoaderCircleIcon className="tracesift-command-spinner" /> : <RocketIcon />}
+            {run.building ? "Building…" : "Run with TraceSift"}
           </Button>
-          {run.pickingProject && <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground" role="status"><LoaderCircleIcon className="tracesift-command-spinner" />Choose a folder…</span>}
-        </div>
-        {!run.projectPath && !run.pickingProject && <p className="text-xs text-muted-foreground">Choose the React Native app to build.</p>}
-        {run.checking && <p className="flex items-center gap-1 text-xs text-muted-foreground" role="status"><LoaderCircleIcon className="tracesift-command-spinner" />Checking the project…</p>}
-
-        {setup && !setup.installed && <div className="tracesift-setup-step">
-          <div className="tracesift-setup-step-label"><span>1</span><strong>Install the profiler</strong></div>
-          <div className="tracesift-command">
-            <code>{setup.command}</code>
-            <Button type="button" size="icon-sm" variant="ghost" aria-label="Install the profiler package" title="Install the profiler package"
-              disabled={working} onClick={() => void controller.installRunProfiler()}>
-              {run.installing ? <LoaderCircleIcon className="tracesift-command-spinner" /> : <PlayIcon />}
-            </Button>
-          </div>
-        </div>}
-
-        {setup?.installed && !run.checking && <>
-          <p className="text-xs font-medium text-muted-foreground">Run on</p>
-          {run.targets.length === 0 && <p className="text-xs text-muted-foreground">No iOS or Android target found in this project. Boot a simulator and reopen this.</p>}
+        </PopoverTrigger>
+        <PopoverContent align="end" className="tracesift-run-popup flex w-96 max-w-(--radix-popover-content-available-width) flex-col gap-2 p-3" aria-label="Run with TraceSift">
+          <p className="text-xs font-medium">Run on</p>
+          {run.targets.length === 0 && <p className="text-xs text-muted-foreground">No iOS or Android target found. Connect a device or boot a simulator, then reopen this menu.</p>}
           {run.targets.map(target => <Button key={`${target.platform}:${target.id ?? target.kind}`} type="button" variant="ghost"
             className="h-auto min-h-7 justify-start gap-2 px-1.5 py-1 text-left font-normal" data-run-target={target.id ?? target.kind}
             disabled={Boolean(run.building)} onClick={() => void controller.buildForTarget(target)}>
             {runTargetIcon(target)}
-            <span className="flex min-w-0 flex-col">
-              <span className="truncate">{target.name}</span>
-              <span className="truncate text-xs text-muted-foreground">{target.kind === "device" ? "Device" : target.kind === "simulator" ? "Simulator" : "Android"} · {target.note}</span>
-            </span>
+            <span className="flex min-w-0 flex-col"><span className="truncate">{target.name}</span>
+              <span className="truncate text-xs text-muted-foreground">{target.kind === "device" ? "Device" : target.kind === "simulator" ? "Simulator" : "Android"} · {target.note}</span></span>
           </Button>)}
-          {setup.platforms.includes("ios") && !run.targets.some(target => target.platform === "ios") && <p className="text-xs text-muted-foreground">No booted iOS simulator or connected iPhone.</p>}
-        </>}
-
-        {run.building && <p className="flex items-center gap-1 text-xs text-muted-foreground" role="status"><LoaderCircleIcon className="tracesift-command-spinner" />Building for {run.building.name}. This can take several minutes.</p>}
-        {run.error && <p className="tracesift-error whitespace-pre-wrap break-words" role="alert">{run.error}</p>}
-      </PopoverContent>
-    </Popover>
-    {!run.open && run.notice && <p className="tracesift-notice" role="status">{run.notice}</p>}
-    {!run.open && !run.building && run.error && <p className="tracesift-error" role="alert">{run.error}</p>}
+          {setup?.platforms.includes("ios") && !run.targets.some(target => target.platform === "ios") && <p className="text-xs text-muted-foreground">No booted iOS simulator or connected iPhone.</p>}
+        </PopoverContent>
+      </Popover>
+    </div>}
+    {run.building && <p className="tracesift-run-progress" role="status"><LoaderCircleIcon className="tracesift-command-spinner" /> Building for {run.building.name}. This can take several minutes.</p>}
+    {run.error && <p className="tracesift-error whitespace-pre-wrap break-words" role="alert">{run.error}</p>}
   </div>;
 }
 
 function TraceSiftUpload({ controller, available }: { controller: TraceSiftController; available: boolean }) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
+  useEffect(() => { void controller.loadRunProject().then(() => controller.checkRun()); }, [controller]);
+  useEffect(() => {
+    if (state.capture.source === "chrome" && state.capture.step === "idle") controller.setCaptureSource("rn");
+  }, [controller, state.capture.source, state.capture.step]);
   const [profileType, setProfileType] = useState<TraceSiftProfileType>("cpu");
   const [mode, setMode] = useState<WorkMode>("record");
   const [detailsHidden, setDetailsHidden] = useState(readDetailsHidden);
+  const [buildExpanded, setBuildExpanded] = useState(true);
+  const [runningExpanded, setRunningExpanded] = useState(true);
+  useEffect(() => {
+    if (state.run.notice) { setBuildExpanded(false); setRunningExpanded(true); }
+  }, [state.run.notice]);
   const toggleDetails = () => setDetailsHidden(hidden => { writeDetailsHidden(!hidden); return !hidden; });
   const analyzing = state.analyzing;
   const capturing = state.capture.step !== "idle";
@@ -361,8 +309,8 @@ function TraceSiftUpload({ controller, available }: { controller: TraceSiftContr
     <div className="results-header">
       <div className="intro">
         <span className="eyebrow">TraceSift</span>
-        <h1 className="results-title">Analyze a profile</h1>
-        <p>Profiles are processed locally. Nothing leaves this machine.</p>
+        <h1 className="results-title">{mode === "record" ? "Record a profile" : "Analyze an existing profile"}</h1>
+        <p>{mode === "record" ? "Capture JavaScript CPU activity from a running app." : "Choose a profile type, then add a local file."}</p>
       </div>
     </div>
 
@@ -372,8 +320,8 @@ function TraceSiftUpload({ controller, available }: { controller: TraceSiftContr
         className="tracesift-inspector-toggle"
         aria-expanded={!detailsHidden}
         aria-controls="tracesift-inspector"
-        aria-label={detailsHidden ? "Show the side panel" : "Hide the side panel"}
-        title={detailsHidden ? "Show the side panel" : "Hide the side panel"}
+        aria-label={detailsHidden ? "Show TraceSift metadata" : "Hide TraceSift metadata"}
+        title={detailsHidden ? "Show TraceSift metadata" : "Hide TraceSift metadata"}
         onClick={toggleDetails}
       >
         {detailsHidden ? <ChevronLeftIcon /> : <ChevronRightIcon />}
@@ -383,7 +331,7 @@ function TraceSiftUpload({ controller, available }: { controller: TraceSiftContr
         {!available && <p className="tracesift-error" role="status">This host cannot call the plugin's TraceSift tools.</p>}
 
         <Tabs value={mode} onValueChange={value => setMode(value as WorkMode)}>
-          <TabsList aria-label="How to add a profile" className="h-11 w-full">
+          <TabsList aria-label="How to add a profile" className="mx-auto h-11 w-full max-w-[720px]">
             {modes.map(option => <TabsTrigger
               key={option.value}
               value={option.value}
@@ -423,11 +371,29 @@ function TraceSiftUpload({ controller, available }: { controller: TraceSiftContr
         </> : <>
           {/* Recording yields JS CPU samples only: a React profile comes out of
               React DevTools, which this cannot drive. */}
-          <div className="workflow-label"><span>1</span><strong>Choose what to record</strong><small>JavaScript CPU, captured locally.</small></div>
-          {analyzing
-            ? <p className="upload-analyzing" role="status">Analyzing {analyzing.name} with TraceSift…</p>
-            : <CapturePane controller={controller} busy={!ready} />}
-          {!analyzing && state.capture.source === "rn" && state.capture.step === "idle" && <RunWithTraceSift controller={controller} busy={!ready} />}
+          <div className="tracesift-record-intro"><span className="tracesift-rn-badge">React Native</span><span>JavaScript CPU · captured locally</span></div>
+          <section className="tracesift-record-section">
+            <button type="button" className="tracesift-record-section-toggle" aria-expanded={buildExpanded} aria-controls="tracesift-build-steps" onClick={() => { if (buildExpanded) controller.closeRun(); setBuildExpanded(value => !value); }}>
+              <span className="workflow-label"><span>1</span><strong>Prepare a profiling build</strong>{state.run.building && <small>Building for {state.run.building.name}…</small>}</span>
+              {buildExpanded ? <ChevronUpIcon /> : <ChevronDownIcon />}
+            </button>
+            {buildExpanded && <div id="tracesift-build-steps" className="tracesift-record-section-body">
+              <p className="tracesift-section-hint">Choose a project, install the profiler if needed, then build and run it.</p>
+              <RunWithTraceSift controller={controller} busy={!ready || Boolean(analyzing)} />
+            </div>}
+          </section>
+          <section className="tracesift-record-section">
+            <button type="button" className="tracesift-record-section-toggle" aria-expanded={runningExpanded} aria-controls="tracesift-running-app" onClick={() => setRunningExpanded(value => !value)}>
+              <span className="workflow-label"><span>2</span><strong>Select a running app</strong></span>
+              {runningExpanded ? <ChevronUpIcon /> : <ChevronDownIcon />}
+            </button>
+            {runningExpanded && <div id="tracesift-running-app" className="tracesift-record-section-body">
+              {state.run.notice && <p className="tracesift-notice" role="status">{state.run.notice}</p>}
+              {analyzing
+                ? <p className="upload-analyzing" role="status">Analyzing {analyzing.name} with TraceSift…</p>
+                : <CapturePane controller={controller} busy={!ready} />}
+            </div>}
+          </section>
           <p className="tracesift-notice">Source maps are generated automatically on iOS. On Android they are only produced if the app is configured for it.</p>
         </>}
       </section>
@@ -467,7 +433,7 @@ function TraceSiftUpload({ controller, available }: { controller: TraceSiftContr
             {mode === "record"
               ? <>
                 <div><dt><FileJson2Icon /> Captured</dt><dd>JavaScript CPU samples</dd></div>
-                <div><dt><CheckCircle2Icon /> Needs</dt><dd>The app already running</dd></div>
+                <div><dt><CheckCircle2Icon /> Requires</dt><dd>A profileable running app</dd></div>
               </>
               : <>
                 <div><dt><FileJson2Icon /> Supported file</dt><dd>{profileOption.accepts}</dd></div>
