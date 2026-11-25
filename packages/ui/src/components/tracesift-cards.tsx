@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { ChartNoAxesCombinedIcon, CheckIcon, CopyIcon, MessageCircleIcon, UploadIcon } from "lucide-react";
+import { ChartNoAxesCombinedIcon, CheckIcon, ChevronLeftIcon, CopyIcon, MessageCircleIcon } from "lucide-react";
 import type { TraceSiftController } from "../tracesift-controller.ts";
 import { findingName, formatMs, formatReactMs } from "@mobile-dev/shared/tracesift-labels.ts";
 import type { TraceSiftAnalysis, TraceSiftCpuAnalysis } from "@mobile-dev/shared/tracesift.ts";
@@ -45,7 +45,7 @@ function Reading({ analysis, controller, onReset }: { analysis: TraceSiftAnalysi
     <header className="recording-header">
       <div className="recording-heading"><h2>{analysis.title}</h2><p>TraceSift · {summary}</p></div>
       <span className="recording-status">{cpu ? "CPU profile" : "React profile"}</span>
-      {onReset && <Button size="sm" variant="outline" onClick={onReset}><UploadIcon />New profile</Button>}
+      {onReset && <Button size="sm" variant="outline" onClick={onReset}><ChevronLeftIcon />Back to profiles</Button>}
     </header>
     <div className="recording-body">
       <div className="recording-charts tracesift-column">

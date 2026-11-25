@@ -58,7 +58,7 @@ test("TraceSift keeps one workspace while readiness changes its inspector", asyn
   };
 
   await settle();
-  const workspace = dom.window.document.querySelector(".tracesift-workspace");
+  let workspace = dom.window.document.querySelector(".tracesift-workspace");
   assert.ok(workspace);
   assert.match(workspace.textContent ?? "", /Finish setup to add a profile/);
   assert.match(workspace.textContent ?? "", /TraceSift setup/);
@@ -98,7 +98,28 @@ test("TraceSift keeps one workspace while readiness changes its inspector", asyn
   assert.equal(tabs().filter(disabled).length, 0);
   mounted.flushSync(() => tabs()[1]!.click());
   assert.match(workspace.textContent ?? "", /Recorded profiles/);
-  assert.match(workspace.querySelector("#tracesift-saved-profile")?.textContent ?? "", /profile\.json\.gz/);
+  assert.match(workspace.querySelector("#tracesift-saved-profile")?.textContent ?? "", /Choose a saved profile/);
+  assert.equal(workspace.querySelector("#tracesift-saved-profile")?.getAttribute("data-slot"), "select-trigger");
+  assert.equal(mounted.panel.controller.getSnapshot().recordedProfiles[0]?.name, "profile.json.gz");
+  mounted.panel.controller.accept({ content: [], structuredContent: {
+    apiVersion: 1, analysisId: "saved", profileType: "cpu", title: "Saved CPU",
+    summary: { totalMs: 0, callCountIsExact: true }, cards: [],
+  } });
+  await settle();
+  mounted.flushSync(() => [...dom.window.document.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent?.includes("Back to profiles"))!.click());
+  assert.match(dom.window.document.querySelector(".tracesift-upload")?.textContent ?? "", /Analyze an existing profile/);
+  const reactOption = dom.window.document.querySelector<HTMLButtonElement>('.profile-chip[title="Find expensive commits, wasted re-renders and cascades"]');
+  assert.ok(reactOption);
+  mounted.flushSync(() => reactOption.click());
+  mounted.panel.controller.accept({ content: [], structuredContent: {
+    apiVersion: 1, analysisId: "uploaded", profileType: "react", title: "Uploaded React",
+    summary: { rootCount: 0, commitCount: 0, totalCommitRenderDurationMs: 0, peakCommitDurationMs: 0, commitsOverBudget: 0, omittedEvidenceCommitCount: 0 }, cards: [],
+  } });
+  await settle();
+  mounted.flushSync(() => [...dom.window.document.querySelectorAll<HTMLButtonElement>("button")].find(button => button.textContent?.includes("Back to profiles"))!.click());
+  assert.equal(dom.window.document.querySelector<HTMLButtonElement>('.profile-chip[aria-checked="true"]')?.textContent?.includes("React components"), true);
+  workspace = dom.window.document.querySelector(".tracesift-workspace");
+  assert.ok(workspace);
   mounted.flushSync(() => tabs()[0]!.click());
 
   const sections = () => [...dom.window.document.querySelectorAll<HTMLButtonElement>(".tracesift-record-section-toggle")];

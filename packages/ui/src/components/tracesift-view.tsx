@@ -7,6 +7,7 @@ import { TraceSiftCards } from "./tracesift-cards.tsx";
 import { Button } from "./ui/button.tsx";
 import { Tabs, TabsList, TabsTrigger } from "./ui/base-tabs.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover.tsx";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/base-select.tsx";
 
 const options: { value: Extract<TraceSiftProfileType, "cpu" | "react">; title: string; detail: string; accepts: string; drop: string }[] = [
   { value: "cpu", title: "JavaScript CPU", detail: "Find slow functions and heavy execution paths", accepts: ".json", drop: "Chrome Performance .json" },
@@ -267,15 +268,16 @@ function RunWithTraceSift({ controller, busy }: { controller: TraceSiftControlle
   </div>;
 }
 
-function TraceSiftUpload({ controller, available }: { controller: TraceSiftController; available: boolean }) {
+function TraceSiftUpload({ controller, available, mode, setMode, profileType, setProfileType }: {
+  controller: TraceSiftController; available: boolean; mode: WorkMode; setMode: (mode: WorkMode) => void;
+  profileType: TraceSiftProfileType; setProfileType: (profileType: TraceSiftProfileType) => void;
+}) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   useEffect(() => { void controller.loadRunProject().then(() => controller.checkRun()); }, [controller]);
   useEffect(() => { void controller.loadRecordedProfiles(); }, [controller]);
   useEffect(() => {
     if (state.capture.source === "chrome" && state.capture.step === "idle") controller.setCaptureSource("rn");
   }, [controller, state.capture.source, state.capture.step]);
-  const [profileType, setProfileType] = useState<TraceSiftProfileType>("cpu");
-  const [mode, setMode] = useState<WorkMode>("record");
   const [detailsHidden, setDetailsHidden] = useState(readDetailsHidden);
   const [buildExpanded, setBuildExpanded] = useState(true);
   const [runningExpanded, setRunningExpanded] = useState(true);
@@ -371,13 +373,18 @@ function TraceSiftUpload({ controller, available }: { controller: TraceSiftContr
             : <UploadPane controller={controller} profileType={profileType} busy={!ready} />}
           {profileType === "cpu" && state.recordedProfiles.length > 0 && <div className="tracesift-saved-profiles">
             <label htmlFor="tracesift-saved-profile">Recorded profiles</label>
-            <select id="tracesift-saved-profile" value="" disabled={!ready || Boolean(analyzing)} onChange={event => {
-              const profile = state.recordedProfiles.find(item => item.path === event.currentTarget.value);
-              if (profile) void controller.analyze(profile.path, "cpu");
-            }}>
-              <option value="">Choose a saved profile…</option>
-              {state.recordedProfiles.map(profile => <option key={profile.path} value={profile.path}>{profile.name} · {new Date(profile.recordedAt).toLocaleString()}</option>)}
-            </select>
+            <Select items={state.recordedProfiles.map(profile => ({ value: profile.path, label: `${profile.name} · ${new Date(profile.recordedAt).toLocaleString()}` }))}
+              value={null} disabled={!ready || Boolean(analyzing)} onValueChange={value => {
+                const profile = state.recordedProfiles.find(item => item.path === value);
+                if (profile) void controller.analyze(profile.path, "cpu");
+              }}>
+              <SelectTrigger id="tracesift-saved-profile" className="w-full min-w-0"><SelectValue placeholder="Choose a saved profile…" /></SelectTrigger>
+              <SelectContent align="start" alignItemWithTrigger={false} className="max-w-(--available-width)">
+                <SelectGroup>{state.recordedProfiles.map(profile => <SelectItem key={profile.path} value={profile.path}>
+                  <span className="min-w-0 truncate">{profile.name} · {new Date(profile.recordedAt).toLocaleString()}</span>
+                </SelectItem>)}</SelectGroup>
+              </SelectContent>
+            </Select>
           </div>}
         </> : <>
           {/* Recording yields JS CPU samples only: a React profile comes out of
@@ -464,8 +471,10 @@ function TraceSiftUpload({ controller, available }: { controller: TraceSiftContr
 
 export function TraceSiftView({ panel }: { panel: TraceSiftPanel }) {
   const { controller } = panel;
+  const [mode, setMode] = useState<WorkMode>("record");
+  const [profileType, setProfileType] = useState<TraceSiftProfileType>("cpu");
   const { available } = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   if (state.analysis || state.explorer) return <TraceSiftCards controller={controller} onReset={controller.reset} />;
-  return <TraceSiftUpload controller={controller} available={available} />;
+  return <TraceSiftUpload controller={controller} available={available} mode={mode} setMode={setMode} profileType={profileType} setProfileType={setProfileType} />;
 }

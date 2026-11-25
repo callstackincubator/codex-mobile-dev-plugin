@@ -46,7 +46,7 @@ test("compact TraceSift cards preserve CPU and React evidence", async t => {
         startUiTelemetry(app);
         const controller = new TraceSiftController(app); controller.hostChanged();
         controller.accept(result);
-        const root = createRoot(document.getElementById("root")); flushSync(() => root.render(<TraceSiftCards controller={controller} />));
+        const root = createRoot(document.getElementById("root")); flushSync(() => root.render(<TraceSiftCards controller={controller} onReset={controller.reset} />));
         return { controller, root, flushSync, async close() { controller.dispose(); root.unmount(); await stopUiTelemetry(); } };
       }`, resolveDir: process.cwd(), loader: "tsx" },
     bundle: true, write: false, format: "iife", globalName: "TraceSiftCardTest", platform: "browser", jsx: "automatic",
@@ -217,6 +217,10 @@ test("compact TraceSift cards preserve CPU and React evidence", async t => {
   assert.ok(window.document.querySelector(".tracesift-severity-dot[data-severity=\"high\"]"));
   assert.match(window.document.body.textContent!, /Investigate commit 1/);
   await mounted.controller.investigate("react-1");
+  const back = [...window.document.querySelectorAll<HTMLButtonElement>(".recording-header button")].find(button => button.textContent?.includes("Back to profiles"));
+  assert.ok(back);
+  flush(() => back.click());
+  assert.equal(mounted.controller.getSnapshot().analysis, undefined);
   await mounted.close();
   const encoded = telemetry.join("\n");
   for (const fragment of ["ui.tracesift.finding_selected", "ui.tracesift.process.mean", "ui.tracesift.handoff.mean", "ui.tracesift.message_ack.mean", "ui.tracesift.investigate", "ui.tracesift.cards", "ui.tracesift.payload.mean", "ui.tracesift.explore", "ui.tracesift.pick_on", "ui.tracesift.frame_add", "ui.tracesift.frame_remove", "ui.tracesift.selected_frames", '"tracesift_view":{"value":"explorer"', '"surface":{"value":"tracesift"', '"view":{"value":"tracesift"']) assert.ok(encoded.includes(fragment), `Missing telemetry: ${fragment}`);
