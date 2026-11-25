@@ -148,7 +148,7 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
       else if (value && isTool(value)) showTool(value);
     }}>
       <SelectTrigger id="tool-select" size="sm" className="shrink-0" aria-label="Developer tools"><SelectValue>{open ? <ToolIcon /> : <PanelsTopLeftIcon />}<span className="@max-[600px]:sr-only">{open ? tools[tool].label : "Tools"}</span></SelectValue></SelectTrigger>
-      <SelectContent side={menuSide} align="start" alignItemWithTrigger={false}><SelectGroup>
+      <SelectContent side={menuSide} align="start" alignItemWithTrigger={false} className="w-max min-w-(--anchor-width) max-w-(--available-width)"><SelectGroup>
         <SelectItem id="tool-none" value="none">Hide tools</SelectItem>
         {Object.entries(tools).map(([value, { id, label, icon: Icon }]) => <SelectItem key={value} id={id} value={value}><Icon />{label}</SelectItem>)}
       </SelectGroup></SelectContent>
