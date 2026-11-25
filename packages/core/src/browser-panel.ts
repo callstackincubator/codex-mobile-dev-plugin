@@ -17,10 +17,14 @@ export const BROWSER_SESSION_IDLE_MS = 5 * 60_000;
 // Screenshots the user adds to chat travel as base64 images.
 export const BROWSER_CONTEXT_MAX_BYTES = 16 * 1024 * 1024;
 const NO_CONTEXT = "No Mobile Dev browser panel has shared context. Open Mobile Dev, or ask the user to select a device in the panel.";
+// Hosts can hide their browser pane while a tab stays open, so every reply that relies on the panel checks it is in view.
+const SHOW_PANE = "A browser tool that reports the page opened, or a tab that is still open, can sit in a hidden pane, where the user sees only a card in the chat. When your host has a tool that brings its browser or preview pane into view, such as a show_pane tool for its preview pane, load it if it is deferred and call it now, unless your host reports that pane already in view. If it says the user is not viewing this chat, the pane stays closed: say the panel is in the browser pane, and show the pane again the next time you use Mobile Dev's tools.";
+const REOPEN = "Mobile Dev's panel is already open in a browser tab.";
+export const CONTEXT_PANE = "If your host's browser or preview pane is hidden, show it now, such as with a show_pane tool for its preview pane, so the user sees the panel.";
 
 type PanelContent = TextContent | ImageContent;
 type BrowserSession = { transport: StreamableHTTPServerTransport; touched: number; requests: number; context?: { content: PanelContent[]; updated: number } };
-type PanelPage = { url(tool: string, target: PanelTarget): string; context(): PanelContent[]; close(): Promise<void> };
+type PanelPage = { url(tool: string, target: PanelTarget): string; context(): PanelContent[]; connected(): boolean; close(): Promise<void> };
 
 // What a panel would otherwise give an MCP Apps host's model context. Hosts mark
 // audience and other annotations; the agent reads only text and images.
@@ -52,7 +56,7 @@ export function browserPanel({ template = PAGE, always = false }: BrowserPanelOp
       page ??= startPanelPage(connections, host, template);
       const opened = await page;
       const url = opened.url(tool, target);
-      const instructions = `Mobile Dev's panel is a page to show beside the chat, not in it, and it is not open yet. Show it to the user now: open ${url} in your in-app browser or side panel, in the foreground, so the page is visible without another click. This page is how Mobile Dev shows its panel, so opening it is part of opening the panel. Use your host's own browser or preview tool, and load it first if it is deferred. Never open the page with a computer-use tool that drives the screen. Opening a page can leave the browser pane hidden: when your host has a tool that brings its browser or preview pane into view, such as a show_pane tool for its preview pane, load it if needed and call it right after. A host can also show the page as a floating preview and report it as not visible. That still counts as shown, so do not open it again. Leave the tab open after you reply. Reuse a tab that already shows Mobile Dev. Open no other address for it, such as the backend's baseUrl. If you cannot open pages, give the user the link. The page shares the user's devices and what they add to chat through mobile_read_panel_context; read it before device work.`;
+      const instructions = openingInstructions(url, opened.connected());
       return { url, instructions };
     });
     // A browser has no model context of its own, so the agent asks the server for it.
@@ -63,13 +67,22 @@ export function browserPanel({ template = PAGE, always = false }: BrowserPanelOp
     }, async () => {
       const opened = await page?.catch(() => undefined);
       const content = opened?.context() ?? [];
-      return { content: content.length ? content : [{ type: "text", text: NO_CONTEXT }] };
+      if (content.length === 0) return { content: [{ type: "text", text: NO_CONTEXT }] };
+      // Agents read context before device work, so a pane hidden since the panel opened is shown then.
+      return { content: [...content, { type: "text", text: CONTEXT_PANE }] };
     });
     return async () => {
       const opened = await page?.catch(() => undefined);
       await opened?.close();
     };
   };
+}
+
+function openingInstructions(url: string, connected: boolean) {
+  const open = connected
+    ? `${REOPEN} Show ${url} in the tab that already shows Mobile Dev, in the foreground, rather than opening another tab.`
+    : `Mobile Dev's panel is a page to show beside the chat, not in it, and it is not open yet. Show it to the user now: open ${url} in your in-app browser or side panel, in the foreground, so the page is visible without another click. This page is how Mobile Dev shows its panel, so opening it is part of opening the panel.`;
+  return `${open} Use your host's own browser or preview tool, and load it first if it is deferred. Never open the page with a computer-use tool that drives the screen. ${SHOW_PANE} A host can also show the page as a floating preview and report it as not visible. That still counts as shown, so do not open it again. Leave the tab open after you reply. Reuse a tab that already shows Mobile Dev. Open no other address for it, such as the backend's baseUrl. If you cannot open pages, give the user the link. The page shares the user's devices and what they add to chat through mobile_read_panel_context; read it before device work.`;
 }
 
 export async function startPanelPage(connections: SharedTransport, host: TelemetryHost, page: URL = PAGE): Promise<PanelPage> {
@@ -189,6 +202,7 @@ export async function startPanelPage(connections: SharedTransport, host: Telemet
       }
       return `${origins[0]}${base}?${query}`;
     },
+    connected: () => sessions.size > 0,
     context() {
       // The most recently updated tab comes first; each open tab keeps its own.
       const shared = Array.from(sessions.values()).flatMap(session => session.context ? [session.context] : []);

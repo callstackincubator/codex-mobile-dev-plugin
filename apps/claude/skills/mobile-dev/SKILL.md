@@ -31,9 +31,13 @@ performance beside the device), before building when the user wants to watch. It
 result gives a private `127.0.0.1` link, as `browserPanel.url` in its structured
 result: open it in your in-app browser in the foreground, and reuse a tab that already
 shows Mobile Dev. Opening a page can leave the Browser pane hidden behind a card in the
-chat, so in the Claude desktop app's Code tab then call `mcp__ccd_view__show_pane` with
-`pane: "preview"` (load it with ToolSearch first if it is deferred), so the panel shows
-beside the chat without the user clicking Open. In T3 Code, open it with the
+chat, even when the browser tool reports it opened, so in the Claude desktop app's Code
+tab then call `mcp__ccd_view__show_pane` with `pane: "preview"` (load it with
+ToolSearch first if it is deferred), so the panel shows beside the chat without the
+user clicking Open. If `show_pane` reports that the session is not open in a window,
+the pane stays closed: tell the user the panel is in the Browser pane, and on your next
+turn that uses Mobile Dev, check `mcp__Claude_Browser__tabs_context` and call
+`show_pane` again while it reports the pane hidden. In T3 Code, open it with the
 `t3-code` server's `preview_open` (load it with ToolSearch first if it is deferred). T3
 shows a page an agent opened as a floating preview that the user can dock beside the
 chat, so a result with `visible: false` still counts as shown: do not open it again,
