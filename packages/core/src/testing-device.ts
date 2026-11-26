@@ -4,10 +4,11 @@ import { pathToFileURL } from "node:url";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import type { ScreenComponent, ScreenSize } from "@mobile-dev/shared/screen-annotations.ts";
 import { APP_FLOW_DIRECTORY, loadVendoredAgentDevice } from "./app-flow-host.ts";
+import { bundledE2eRoot } from "./e2e-runtime.ts";
 import { captureServerError } from "./telemetry.ts";
 
 /**
- * The element tree the Testing panel's recorder names selectors from: the one the `e2e` runner
+ * The element tree the Testing Studio panel's recorder names selectors from: the one the `e2e` runner
  * will query when it runs the recorded test.
  *
  * The recorder used to read the macOS accessibility API through Baguette and translate its role
@@ -54,6 +55,8 @@ export interface TestingDeviceTarget {
   platform: "ios" | "android";
   /** The e2e project whose `@e2e-dev/mobile` projects the snapshot; its build, not ours. */
   projectPath: string;
+  /** The project root in project mode, or Mobile Dev's pinned artifact in bundled mode. */
+  runtimeRoot?: string;
   /** The app to attach to, from the project's config. Never launched fresh — see `attach`. */
   bundleId: string;
 }
@@ -125,7 +128,27 @@ async function loadProjection(projectPath: string): Promise<EngineProjection> {
   // Deep path rather than a package specifier: the package does not export this module, and a
   // copy of its mapping here would be the divergence this path exists to remove.
   const dynamicImport = new Function("specifier", "return import(specifier)") as (specifier: string) => Promise<unknown>;
-  return await dynamicImport(pathToFileURL(entry).href) as EngineProjection;
+  const module = await dynamicImport(pathToFileURL(entry).href) as Partial<EngineProjection> | null;
+  if (typeof module?.projectSnapshot !== "function") {
+    throw new ExpectedOperationError("invalid_input", "This project's @e2e-dev/mobile does not expose the node projection the recorder reads.");
+  }
+  return module as EngineProjection;
+}
+
+/**
+ * The project's projection when it loads, else the bundled runtime's. A project on an e2e version
+ * Testing Studio was not built against still runs its tests with its own CLI; only the recorder's tree
+ * reading drops back to the pinned copy, so recording keeps working instead of refusing.
+ */
+async function loadProjectionWithFallback(runtimeRoot: string): Promise<EngineProjection> {
+  try {
+    return await loadProjection(runtimeRoot);
+  } catch (error) {
+    let bundled: string;
+    try { bundled = await bundledE2eRoot(); } catch { throw error; }
+    if (bundled === runtimeRoot) throw error;
+    return await loadProjection(bundled).catch(() => { throw error; });
+  }
 }
 
 function textOf(value: unknown): string | undefined {
@@ -230,13 +253,13 @@ export class TestingDevices {
     return this.client;
   }
 
-  private projection(projectPath: string): Promise<EngineProjection> {
-    let pending = this.projections.get(projectPath);
+  private projection(runtimeRoot: string): Promise<EngineProjection> {
+    let pending = this.projections.get(runtimeRoot);
     if (!pending) {
-      pending = loadProjection(projectPath);
+      pending = loadProjectionWithFallback(runtimeRoot);
       // A failed load must not be cached: the user installs the dependency and records again.
-      pending.catch(() => this.projections.delete(projectPath));
-      this.projections.set(projectPath, pending);
+      pending.catch(() => this.projections.delete(runtimeRoot));
+      this.projections.set(runtimeRoot, pending);
     }
     return pending;
   }
@@ -271,7 +294,7 @@ export class TestingDevices {
 
   /** Every input that decides which app/session is attached and how its tree is projected. */
   private key(target: TestingDeviceTarget): string {
-    return `${target.platform}\u0000${target.deviceId}\u0000${target.projectPath}\u0000${target.bundleId}`;
+    return `${target.platform}\u0000${target.deviceId}\u0000${target.projectPath}\u0000${target.runtimeRoot ?? target.projectPath}\u0000${target.bundleId}`;
   }
 
   async read(target: TestingDeviceTarget): Promise<TestingDeviceTree> {
@@ -281,7 +304,7 @@ export class TestingDevices {
   }
 
   private async readOnce(target: TestingDeviceTarget): Promise<TestingDeviceTree> {
-    const [client, projection] = await Promise.all([this.connect(), this.projection(target.projectPath)]);
+    const [client, projection] = await Promise.all([this.connect(), this.projection(target.runtimeRoot ?? target.projectPath)]);
     if (this.attached !== this.key(target)) await this.attach(client, target);
     let snapshot: { nodes?: unknown };
     try {
@@ -351,6 +374,15 @@ export class TestingDevices {
     const run = this.queue.then(() => this.releaseOnce(), () => this.releaseOnce());
     this.queue = run.catch(() => undefined);
     return run;
+  }
+
+  /**
+   * Releases the recorder only when it holds one of these devices. A matrix run touches only its own
+   * devices, so a recorder on some other device keeps its session.
+   */
+  async releaseOn(deviceIds: readonly string[]): Promise<void> {
+    const held = this.attached?.split("\u0000")[1];
+    if (held !== undefined && deviceIds.includes(held)) await this.release();
   }
 
   private async releaseOnce(): Promise<void> {

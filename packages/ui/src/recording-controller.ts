@@ -10,7 +10,7 @@ import { readRecording, RecordingReadError, RecordingTrimmedError, toolResultTex
 type RecordingState = {
   recording?: PerformanceRecording;
   range?: RecordingRange;
-  /** Showing a preview without thread or frame detail: the full recording is loading, or this host cannot load it. */
+  /** Showing a size-limited preview while the full recording loads or in a preview-only host. */
   preview?: "loading" | "only";
   canMessage: boolean;
   /** The server has Mobile Dev's workspace to open the recording in. */
@@ -129,7 +129,7 @@ export class RecordingController {
     } catch (error) {
       if (loading.signal.aborted || this.disposed) return;
       if (error instanceof RecordingReadError === false) captureUiError(error, "recording.load");
-      // A preview already on screen stays; the card only lacks thread and frame detail.
+      // Keep any preview already on screen when the full recording cannot load.
       if (this.state.preview) this.update({ preview: "only" });
       else this.update({ error: error instanceof RecordingReadError ? error.message : "Could not load this recording. Reopen it to try again." });
     }
@@ -180,6 +180,7 @@ export class RecordingController {
     if (summary.firstMemoryBytes !== null) metrics.push("memory");
     if (summary.averageFps !== null) metrics.push("device-wide Display FPS");
     if (summary.frameStats !== null) metrics.push("Android display jank rate, classification coverage, dropped frames, and frame pacing");
+    if (summary.hitchStats) metrics.push("visible iOS hitches and time lost from summary.hitchStats");
     const metricNames = metrics.join(", ");
     const hasDisplayData = summary.averageFps !== null || summary.frameStats !== null;
     const displayContext = hasDisplayData ? "; device-wide display data cannot attribute a slowdown to this app alone" : "";

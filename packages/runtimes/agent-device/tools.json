@@ -29,7 +29,7 @@
  },
  {
   "name": "alert",
-  "description": "Inspect, wait for, accept, or dismiss a platform alert. Use get before acting when the alert content matters; accept and dismiss change the active alert state. Each iOS XCTest execution activates once, then only observes. Local Apple XCTest and Limrun iOS choose recognized English labels by preference (Allow While Using App before Allow Once); equal-ranked choices and unknown labels refuse, including a lone unknown button. Open, Done, and Confirm… accept; Keep Browsing, Deny, and Skip dismiss. On the Apple XCUITest runner, dismiss taps only a recognized decline label (Cancel, Don't Allow, Ask App Not to Track, and similar) or the close element of a popover whose accessibility marker reads exactly \"dismiss popup\"; when no button fits the action, accept and dismiss answer ALERT_BUTTON_NOT_FOUND having tapped nothing — read labels with alert get, then press the button by label. Inspect again after an unconfirmed action; never assume a timeout means nothing happened. Times out after 90s.",
+  "description": "Inspect, wait for, accept, or dismiss a platform alert. Use get before acting when the alert content matters; accept and dismiss change the active alert state. Each iOS XCTest execution activates once, then only observes. Apple XCTest and Limrun iOS choose recognized English labels by preference (Allow While Using App before Allow Once); on iOS simulators, including Limrun, the runner also recognizes the device's preferred languages' wording of those labels from the OS permission-prompt strings, on any alert; equal-ranked choices and unknown labels refuse, including a lone unknown button. Open, Done, and Confirm… accept; Keep Browsing, Deny, and Skip dismiss. On the Apple XCUITest runner, dismiss taps only a recognized decline label (Cancel, Don't Allow, Ask App Not to Track, and similar) or the close element of a popover whose accessibility marker reads exactly \"dismiss popup\"; when no button fits the action, accept and dismiss answer ALERT_BUTTON_NOT_FOUND having tapped nothing — read labels with alert get, then press the button by label. Inspect again after an unconfirmed action; never assume a timeout means nothing happened. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -119,19 +119,19 @@
       "ios",
       "macos"
      ],
-     "description": "Platform selector used to resolve a device."
+     "description": "Device platform."
     },
     "device": {
      "type": "string",
-     "description": "Device name selector (a UDID belongs in udid, a serial in serial)."
+     "description": "Device name; ids go in udid or serial."
     },
     "udid": {
      "type": "string",
-     "description": "Apple device or simulator UDID; the selector that pins one device when several share a name."
+     "description": "Apple device or simulator UDID."
     },
     "serial": {
      "type": "string",
-     "description": "Android, HarmonyOS, or Vega VVD serial selector."
+     "description": "Android, HarmonyOS, or Vega VVD serial."
     },
     "appsFilter": {
      "type": "string",
@@ -175,19 +175,19 @@
       "ios",
       "macos"
      ],
-     "description": "Platform selector used to resolve a device."
+     "description": "Device platform."
     },
     "device": {
      "type": "string",
-     "description": "Device name selector (a UDID belongs in udid, a serial in serial)."
+     "description": "Device name; ids go in udid or serial."
     },
     "udid": {
      "type": "string",
-     "description": "Apple device or simulator UDID; the selector that pins one device when several share a name."
+     "description": "Apple device or simulator UDID."
     },
     "serial": {
      "type": "string",
-     "description": "Android, HarmonyOS, or Vega VVD serial selector."
+     "description": "Android, HarmonyOS, or Vega VVD serial."
     }
    },
    "additionalProperties": false,
@@ -201,7 +201,7 @@
  },
  {
   "name": "back",
-  "description": "Navigate back in the app or through system navigation. Use in-app for the app navigation stack and system when the platform back behavior is required. On iOS, a single-screen iPhone or an iPad whose app provably fills its screen can use a top-leading tap when the app tree is unreadable, with before/after visual verification. A capture failure reports an unknown outcome. Times out after 90s; a caller-supplied budget extends it.",
+  "description": "Navigate back in the app or through system navigation. Use in-app for the app navigation stack and system when the platform back behavior is required. On iOS both modes swipe from the left edge and succeed only when the app screen changes. Reason back_swipe_no_change: the swipe was sent and the screen did not change; press the visible back or close control. Reason back_swipe_unverified: the swipe may or may not have navigated, because the screen kept changing before it or could not be sampled after it; check with snapshot. Reason back_swipe_not_dispatched, or a screen that cannot be sampled before the swipe, means nothing was sent. An app with a left-edge drawer may open the drawer instead. Press a visible back or close control by its ref directly. Times out after 90s; a caller-supplied budget extends it.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -224,7 +224,7 @@
     },
     "settleQuietMs": {
      "type": "integer",
-     "description": "Settle: quiet window in milliseconds (default 500; 300 when the settled tree comes from the iOS simulator snapshot bridge). On iOS, a broad screen replacement such as a modal dismissal is confirmed for at least 1500ms whatever window is asked for, within the timeoutMs settle deadline; a replacement from a screen the pre-action capture read as presenting nothing, such as a tab switch, gets no 1500ms confirmation and keeps the asked window.",
+     "description": "Settle: quiet window in milliseconds (default 500; 300 on the iOS simulator snapshot bridge). On iOS, a broad replacement of a non-empty screen holds at least 1500ms within timeoutMs.",
      "minimum": 0
     },
     "timeoutMs": {
@@ -376,7 +376,7 @@
  },
  {
   "name": "boot",
-  "description": "Boot or prepare the selected device or simulator so later commands can target it. The device is chosen through the device-selection inputs, not by naming it here. Times out after 90s; a caller-supplied budget extends it.",
+  "description": "Boot or prepare the selected device or simulator so later commands can target it. The device is chosen through the device-selection inputs, not by naming it here. On Limrun, allocate or reuse an instance. Existing-instance credentials attach without creating one. Times out after 90s; a caller-supplied budget extends it.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -398,23 +398,30 @@
       "ios",
       "macos"
      ],
-     "description": "Platform selector used to resolve a device."
+     "description": "Device platform."
     },
     "device": {
      "type": "string",
-     "description": "Device name selector (a UDID belongs in udid, a serial in serial)."
+     "description": "Device name; ids go in udid or serial."
     },
     "udid": {
      "type": "string",
-     "description": "Apple device or simulator UDID; the selector that pins one device when several share a name."
+     "description": "Apple device or simulator UDID."
     },
     "serial": {
      "type": "string",
-     "description": "Android, HarmonyOS, or Vega VVD serial selector."
+     "description": "Android, HarmonyOS, or Vega VVD serial."
     },
     "headless": {
      "type": "boolean",
      "description": "Boot without showing simulator UI when supported."
+    },
+    "pick": {
+     "type": "string",
+     "enum": [
+      "newest"
+     ],
+     "description": "When no device is named and several equally preferred devices match, all shut down, boot one instead of failing: newest picks mobile over TV, then the newest OS version, then the first name in name order (numbers compared by value; not device age), which alone decides for stopped Android AVDs because they report no OS version. Several booted matches still fail."
     },
     "timeoutMs": {
      "type": "integer",
@@ -455,19 +462,19 @@
       "ios",
       "macos"
      ],
-     "description": "Platform selector used to resolve a device."
+     "description": "Device platform."
     },
     "device": {
      "type": "string",
-     "description": "Device name selector (a UDID belongs in udid, a serial in serial)."
+     "description": "Device name; ids go in udid or serial."
     },
     "udid": {
      "type": "string",
-     "description": "Apple device or simulator UDID; the selector that pins one device when several share a name."
+     "description": "Apple device or simulator UDID."
     },
     "serial": {
      "type": "string",
-     "description": "Android, HarmonyOS, or Vega VVD serial selector."
+     "description": "Android, HarmonyOS, or Vega VVD serial."
     }
    },
    "additionalProperties": false,
@@ -491,71 +498,25 @@
      "pattern": "\\S",
      "description": "Named session opened with open."
     },
-    "target": {
-     "oneOf": [
-      {
-       "type": "object",
-       "properties": {
-        "kind": {
-         "type": "string",
-         "const": "ref"
-        },
-        "ref": {
-         "type": "string",
-         "description": "Snapshot element ref such as @e12."
-        },
-        "label": {
-         "type": "string",
-         "description": "Optional human label for the ref."
-        }
-       },
-       "required": [
-        "kind",
-        "ref"
-       ],
-       "additionalProperties": false
-      },
-      {
-       "type": "object",
-       "properties": {
-        "kind": {
-         "type": "string",
-         "const": "selector"
-        },
-        "selector": {
-         "type": "string",
-         "description": "Agent-device selector expression."
-        }
-       },
-       "required": [
-        "kind",
-        "selector"
-       ],
-       "additionalProperties": false
-      },
-      {
-       "type": "object",
-       "properties": {
-        "kind": {
-         "type": "string",
-         "const": "point"
-        },
-        "x": {
-         "type": "number"
-        },
-        "y": {
-         "type": "number"
-        }
-       },
-       "required": [
-        "kind",
-        "x",
-        "y"
-       ],
-       "additionalProperties": false
-      }
-     ],
-     "description": "UI element ref, selector, or screen point."
+    "ref": {
+     "type": "string",
+     "description": "Snapshot element ref such as @e12. Pass exactly one of ref, selector, or x+y."
+    },
+    "label": {
+     "type": "string",
+     "description": "Optional human label for ref."
+    },
+    "selector": {
+     "type": "string",
+     "description": "Selector expression such as id=\"submit\" or label=\"Sign in\". Pass exactly one of ref, selector, or x+y."
+    },
+    "x": {
+     "type": "number",
+     "description": "Screen x coordinate, with y. Pass exactly one of ref, selector, or x+y; use x+y only when no ref or selector is available."
+    },
+    "y": {
+     "type": "number",
+     "description": "Screen y coordinate, with x. Pass exactly one of ref, selector, or x+y."
     },
     "button": {
      "type": "string",
@@ -613,7 +574,7 @@
     },
     "settleQuietMs": {
      "type": "integer",
-     "description": "Settle: quiet window in milliseconds (default 500; 300 when the settled tree comes from the iOS simulator snapshot bridge). On iOS, a broad screen replacement such as a modal dismissal is confirmed for at least 1500ms whatever window is asked for, within the timeoutMs settle deadline; a replacement from a screen the pre-action capture read as presenting nothing, such as a tab switch, gets no 1500ms confirmation and keeps the asked window.",
+     "description": "Settle: quiet window in milliseconds (default 500; 300 on the iOS simulator snapshot bridge). On iOS, a broad replacement of a non-empty screen holds at least 1500ms within timeoutMs.",
      "minimum": 0
     },
     "timeoutMs": {
@@ -626,11 +587,10 @@
      "description": "Do not record this action."
     }
    },
+   "additionalProperties": false,
    "required": [
-    "target",
     "session"
-   ],
-   "additionalProperties": false
+   ]
   },
   "annotations": {
    "readOnlyHint": false,
@@ -658,7 +618,8 @@
      ]
     },
     "text": {
-     "type": "string"
+     "type": "string",
+     "description": "Text for write; required for write (\"\" clears the clipboard), refused for read."
     },
     "noRecord": {
      "type": "boolean",
@@ -669,7 +630,33 @@
     "action",
     "session"
    ],
-   "additionalProperties": false
+   "additionalProperties": false,
+   "oneOf": [
+    {
+     "properties": {
+      "action": {
+       "type": "string",
+       "const": "write"
+      }
+     },
+     "required": [
+      "text"
+     ]
+    },
+    {
+     "properties": {
+      "action": {
+       "type": "string",
+       "const": "read"
+      }
+     },
+     "not": {
+      "required": [
+       "text"
+      ]
+     }
+    }
+   ]
   },
   "annotations": {
    "readOnlyHint": false,
@@ -679,7 +666,7 @@
  },
  {
   "name": "close",
-  "description": "Close the named app, or close the active session app when app is omitted. Use shutdown only when the selected simulator or emulator should also stop. Android ADB close fails with android-app-close-timeout if the app stays foreground, or its process stays running, past its 2s check window. Times out after 90s.",
+  "description": "End the named local iOS or Android session and release its device claim. Omit app and shutdown to keep the app running in its current foreground state and leave the device booted, so another session can acquire it. Pass app only to intentionally close that app; set shutdown only to stop the simulator or emulator too. If cleanup fails, the session and claim may remain; retry close with the same options. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -784,19 +771,19 @@
       "ios",
       "macos"
      ],
-     "description": "Platform selector used to resolve a device."
+     "description": "Device platform."
     },
     "device": {
      "type": "string",
-     "description": "Device name selector (a UDID belongs in udid, a serial in serial)."
+     "description": "Device name; ids go in udid or serial."
     },
     "udid": {
      "type": "string",
-     "description": "Apple device or simulator UDID; the selector that pins one device when several share a name."
+     "description": "Apple device or simulator UDID."
     },
     "serial": {
      "type": "string",
-     "description": "Android, HarmonyOS, or Vega VVD serial selector."
+     "description": "Android, HarmonyOS, or Vega VVD serial."
     }
    },
    "additionalProperties": false,
@@ -880,19 +867,19 @@
       "ios",
       "macos"
      ],
-     "description": "Platform selector used to resolve a device."
+     "description": "Device platform."
     },
     "device": {
      "type": "string",
-     "description": "Device name selector (a UDID belongs in udid, a serial in serial)."
+     "description": "Device name; ids go in udid or serial."
     },
     "udid": {
      "type": "string",
-     "description": "Apple device or simulator UDID; the selector that pins one device when several share a name."
+     "description": "Apple device or simulator UDID."
     },
     "serial": {
      "type": "string",
-     "description": "Android, HarmonyOS, or Vega VVD serial selector."
+     "description": "Android, HarmonyOS, or Vega VVD serial."
     },
     "targetApp": {
      "type": "string",
@@ -952,71 +939,25 @@
      "pattern": "\\S",
      "description": "Named session opened with open."
     },
-    "target": {
-     "oneOf": [
-      {
-       "type": "object",
-       "properties": {
-        "kind": {
-         "type": "string",
-         "const": "ref"
-        },
-        "ref": {
-         "type": "string",
-         "description": "Snapshot element ref such as @e12."
-        },
-        "label": {
-         "type": "string",
-         "description": "Optional human label for the ref."
-        }
-       },
-       "required": [
-        "kind",
-        "ref"
-       ],
-       "additionalProperties": false
-      },
-      {
-       "type": "object",
-       "properties": {
-        "kind": {
-         "type": "string",
-         "const": "selector"
-        },
-        "selector": {
-         "type": "string",
-         "description": "Agent-device selector expression."
-        }
-       },
-       "required": [
-        "kind",
-        "selector"
-       ],
-       "additionalProperties": false
-      },
-      {
-       "type": "object",
-       "properties": {
-        "kind": {
-         "type": "string",
-         "const": "point"
-        },
-        "x": {
-         "type": "number"
-        },
-        "y": {
-         "type": "number"
-        }
-       },
-       "required": [
-        "kind",
-        "x",
-        "y"
-       ],
-       "additionalProperties": false
-      }
-     ],
-     "description": "UI element ref, selector, or screen point."
+    "ref": {
+     "type": "string",
+     "description": "Snapshot element ref such as @e12. Pass exactly one of ref, selector, or x+y."
+    },
+    "label": {
+     "type": "string",
+     "description": "Optional human label for ref."
+    },
+    "selector": {
+     "type": "string",
+     "description": "Selector expression such as id=\"submit\" or label=\"Sign in\". Pass exactly one of ref, selector, or x+y."
+    },
+    "x": {
+     "type": "number",
+     "description": "Screen x coordinate, with y. Pass exactly one of ref, selector, or x+y; use x+y only when no ref or selector is available."
+    },
+    "y": {
+     "type": "number",
+     "description": "Screen y coordinate, with x. Pass exactly one of ref, selector, or x+y."
     },
     "text": {
      "type": "string",
@@ -1054,7 +995,7 @@
     },
     "settleQuietMs": {
      "type": "integer",
-     "description": "Settle: quiet window in milliseconds (default 500; 300 when the settled tree comes from the iOS simulator snapshot bridge). On iOS, a broad screen replacement such as a modal dismissal is confirmed for at least 1500ms whatever window is asked for, within the timeoutMs settle deadline; a replacement from a screen the pre-action capture read as presenting nothing, such as a tab switch, gets no 1500ms confirmation and keeps the asked window.",
+     "description": "Settle: quiet window in milliseconds (default 500; 300 on the iOS simulator snapshot bridge). On iOS, a broad replacement of a non-empty screen holds at least 1500ms within timeoutMs.",
      "minimum": 0
     },
     "timeoutMs": {
@@ -1068,7 +1009,6 @@
     }
    },
    "required": [
-    "target",
     "text",
     "session"
    ],
@@ -1082,7 +1022,7 @@
  },
  {
   "name": "find",
-  "description": "Find by text/label/value/role/id and run action. The role locator matches snapshot kind vocabulary (button, text, text-field, switch, ...); pre-reconciliation leaf spellings (statictext, edittext, textview) stay accepted on the nodes that carried them during a deprecation window. Times out after 90s.",
+  "description": "Find by text/label/value/role/id and run action; the action defaults to click. The role locator matches snapshot kind vocabulary (button, text, text-field, switch, ...); pre-reconciliation leaf spellings (statictext, edittext, textview) stay accepted on the nodes that carried them during a deprecation window. The focus and type actions aim at a text field: the match or the field holding it, even beside other fields, or else the one enabled on-screen field inside the match. Several enabled on-screen fields inside the match refuse with AMBIGUOUS_MATCH and the field candidates, and a disabled target refuses with reason target_disabled. Web text boxes are not recognized as text fields. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1199,7 +1139,7 @@
  },
  {
   "name": "fold",
-  "description": "Fold or unfold a foldable iPhone simulator (iPhone Duo) or a foldable Android emulator into the closed, half-open, or open pose. iOS sends a simulator HID hinge event, then reads the hinge angle back inside the simulator to confirm it, and can follow timestamped angle keyframes; Android sets the emulator console posture, then confirms the device state the guest commits and reports the hinge angle the AVD profile defines for that posture, and dismisses the lock screen a fold to the cover display can raise. On iOS a pose change moves the app to a different panel with a different point size; on Android a fold to or from closed moves the app between the cover and inner displays, and any pose change can reshape the app window, whose size the next snapshot reports. Either way every ref and coordinate from before it is stale: re-snapshot after this command. Taps, long presses, and scrolling target the app window on its current panel in closed, half-open, and open poses. Simulator and emulator only; iOS requires the iOS simulator SDK; Device Hub and host Accessibility permission are not required. An iOS simulator in a scoped simulator set folds the same way as one in the default set. Times out after 255s.",
+  "description": "Fold or unfold a foldable iPhone simulator (iPhone Duo) or a foldable Android emulator into the closed, half-open, or open pose. iOS sends a simulator HID hinge event, then reads the hinge angle back inside the simulator to confirm it, and can follow timestamped angle keyframes; Android sets the emulator console posture, then confirms the device state the guest commits and reports the angle read from the hinge sensor, which can differ from the AVD profile's per-posture angles, and dismisses the lock screen a fold to the cover display can raise. On iOS a pose change moves the app to a different panel with a different point size; on Android a fold to or from closed moves the app between the cover and inner displays, and any pose change can reshape the app window, whose size the next snapshot reports. Either way every ref and coordinate from before it is stale: re-snapshot after this command. Taps, long presses, and scrolling target the app window on its current panel in closed, half-open, and open poses. Simulator and emulator only; iOS requires the iOS simulator SDK; Device Hub and host Accessibility permission are not required. An iOS simulator in a scoped simulator set folds the same way as one in the default set. Times out after 255s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1483,57 +1423,24 @@
      "pattern": "\\S",
      "description": "Named session opened with open."
     },
-    "target": {
-     "oneOf": [
-      {
-       "type": "object",
-       "properties": {
-        "kind": {
-         "type": "string",
-         "const": "ref"
-        },
-        "ref": {
-         "type": "string",
-         "description": "Snapshot element ref such as @e12."
-        },
-        "label": {
-         "type": "string",
-         "description": "Optional human label for the ref."
-        }
-       },
-       "required": [
-        "kind",
-        "ref"
-       ],
-       "additionalProperties": false
-      },
-      {
-       "type": "object",
-       "properties": {
-        "kind": {
-         "type": "string",
-         "const": "selector"
-        },
-        "selector": {
-         "type": "string",
-         "description": "Agent-device selector expression."
-        }
-       },
-       "required": [
-        "kind",
-        "selector"
-       ],
-       "additionalProperties": false
-      }
-     ],
-     "description": "UI element ref, selector, or screen point."
-    },
     "format": {
      "type": "string",
      "enum": [
       "text",
       "attrs"
      ]
+    },
+    "ref": {
+     "type": "string",
+     "description": "Snapshot element ref such as @e12. Pass exactly one of ref or selector."
+    },
+    "label": {
+     "type": "string",
+     "description": "Optional human label for ref."
+    },
+    "selector": {
+     "type": "string",
+     "description": "Selector expression such as id=\"submit\" or label=\"Sign in\". Pass exactly one of ref or selector."
     },
     "depth": {
      "type": "integer",
@@ -1559,7 +1466,6 @@
    },
    "required": [
     "format",
-    "target",
     "session"
    ],
    "additionalProperties": false
@@ -1646,7 +1552,7 @@
  },
  {
   "name": "install",
-  "description": "Install an app binary from a local path. Provide an app identifier with the path when the target needs explicit app selection; use reinstall to replace an already installed app. Times out after 180s.",
+  "description": "Install an app binary from a local path. Provide an app identifier with the path when the target needs explicit app selection; use reinstall to replace an already installed app. Local Android and iOS install steps time out after 120s; the command allows 480s including device startup. Times out after 480s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -1668,19 +1574,19 @@
       "ios",
       "macos"
      ],
-     "description": "Platform selector used to resolve a device."
+     "description": "Device platform."
     },
     "device": {
      "type": "string",
-     "description": "Device name selector (a UDID belongs in udid, a serial in serial)."
+     "description": "Device name; ids go in udid or serial."
     },
     "udid": {
      "type": "string",
-     "description": "Apple device or simulator UDID; the selector that pins one device when several share a name."
+     "description": "Apple device or simulator UDID."
     },
     "serial": {
      "type": "string",
-     "description": "Android, HarmonyOS, or Vega VVD serial selector."
+     "description": "Android, HarmonyOS, or Vega VVD serial."
     },
     "app": {
      "type": "string",
@@ -1689,6 +1595,26 @@
     "appPath": {
      "type": "string",
      "description": "Path to app binary."
+    },
+    "osVersion": {
+     "type": "string",
+     "description": "Proxy lease: OS version or range, for example 18.6.2 or \">=26\" (Android: API level). Honored only by a proxy backend that leases by spec; other daemons refuse it."
+    },
+    "imageTag": {
+     "type": "string",
+     "description": "Proxy lease: Android system image tag, for example google_apis_playstore. Honored only by a proxy backend that leases by spec; other daemons refuse it."
+    },
+    "deviceMode": {
+     "type": "string",
+     "description": "Proxy lease: iOS simulator mode, slim or full. Honored only by a proxy backend that leases by spec; other daemons refuse it."
+    },
+    "deviceBaseline": {
+     "type": "string",
+     "description": "Proxy lease: saved device state (baseline) to restore on the leased device. Honored only by a proxy backend that leases by spec; other daemons refuse it."
+    },
+    "physical": {
+     "type": "boolean",
+     "description": "Proxy lease: true requests a physical device; false selects nothing. Honored only by a proxy backend that leases by spec; other daemons refuse it."
     },
     "noRecord": {
      "type": "boolean",
@@ -1821,71 +1747,25 @@
      "pattern": "\\S",
      "description": "Named session opened with open."
     },
-    "target": {
-     "oneOf": [
-      {
-       "type": "object",
-       "properties": {
-        "kind": {
-         "type": "string",
-         "const": "ref"
-        },
-        "ref": {
-         "type": "string",
-         "description": "Snapshot element ref such as @e12."
-        },
-        "label": {
-         "type": "string",
-         "description": "Optional human label for the ref."
-        }
-       },
-       "required": [
-        "kind",
-        "ref"
-       ],
-       "additionalProperties": false
-      },
-      {
-       "type": "object",
-       "properties": {
-        "kind": {
-         "type": "string",
-         "const": "selector"
-        },
-        "selector": {
-         "type": "string",
-         "description": "Agent-device selector expression."
-        }
-       },
-       "required": [
-        "kind",
-        "selector"
-       ],
-       "additionalProperties": false
-      },
-      {
-       "type": "object",
-       "properties": {
-        "kind": {
-         "type": "string",
-         "const": "point"
-        },
-        "x": {
-         "type": "number"
-        },
-        "y": {
-         "type": "number"
-        }
-       },
-       "required": [
-        "kind",
-        "x",
-        "y"
-       ],
-       "additionalProperties": false
-      }
-     ],
-     "description": "UI element ref, selector, or screen point."
+    "ref": {
+     "type": "string",
+     "description": "Snapshot element ref such as @e12. Pass exactly one of ref, selector, or x+y."
+    },
+    "label": {
+     "type": "string",
+     "description": "Optional human label for ref."
+    },
+    "selector": {
+     "type": "string",
+     "description": "Selector expression such as id=\"submit\" or label=\"Sign in\". Pass exactly one of ref, selector, or x+y."
+    },
+    "x": {
+     "type": "number",
+     "description": "Screen x coordinate, with y. Pass exactly one of ref, selector, or x+y; use x+y only when no ref or selector is available."
+    },
+    "y": {
+     "type": "number",
+     "description": "Screen y coordinate, with x. Pass exactly one of ref, selector, or x+y."
     },
     "durationMs": {
      "type": "integer",
@@ -1911,7 +1791,7 @@
     },
     "settleQuietMs": {
      "type": "integer",
-     "description": "Settle: quiet window in milliseconds (default 500; 300 when the settled tree comes from the iOS simulator snapshot bridge). On iOS, a broad screen replacement such as a modal dismissal is confirmed for at least 1500ms whatever window is asked for, within the timeoutMs settle deadline; a replacement from a screen the pre-action capture read as presenting nothing, such as a tab switch, gets no 1500ms confirmation and keeps the asked window.",
+     "description": "Settle: quiet window in milliseconds (default 500; 300 on the iOS simulator snapshot bridge). On iOS, a broad replacement of a non-empty screen holds at least 1500ms within timeoutMs.",
      "minimum": 0
     },
     "timeoutMs": {
@@ -1924,11 +1804,10 @@
      "description": "Do not record this action."
     }
    },
+   "additionalProperties": false,
    "required": [
-    "target",
     "session"
-   ],
-   "additionalProperties": false
+   ]
   },
   "annotations": {
    "readOnlyHint": false,
@@ -2067,7 +1946,7 @@
  },
  {
   "name": "open",
-  "description": "Boot the selected device when needed, then open an app, deep link, or URL in a session. Use the app or URL inputs to choose what becomes the foreground automation target. metroHost, metroPort, and bundleUrl choose the app's Metro server and save its address for later reloads. launchUrl selects the app's launch URL and does not select the reload server. A fresh open without Metro hints clears an older same-name binding; close also clears it. Times out after 90s; a caller-supplied budget extends it.",
+  "description": "Boot the selected device when needed, then open an app, deep link, or URL in a session. Use the app or URL inputs to choose what becomes the foreground automation target. Remote daemons refuse file: URLs in open targets and launch URLs with reason REMOTE_HOST_INPUT_DENIED. Serve local web content over HTTP(S) instead. metroHost, metroPort, and bundleUrl choose the app's Metro server and save its address for later reloads. launchUrl selects the app's launch URL and does not select the reload server. A fresh open without Metro hints clears an older same-name binding; close also clears it. Times out after 90s; a caller-supplied budget extends it.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -2089,19 +1968,19 @@
       "ios",
       "macos"
      ],
-     "description": "Platform selector used to resolve a device."
+     "description": "Device platform."
     },
     "device": {
      "type": "string",
-     "description": "Device name selector (a UDID belongs in udid, a serial in serial)."
+     "description": "Device name; ids go in udid or serial."
     },
     "udid": {
      "type": "string",
-     "description": "Apple device or simulator UDID; the selector that pins one device when several share a name."
+     "description": "Apple device or simulator UDID."
     },
     "serial": {
      "type": "string",
-     "description": "Android, HarmonyOS, or Vega VVD serial selector."
+     "description": "Android, HarmonyOS, or Vega VVD serial."
     },
     "app": {
      "type": "string",
@@ -2127,7 +2006,7 @@
     },
     "launchConsole": {
      "type": "string",
-     "description": "File path on the daemon host for the stdout and stderr of the initial app launch. iOS simulator direct app launches only; not for URL opens."
+     "description": "File path on the daemon host for the stdout and stderr of the initial app launch. Local or Limrun iOS simulator direct app launches only; not for URL opens."
     },
     "launchArgs": {
      "type": "array",
@@ -2147,7 +2026,7 @@
     },
     "waitMs": {
      "type": "integer",
-     "description": "Block this open for up to n milliseconds (100-120000) while another session holds the device, then fail with DEVICE_IN_USE naming that session. Only session contention is waited for: a device claim held by another workspace is refused at once with its recovery command. A device that never frees, or is taken again while this open waits, costs the full budget, which extends this command's timeout envelope rather than eating into it.",
+     "description": "Wait up to n milliseconds (100-120000) while another session holds the device, then fail with DEVICE_IN_USE. A claim held by another workspace fails at once. The wait extends this command's timeout.",
      "minimum": 100,
      "maximum": 120000
     },
@@ -2169,7 +2048,7 @@
     },
     "metroPort": {
      "type": "integer",
-     "description": "Session-scoped Metro/debug port hint applied to the opened app. On an emulator/simulator the host defaults to the loopback alias (Android 10.0.2.2, iOS 127.0.0.1) when --metro-host is omitted; physical devices still require an explicit --metro-host.",
+     "description": "Session-scoped Metro/debug port hint applied to the opened app. Without metroHost, emulators and simulators use the loopback alias; physical devices need metroHost.",
      "minimum": 1,
      "maximum": 65535
     },
@@ -2180,6 +2059,26 @@
     "launchUrl": {
      "type": "string",
      "description": "Launch URL for the opened app; does not select the server used by metro reload."
+    },
+    "osVersion": {
+     "type": "string",
+     "description": "Proxy lease: OS version or range, for example 18.6.2 or \">=26\" (Android: API level). Honored only by a proxy backend that leases by spec; other daemons refuse it."
+    },
+    "imageTag": {
+     "type": "string",
+     "description": "Proxy lease: Android system image tag, for example google_apis_playstore. Honored only by a proxy backend that leases by spec; other daemons refuse it."
+    },
+    "deviceMode": {
+     "type": "string",
+     "description": "Proxy lease: iOS simulator mode, slim or full. Honored only by a proxy backend that leases by spec; other daemons refuse it."
+    },
+    "deviceBaseline": {
+     "type": "string",
+     "description": "Proxy lease: saved device state (baseline) to restore on the leased device. Honored only by a proxy backend that leases by spec; other daemons refuse it."
+    },
+    "physical": {
+     "type": "boolean",
+     "description": "Proxy lease: true requests a physical device; false selects nothing. Honored only by a proxy backend that leases by spec; other daemons refuse it."
     }
    },
    "additionalProperties": false,
@@ -2245,71 +2144,25 @@
      "pattern": "\\S",
      "description": "Named session opened with open."
     },
-    "target": {
-     "oneOf": [
-      {
-       "type": "object",
-       "properties": {
-        "kind": {
-         "type": "string",
-         "const": "ref"
-        },
-        "ref": {
-         "type": "string",
-         "description": "Snapshot element ref such as @e12."
-        },
-        "label": {
-         "type": "string",
-         "description": "Optional human label for the ref."
-        }
-       },
-       "required": [
-        "kind",
-        "ref"
-       ],
-       "additionalProperties": false
-      },
-      {
-       "type": "object",
-       "properties": {
-        "kind": {
-         "type": "string",
-         "const": "selector"
-        },
-        "selector": {
-         "type": "string",
-         "description": "Agent-device selector expression."
-        }
-       },
-       "required": [
-        "kind",
-        "selector"
-       ],
-       "additionalProperties": false
-      },
-      {
-       "type": "object",
-       "properties": {
-        "kind": {
-         "type": "string",
-         "const": "point"
-        },
-        "x": {
-         "type": "number"
-        },
-        "y": {
-         "type": "number"
-        }
-       },
-       "required": [
-        "kind",
-        "x",
-        "y"
-       ],
-       "additionalProperties": false
-      }
-     ],
-     "description": "UI element ref, selector, or screen point."
+    "ref": {
+     "type": "string",
+     "description": "Snapshot element ref such as @e12. Pass exactly one of ref, selector, or x+y."
+    },
+    "label": {
+     "type": "string",
+     "description": "Optional human label for ref."
+    },
+    "selector": {
+     "type": "string",
+     "description": "Selector expression such as id=\"submit\" or label=\"Sign in\". Pass exactly one of ref, selector, or x+y."
+    },
+    "x": {
+     "type": "number",
+     "description": "Screen x coordinate, with y. Pass exactly one of ref, selector, or x+y; use x+y only when no ref or selector is available."
+    },
+    "y": {
+     "type": "number",
+     "description": "Screen y coordinate, with x. Pass exactly one of ref, selector, or x+y."
     },
     "depth": {
      "type": "integer",
@@ -2358,7 +2211,7 @@
     },
     "settleQuietMs": {
      "type": "integer",
-     "description": "Settle: quiet window in milliseconds (default 500; 300 when the settled tree comes from the iOS simulator snapshot bridge). On iOS, a broad screen replacement such as a modal dismissal is confirmed for at least 1500ms whatever window is asked for, within the timeoutMs settle deadline; a replacement from a screen the pre-action capture read as presenting nothing, such as a tab switch, gets no 1500ms confirmation and keeps the asked window.",
+     "description": "Settle: quiet window in milliseconds (default 500; 300 on the iOS simulator snapshot bridge). On iOS, a broad replacement of a non-empty screen holds at least 1500ms within timeoutMs.",
      "minimum": 0
     },
     "timeoutMs": {
@@ -2371,11 +2224,10 @@
      "description": "Do not record this action."
     }
    },
+   "additionalProperties": false,
    "required": [
-    "target",
     "session"
-   ],
-   "additionalProperties": false
+   ]
   },
   "annotations": {
    "readOnlyHint": false,
@@ -2524,7 +2376,7 @@
  },
  {
   "name": "reinstall",
-  "description": "Replace an installed app with a binary from a local path. Use this when preserving the same app identity while installing a new build on the selected device. Times out after 180s.",
+  "description": "Replace an installed app with a binary from a local path. Use this when preserving the same app identity while installing a new build on the selected device. Local Android and iOS install steps time out after 120s; the command allows 480s including device startup and uninstall. Times out after 480s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -2546,19 +2398,19 @@
       "ios",
       "macos"
      ],
-     "description": "Platform selector used to resolve a device."
+     "description": "Device platform."
     },
     "device": {
      "type": "string",
-     "description": "Device name selector (a UDID belongs in udid, a serial in serial)."
+     "description": "Device name; ids go in udid or serial."
     },
     "udid": {
      "type": "string",
-     "description": "Apple device or simulator UDID; the selector that pins one device when several share a name."
+     "description": "Apple device or simulator UDID."
     },
     "serial": {
      "type": "string",
-     "description": "Android, HarmonyOS, or Vega VVD serial selector."
+     "description": "Android, HarmonyOS, or Vega VVD serial."
     },
     "app": {
      "type": "string"
@@ -2566,6 +2418,26 @@
     "appPath": {
      "type": "string",
      "description": "Path to app binary."
+    },
+    "osVersion": {
+     "type": "string",
+     "description": "Proxy lease: OS version or range, for example 18.6.2 or \">=26\" (Android: API level). Honored only by a proxy backend that leases by spec; other daemons refuse it."
+    },
+    "imageTag": {
+     "type": "string",
+     "description": "Proxy lease: Android system image tag, for example google_apis_playstore. Honored only by a proxy backend that leases by spec; other daemons refuse it."
+    },
+    "deviceMode": {
+     "type": "string",
+     "description": "Proxy lease: iOS simulator mode, slim or full. Honored only by a proxy backend that leases by spec; other daemons refuse it."
+    },
+    "deviceBaseline": {
+     "type": "string",
+     "description": "Proxy lease: saved device state (baseline) to restore on the leased device. Honored only by a proxy backend that leases by spec; other daemons refuse it."
+    },
+    "physical": {
+     "type": "boolean",
+     "description": "Proxy lease: true requests a physical device; false selects nothing. Honored only by a proxy backend that leases by spec; other daemons refuse it."
     },
     "noRecord": {
      "type": "boolean",
@@ -2608,19 +2480,19 @@
       "ios",
       "macos"
      ],
-     "description": "Platform selector used to resolve a device."
+     "description": "Device platform."
     },
     "device": {
      "type": "string",
-     "description": "Device name selector (a UDID belongs in udid, a serial in serial)."
+     "description": "Device name; ids go in udid or serial."
     },
     "udid": {
      "type": "string",
-     "description": "Apple device or simulator UDID; the selector that pins one device when several share a name."
+     "description": "Apple device or simulator UDID."
     },
     "serial": {
      "type": "string",
-     "description": "Android, HarmonyOS, or Vega VVD serial selector."
+     "description": "Android, HarmonyOS, or Vega VVD serial."
     },
     "path": {
      "type": "string"
@@ -2719,6 +2591,13 @@
      "description": "Output screenshot pixel density in pixels per logical point.",
      "minimum": 1
     },
+    "screenMask": {
+     "type": "string",
+     "enum": [
+      "black"
+     ],
+     "description": "Fill the iOS simulator screen outline with black for this capture. Requires simctl; omit for the default image."
+    },
     "fullscreen": {
      "type": "boolean"
     },
@@ -2733,6 +2612,13 @@
     },
     "normalizeStatusBar": {
      "type": "boolean"
+    },
+    "captureBackend": {
+     "type": "string",
+     "enum": [
+      "runner"
+     ],
+     "description": "Capture through the XCTest runner instead of the platform default, which leaves out the simulator-drawn Dynamic Island. Local Apple targets only; refused on provider sessions and on a macOS surface the helper captures, and with pixelDensity, screenMask or normalizeStatusBar."
     },
     "surface": {
      "type": "string",
@@ -2761,7 +2647,7 @@
  },
  {
   "name": "scroll",
-  "description": "Scroll in a direction, or toward the top/bottom edge of scrollable content. Set until to a selector to reach an off-screen target in one command rather than a scroll-and-check loop. The optional amount is the finger-path fraction of the viewport axis, honored up to 0.8 of it; directional scrolls reduce release momentum, while app scroll physics determine the final content offset. A visible keyboard shortens the swiped band instead of being dismissed; when too little is left, the command refuses with scroll_keyboard_occludes_surface. A directional scroll also reports the movement it observed as movement: moved, at-edge, unchanged, or unobserved when the two reads could not back a claim either way; an unchanged surface inside a container that still hides content in that direction refuses with scroll_no_progress rather than repeating the requested distance. The movement field is absent where a tier verifies per pass (top/bottom, until), where the runtime cannot read a screen, or where a settle observation or a replay already owns that observation. Times out after 90s; a caller-supplied budget extends it.",
+  "description": "Scroll in a direction, or toward the top/bottom edge of scrollable content. Set until to a selector to reach an off-screen target in one command rather than a scroll-and-check loop. The optional amount is the finger-path fraction of the viewport axis, honored up to 0.8 of it; directional scrolls reduce release momentum, while app scroll physics determine the final content offset. A visible keyboard shortens the swiped band instead of being dismissed; when too little is left, the command refuses with scroll_keyboard_occludes_surface. A directional scroll also reports the movement it observed as movement: moved, at-edge, unchanged, or unobserved when the two reads could not back a claim either way; an unchanged surface inside a container that still hides content in that direction refuses with scroll_no_progress rather than repeating the requested distance. The movement field is absent where a tier verifies per pass (top/bottom, until), where the runtime cannot read a screen, where a settle observation or a replay already owns that observation, or where the operator opted out of it. Times out after 90s; a caller-supplied budget extends it.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -2813,7 +2699,7 @@
     },
     "settleQuietMs": {
      "type": "integer",
-     "description": "Settle: quiet window in milliseconds (default 500; 300 when the settled tree comes from the iOS simulator snapshot bridge). On iOS, a broad screen replacement such as a modal dismissal is confirmed for at least 1500ms whatever window is asked for, within the timeoutMs settle deadline; a replacement from a screen the pre-action capture read as presenting nothing, such as a tab switch, gets no 1500ms confirmation and keeps the asked window.",
+     "description": "Settle: quiet window in milliseconds (default 500; 300 on the iOS simulator snapshot bridge). On iOS, a broad replacement of a non-empty screen holds at least 1500ms within timeoutMs.",
      "minimum": 0
     },
     "timeoutMs": {
@@ -2913,7 +2799,7 @@
     },
     "app": {
      "type": "string",
-     "description": "App the change targets, by bundle id, package name, or app name: the app `clear-app-state` clears, or the app a `permission` change (or an iOS-simulator `location on|off` privacy change) lands on. A name resolves to the installed app as `open` resolves it: an iOS simulator matches display names and accepts only an installed bundle id, Android accepts only an installed package and refuses a name that resolves to an intent with `setting_app_not_package`, and a Limrun iOS session resolves only the `settings` alias. One that resolves to nothing is refused with `app_not_installed` before anything changes. The app need not be running. Without it the session app is used; a device-wide change (`location set` on any target, the Android `location on|off` toggle, `mobile-data`, macOS permissions) refuses one with `setting_app_not_consumed`. The CLI reads it only from this invocation, never from `AGENT_DEVICE_TARGET_APP` or config `targetApp`."
+     "description": "App the change targets, by bundle id, package name, or app name: the app `clear-app-state` clears, or the app a `permission` change (or an iOS-simulator `location on|off` privacy change) lands on. A name resolves to the installed app as `open` resolves it: an iOS simulator, local or Limrun, matches display names and accepts only an installed bundle id, and Android accepts only an installed package and refuses a name that resolves to an intent with `setting_app_not_package`. One that resolves to nothing is refused with `app_not_installed` before anything changes. The app need not be running. Without it the session app is used; a device-wide change (`location set` on any target, the Android `location on|off` toggle, `mobile-data`, macOS permissions) refuses one with `setting_app_not_consumed`. The CLI reads it only from this invocation, never from `AGENT_DEVICE_TARGET_APP` or config `targetApp`."
     },
     "latitude": {
      "type": "number"
@@ -2950,7 +2836,7 @@
  },
  {
   "name": "shutdown",
-  "description": "Shutdown a selected simulator or emulator. Times out after 90s.",
+  "description": "Shutdown a selected simulator or emulator. On Limrun, delete a created instance or release an attachment. Apps and data on a deleted instance are lost. A Limrun connection without an instance fails with DEVICE_NOT_FOUND and details.reason provider_instance_unallocated and creates nothing. Times out after 90s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -2972,19 +2858,19 @@
       "ios",
       "macos"
      ],
-     "description": "Platform selector used to resolve a device."
+     "description": "Device platform."
     },
     "device": {
      "type": "string",
-     "description": "Device name selector (a UDID belongs in udid, a serial in serial)."
+     "description": "Device name; ids go in udid or serial."
     },
     "udid": {
      "type": "string",
-     "description": "Apple device or simulator UDID; the selector that pins one device when several share a name."
+     "description": "Apple device or simulator UDID."
     },
     "serial": {
      "type": "string",
-     "description": "Android, HarmonyOS, or Vega VVD serial selector."
+     "description": "Android, HarmonyOS, or Vega VVD serial."
     }
    },
    "additionalProperties": false,
@@ -3240,19 +3126,19 @@
       "ios",
       "macos"
      ],
-     "description": "Platform selector used to resolve a device."
+     "description": "Device platform."
     },
     "device": {
      "type": "string",
-     "description": "Device name selector (a UDID belongs in udid, a serial in serial)."
+     "description": "Device name; ids go in udid or serial."
     },
     "udid": {
      "type": "string",
-     "description": "Apple device or simulator UDID; the selector that pins one device when several share a name."
+     "description": "Apple device or simulator UDID."
     },
     "serial": {
      "type": "string",
-     "description": "Android, HarmonyOS, or Vega VVD serial selector."
+     "description": "Android, HarmonyOS, or Vega VVD serial."
     },
     "paths": {
      "type": "array",
@@ -3441,7 +3327,7 @@
  },
  {
   "name": "uninstall",
-  "description": "Remove an installed app from the selected device. A package name or bundle id that is not installed succeeds with wasInstalled: false. Times out after 180s.",
+  "description": "Remove an installed app from the selected device. A package name or bundle id that is not installed succeeds with wasInstalled: false. The command allows 480s including device startup. Times out after 480s.",
   "inputSchema": {
    "type": "object",
    "properties": {
@@ -3463,23 +3349,43 @@
       "ios",
       "macos"
      ],
-     "description": "Platform selector used to resolve a device."
+     "description": "Device platform."
     },
     "device": {
      "type": "string",
-     "description": "Device name selector (a UDID belongs in udid, a serial in serial)."
+     "description": "Device name; ids go in udid or serial."
     },
     "udid": {
      "type": "string",
-     "description": "Apple device or simulator UDID; the selector that pins one device when several share a name."
+     "description": "Apple device or simulator UDID."
     },
     "serial": {
      "type": "string",
-     "description": "Android, HarmonyOS, or Vega VVD serial selector."
+     "description": "Android, HarmonyOS, or Vega VVD serial."
     },
     "app": {
      "type": "string",
      "description": "Package name, bundle id, or installed app name."
+    },
+    "osVersion": {
+     "type": "string",
+     "description": "Proxy lease: OS version or range, for example 18.6.2 or \">=26\" (Android: API level). Honored only by a proxy backend that leases by spec; other daemons refuse it."
+    },
+    "imageTag": {
+     "type": "string",
+     "description": "Proxy lease: Android system image tag, for example google_apis_playstore. Honored only by a proxy backend that leases by spec; other daemons refuse it."
+    },
+    "deviceMode": {
+     "type": "string",
+     "description": "Proxy lease: iOS simulator mode, slim or full. Honored only by a proxy backend that leases by spec; other daemons refuse it."
+    },
+    "deviceBaseline": {
+     "type": "string",
+     "description": "Proxy lease: saved device state (baseline) to restore on the leased device. Honored only by a proxy backend that leases by spec; other daemons refuse it."
+    },
+    "physical": {
+     "type": "boolean",
+     "description": "Proxy lease: true requests a physical device; false selects nothing. Honored only by a proxy backend that leases by spec; other daemons refuse it."
     },
     "noRecord": {
      "type": "boolean",
@@ -3499,7 +3405,7 @@
  },
  {
   "name": "wait",
-  "description": "Wait for a duration, text, snapshot ref, selector to appear, selector to be strictly absent, or stable UI. Use the strict absence target when zero selector matches are required; stable waits until the UI stays quiet for the requested window. Times out after 90s; a caller-supplied budget extends it.",
+  "description": "Wait for a duration, text, snapshot ref, selector to appear, selector to be strictly absent, or stable UI. Text matches a label, identifier, or value; an editable field never matches by its current value or by a label that only repeats it, so text you typed does not satisfy it. Use the strict absence target when zero selector matches are required; stable waits until the UI stays quiet for the requested window. Times out after 90s; a caller-supplied budget extends it.",
   "inputSchema": {
    "type": "object",
    "properties": {

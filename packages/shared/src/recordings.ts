@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { iosHitchesSchema, summarizeIosHitches } from "./ios-hitches.ts";
 import { cpuTargetSchema } from "./cpu.ts";
 import { PLUGIN_VERSION } from "./version.ts";
 import { frameTimelineSchema } from "./display-fps.ts";
@@ -43,6 +44,7 @@ export const recordingSchema = z.object({
   status: z.enum(["connecting", "recording", "finishing", "finished", "failed"]),
   memoryMetric: z.enum(["rss", "physical-footprint"]),
   samples: z.array(recordingSampleSchema).max(1800),
+  iosHitches: iosHitchesSchema.optional(),
   fps: recordingFpsSchema.default({ status: "unavailable", samples: [], error: "FPS was not captured in this recording." }),
   error: z.string().optional(),
 });
@@ -50,7 +52,7 @@ export type PerformanceRecording = z.infer<typeof recordingSchema>;
 
 /**
  * A recording small enough for a tool result: every CPU, memory and FPS sample with times rounded to 10 ms,
- * without per-thread CPU or Android frame timelines (nearly all of the size). A
+ * without per-thread CPU or per-frame detail (nearly all of the size). A
  * five-minute recording drops from hundreds of kilobytes to about 25 KB.
  */
 export function recordingPreview(recording: PerformanceRecording): PerformanceRecording {
@@ -58,6 +60,7 @@ export function recordingPreview(recording: PerformanceRecording): PerformanceRe
   const reading = (value: number | null, digits: number) => value === null ? null : round(value, digits);
   return {
     ...recording,
+    iosHitches: undefined,
     samples: recording.samples.map(sample => ({
       time: round(sample.time, 2), interval: round(sample.interval, 2),
       cpuPercent: reading(sample.cpuPercent, 1), memoryBytes: reading(sample.memoryBytes, 0), threads: [],
@@ -92,6 +95,7 @@ export type RecordingSummary = {
   peakFps: number | null;
   fpsSampleCount: number;
   frameStats: DisplayFrameStats | null;
+  hitchStats: ReturnType<typeof summarizeIosHitches>;
   threads: Array<{ id: string; name: string; averageCpuPercent: number; peakCpuPercent: number }>;
 };
 
@@ -160,7 +164,8 @@ export function summarizeRecording(recording: PerformanceRecording, range?: Reco
   }
   const memoryChangeBytes = firstMemoryBytes !== null && lastMemoryBytes !== null ? lastMemoryBytes - firstMemoryBytes : null;
   const frameStats = recording.target.platform === "android" ? summarizeDisplayFrames(recording.fps.samples, recording.durationSeconds, range) : null;
-  return { peakCpuPercent, averageCpuPercent: cpuWeight > 0 ? cpuTotal / cpuWeight : null,
+  const hitchStats = summarizeIosHitches(recording.iosHitches, start, end);
+  return { hitchStats, peakCpuPercent, averageCpuPercent: cpuWeight > 0 ? cpuTotal / cpuWeight : null,
     firstMemoryBytes, lastMemoryBytes, memoryChangeBytes, sampleCount, threads: ranked,
     averageFps: fpsWeight > 0 ? fpsTotal / fpsWeight : null, minimumFps, peakFps, fpsSampleCount, frameStats };
 }

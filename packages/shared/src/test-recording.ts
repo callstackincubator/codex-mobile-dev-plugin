@@ -961,8 +961,8 @@ export function emitE2eTestLines(steps: readonly RecordedStep[], options: { titl
     { text: `import { expect } from "e2e";` },
     { text: `` },
     { text: agentic
-      ? `// Recorded from the Testing panel. Pinned locators where an element was named, and agent steps where it was described.`
-      : `// Recorded from the Testing panel. Every step is a pinned locator, driven by no agent.` },
+      ? `// Recorded from the Testing Studio panel. Pinned locators where an element was named, and agent steps where it was described.`
+      : `// Recorded from the Testing Studio panel. Every step is a pinned locator, driven by no agent.` },
     { text: `test(${quote(options.title)}, async ({ ${agentic ? "agent, app, screen" : "app, screen"} }) => {` },
     // The runner reports `app.open` as a step like any other, so it counts as a call.
     { text: `  await app.open();`, call: true },

@@ -4,7 +4,7 @@ import { ChildProcess, execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { Socket, createServer } from "node:net";
 import { once } from "node:events";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -82,9 +82,11 @@ function fakeScrcpy() {
 
 test("Node Android server preserves HTTP, WebSocket video, input acknowledgements, and cleanup", async t => {
   const scrcpy = fakeScrcpy();
+  let captures = 0;
   const backend = await runtime.startServer({ serial: "emulator-5554", port: 0 }, {
     openScrcpy: async () => scrcpy.session,
     createInputQueue: () => scrcpy.inputQueue,
+    loadAccessibility: async () => ({ ok: true, capturedAt: String(++captures), nodes: [] }),
   });
   t.after(() => backend.stop());
   const base = `http://127.0.0.1:${backend.server.port}`;
@@ -96,6 +98,12 @@ test("Node Android server preserves HTTP, WebSocket video, input acknowledgement
   const page = await fetch(base);
   assert.match(page.headers.get("content-type") ?? "", /text\/html/);
   assert.equal(await page.text(), "<html>Android</html>");
+  const tree = async (fresh = false) => {
+    const response = await fetch(`${base}/api/accessibility`, { headers: fresh ? { "Cache-Control": "no-cache" } : {} });
+    return response.json();
+  };
+  assert.equal((await tree()).capturedAt, "1");
+  assert.equal((await tree()).capturedAt, "1");
 
   const socket = new WebSocket(`ws://127.0.0.1:${backend.server.port}/ws?frame-meta=1`);
   t.after(() => socket.terminate());
@@ -108,6 +116,7 @@ test("Node Android server preserves HTTP, WebSocket video, input acknowledgement
   assert.equal(parsedReply.ok, true);
   assert.equal(parsedReply.requestId, "input-1");
   assert.ok(scrcpy.packets.length > 0);
+  assert.equal((await tree(true)).capturedAt, "2", "element selection reads the screen after input");
   const video = once(socket, "message");
   const data = Buffer.from([0, 0, 0, 1, 0x65, 0x80]);
   scrcpy.frame({ type: "frame", data, pts: 1000n, isKey: true, isConfig: false });
@@ -233,25 +242,20 @@ test("built Android CLI runs with Node.js and no Bun on PATH", async () => {
 test("packaged CLI sends validated failure and cleanup diagnostics over IPC, including cancellation and opt-out", async t => {
   const outputDirectory = join(directory, "ipc-cli");
   const cli = await buildServeEmu(outputDirectory);
-  const commands = join(directory, "adb-fixture");
-  await mkdir(commands);
-  const adb = join(commands, "adb");
-  const program = `#!/usr/bin/env node
-const args = process.argv.slice(4);
-if (args[0] === 'forward' && args[1] === 'tcp:0') process.stdout.write('28000');
-else if (args.includes('app_process')) setInterval(() => {}, 1000);
-else if (args[1] === 'cat') {
-  if (process.env.TEST_ADB_FAILURE === 'missing') { process.stderr.write('device private-device-id not found'); process.exitCode = 1; }
-  else setInterval(() => {}, 1000);
-}
-`;
-  await writeFile(adb, program, { mode: 0o755 });
-  for (const mode of ["delay", "missing", "cancel", "opt-out"] as const) {
+  const preload = new URL("./fixtures/serve-emu-adb-preload.mjs", import.meta.url).href;
+  const modes = ["delay", "missing", "disconnect", "opt-out"];
+  if (process.platform !== "win32") modes.push("signal");
+  for (const mode of modes) {
     await t.test(mode, async () => {
       const messages: StartupMessage[] = [];
-      const child = spawn(process.execPath, [cli, "--serial", "private-device-id", "--port", "0"], {
+      const cleanupFile = join(directory, `forward-removed-${mode}`);
+      const child = spawn(process.execPath, ["--import", preload, cli, "--serial", "private-device-id", "--port", "0"], {
         stdio: ["ignore", "pipe", "pipe", "ipc"],
-        env: { ...process.env, PATH: `${commands}:${process.env.PATH ?? ""}`, TEST_ADB_FAILURE: mode === "opt-out" ? "missing" : mode, MOBILE_DEV_TELEMETRY: mode === "opt-out" ? "off" : "on" },
+        env: {
+          ...process.env, TEST_ADB_FORWARD_CLEANUP: cleanupFile,
+          TEST_ADB_FAILURE: mode === "opt-out" ? "missing" : mode,
+          MOBILE_DEV_TELEMETRY: mode === "opt-out" ? "off" : "on",
+        },
       });
       let stderr = "";
       child.stdout.resume();
@@ -261,13 +265,21 @@ else if (args[1] === 'cat') {
         assert.equal(parsed.success, true);
         if (parsed.success === false) return;
         messages.push(parsed.data);
-        if (mode === "cancel" && parsed.data.type === "mobile-dev/android-startup" && parsed.data.stage === "socket-poll") child.kill("SIGTERM");
+        if (parsed.data.type === "mobile-dev/android-startup" && parsed.data.stage === "socket-poll") {
+          if (mode === "disconnect" && child.connected) child.disconnect();
+          if (mode === "signal") child.kill("SIGTERM");
+        }
       });
       const timer = setTimeout(() => child.kill("SIGKILL"), 10000);
-      const result = await once(child, "close");
+      // Node 22 on Windows can omit "close" after the parent explicitly disconnects IPC.
+      const result = await once(child, mode === "disconnect" ? "exit" : "close");
       clearTimeout(timer);
-      assert.equal(result[0], mode === "cancel" ? 0 : 1, stderr);
+      assert.equal(result[0], mode === "disconnect" || mode === "signal" ? 0 : 1, stderr);
+      assert.equal(await readFile(cleanupFile, "utf8"), "tcp:28000", "the CLI removed the device's adb forward");
+      assert.equal(JSON.stringify(messages).includes("private-device-id"), false);
+      assert.ok(messages.length <= 18);
       if (mode === "opt-out") { assert.equal(messages.length, 0); return; }
+      if (mode === "disconnect") return; // Closing IPC prevents delivery of the final summary.
       const summary = messages.find(message => message.type === "mobile-dev/android-startup-complete");
       assert.ok(summary);
       assert.equal(summary.type, "mobile-dev/android-startup-complete");
@@ -277,10 +289,6 @@ else if (args[1] === 'cat') {
       assert.equal(summary.failure, expected);
       const cleanup = summary.stages.find(stage => stage.stage === "cleanup");
       assert.equal(cleanup?.outcomes.ok, 1);
-      const serialized = JSON.stringify(messages);
-      const containsSerial = serialized.includes("private-device-id");
-      assert.equal(containsSerial, false);
-      assert.ok(messages.length <= 18);
     });
   }
 });

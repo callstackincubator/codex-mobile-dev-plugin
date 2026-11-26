@@ -92,6 +92,24 @@ export async function collectDetails(bundleIds: readonly string[], read: (bundle
 }
 
 export async function pngDataUrl(run: CommandRunner, source: string, directory: string): Promise<string> {
+  if (process.platform === "win32") {
+    // WPF uses the Windows image codecs and can downsample the icon during decoding.
+    const script = `$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName PresentationCore
+[Console]::InputEncoding = [Text.Encoding]::UTF8
+$image = New-Object Windows.Media.Imaging.BitmapImage
+$image.BeginInit()
+$image.UriSource = [Uri]([Console]::In.ReadToEnd())
+$image.DecodePixelWidth = 64
+$image.EndInit()
+$png = New-Object Windows.Media.Imaging.PngBitmapEncoder
+$png.Frames.Add([Windows.Media.Imaging.BitmapFrame]::Create($image))
+$stream = New-Object IO.MemoryStream
+$png.Save($stream)
+[Convert]::ToBase64String($stream.ToArray())`;
+    const data = await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { input: source, timeout: 10000 });
+    return `data:image/png;base64,${data.trim()}`;
+  }
   const output = join(directory, "icon-64.png");
   await run("sips", ["-s", "format", "png", "-Z", "64", source, "--out", output], { timeout: 10000 });
   return `data:image/png;base64,${(await readFile(output)).toString("base64")}`;

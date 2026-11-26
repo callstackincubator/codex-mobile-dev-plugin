@@ -188,7 +188,7 @@ export class PanelContext {
       const transport = device.kind === "physical" ? device.transportType : null;
       return [device.udid, device.name, device.runtime, device.state, device.platform ?? "ios", device.kind, transport];
     });
-    const key = JSON.stringify([active?.udid, devices]);
+    const key = JSON.stringify([active?.platform, active?.udid, devices]);
     if (key === this.selectionKey) return;
     this.selectionKey = key;
     this.simulators = simulators;
@@ -296,7 +296,7 @@ export class PanelContext {
       const log = this.attached;
       const host = this.attachments();
       const devices = this.simulators.map(device => {
-        const role = device.udid === selected?.udid ? "Active" : "Visible";
+        const role = device.udid === selected?.udid && device.platform === selected.platform ? "Active" : "Visible";
         if (device.kind === "physical" && device.platform === "ios") {
           const transport = device.transportType === undefined ? "Transport not reported." : `Transport: ${device.transportType}.`;
           return `${role} physical iOS device: ${device.name}. UDID: ${device.udid}. State: ${device.state}. ${transport} The panel mirrors this device through an interactive HEVC stream with pointer taps and drags. Native unified logs use mobile_logs_session with platform ios, kind physical, and this hardware UDID. They do not require launching the app; ordinary print output is unavailable and private values may be redacted. Physical iOS keyboard input, hardware buttons, screenshots, and agent-device control are not implemented yet.`;

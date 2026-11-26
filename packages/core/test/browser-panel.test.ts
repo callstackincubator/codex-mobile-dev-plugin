@@ -14,7 +14,7 @@ import { EXTENSION_ID, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps
 import { Baguette } from "../src/baguette.ts";
 import { createPanel } from "../src/panel-tools.ts";
 import { PANEL_PAGE_META } from "@mobile-dev/shared/panel-target.ts";
-import { BROWSER_CONTEXT_MAX_BYTES, BROWSER_SESSION_IDLE_MS, browserPanel, startPanelPage } from "../src/browser-panel.ts";
+import { BROWSER_CONTEXT_MAX_BYTES, BROWSER_SESSION_IDLE_MS, CONTEXT_PANE, browserPanel, startPanelPage } from "../src/browser-panel.ts";
 import { SharedTransport } from "../src/shared-transport.ts";
 import { createTestPlugin, fakeBaguette, fakeSimulatorInput } from "../../test-support/fixtures.ts";
 
@@ -144,7 +144,8 @@ test("opening the panel links the browser page only for hosts without MCP Apps",
     await host.connect(hostSide);
     for (const name of ["mobile_open_simulator", "mobile_open_workspace", "mobile_open_app_intel"]) {
       const result = await host.callTool({ name, arguments: { platform: "android", ...(name === "mobile_open_app_intel" ? { appIntelScreen: "navigation:Profile" } : {}) } });
-      const texts = (result.content as Array<{ text: string }>).map(item => item.text);
+      // A repeat open adds a warning that the panel is already there; it is not part of the host link.
+      const texts = (result.content as Array<{ text: string }>).map(item => item.text).filter(text => !/Mobile Dev panel was already open/.test(text));
       const structured = result.structuredContent as { browserPanel?: { url: string } };
       if (ui) { assert.equal(texts.length, 1); assert.equal(structured.browserPanel, undefined); continue; }
       assert.equal(texts.length, 2);
@@ -318,6 +319,8 @@ test("a browser tab's model context reaches the agent and leaves with the tab", 
   const texts = (opened.content as Array<{ text: string }>).map(item => item.text);
   assert.match(texts[1], /in the foreground/);
   assert.match(texts[1], /mobile_read_panel_context/);
+  assert.match(texts[1], /not open yet/);
+  assert.match(texts[1], /show_pane/);
   const link = new URL(texts[1].match(/http:\/\/127\.0\.0\.1:\d+\/[\w-]+\/\?\S+/)![0]);
   const endpoint = new URL("context", link);
 
@@ -325,6 +328,11 @@ test("a browser tab's model context reaches the agent and leaves with the tab", 
   const clients = tabs.map((_, index) => new Client({ name: `tab-${index}`, version: "1" }));
   for (const [index, client] of clients.entries()) await client.connect(tabs[index]);
   const [first, second] = tabs.map(tab => tab.sessionId!);
+  // With a tab connected, opening again reuses it and still asks for its pane in view.
+  const reopened = ((await host.callTool({ name: "mobile_open_simulator", arguments: {} })).content as Array<{ text: string }>)[1].text;
+  assert.match(reopened, /already open in a browser tab/);
+  assert.doesNotMatch(reopened, /not open yet/);
+  assert.match(reopened, /show_pane/);
 
   assert.equal((await putContext(endpoint, undefined, "{}")).status, 404);
   assert.equal((await putContext(endpoint, "missing", "{}")).status, 404);
@@ -337,20 +345,20 @@ test("a browser tab's model context reaches the agent and leaves with the tab", 
   const device = "Active iOS simulator: iPhone 17. Device ID: 11111111-1111-1111-1111-111111111111.";
   const stored = await putContext(endpoint, first, JSON.stringify({ content: [{ type: "text", text: device, annotations: { audience: ["assistant"] } }] }));
   assert.equal(stored.status, 204);
-  assert.deepEqual(await read(), [{ type: "text", text: "Mobile Dev browser panel." }, { type: "text", text: device }]);
+  assert.deepEqual(await read(), [{ type: "text", text: "Mobile Dev browser panel." }, { type: "text", text: device }, { type: "text", text: CONTEXT_PANE }]);
 
   await new Promise(resolve => setTimeout(resolve, 5));
   const screenshot = { type: "image", data: "aGVsbG8=", mimeType: "image/png" };
   assert.equal((await putContext(endpoint, second, JSON.stringify({ content: [screenshot] }))).status, 204);
   const both = await read();
-  assert.equal(both.length, 4);
+  assert.equal(both.length, 5);
   assert.match(both[0].text!, /tab 1 of 2/);
   assert.equal(both[1].data, screenshot.data);
   assert.equal(both[3].text, device);
 
   // Closing a tab removes what it shared; an empty update clears without closing.
   await tabs[1].terminateSession();
-  assert.deepEqual((await read()).map(item => item.text), ["Mobile Dev browser panel.", device]);
+  assert.deepEqual((await read()).map(item => item.text), ["Mobile Dev browser panel.", device, CONTEXT_PANE]);
   assert.equal((await putContext(endpoint, first, JSON.stringify({ content: [] }))).status, 204);
   assert.match((await read())[0].text!, /No Mobile Dev browser panel/);
   await tabs[0].terminateSession();

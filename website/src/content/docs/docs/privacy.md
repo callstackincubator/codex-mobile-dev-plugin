@@ -3,7 +3,7 @@ title: Privacy Policy
 description: Read how Mobile Dev processes local development data, shares results with your host, collects diagnostics, and provides privacy controls.
 ---
 
-Last updated: 5 November 2026
+Last updated: 25 November 2026
 
 ## 1. Who we are and what this policy covers
 
@@ -42,7 +42,7 @@ Depending on the tools you use, Mobile Dev processes:
 - App Intelligence project paths, screen names and routes, project-relative source
   and asset paths, package names, static import relationships, and analysis
   diagnostics when you generate or query a source graph.
-- Testing project paths and configuration, element trees, recorded steps, generated
+- Testing Studio project paths and configuration, element trees, recorded steps, generated
   test source, runner output, and locally kept unsaved recordings when you record,
   edit, or run an e2e test.
 - App storage keys, values, database rows, and file metadata when you inspect
@@ -71,9 +71,9 @@ Use test data, scope requests to the relevant app, and review content before
 sharing it. Do not provide passwords, API keys, payment-card data, health records,
 or government identifiers through these workflows.
 
-Mobile Dev does not upload this development content to Callstack's Sentry or
-Mixpanel projects as telemetry. This exclusion does not prevent a tool result from reaching the
-host or content you deliberately email to support from reaching Callstack.
+Mobile Dev excludes this development content from diagnostics and product
+analytics. Tool results can still reach the host, and content you deliberately
+email to support can still reach Callstack.
 
 ### Diagnostics and usage telemetry
 
@@ -91,35 +91,36 @@ uploads of your app's recorded CPU/memory/FPS samples.
 
 Error and crash reports include a random installation ID, persistent across
 updates and restarts, and a random process-session ID. They are not derived from
-your name, email, OpenAI account, device ID, or machine name. Because the
+your name, email, host account, device ID, or machine name. Because the
 installation ID links reports over time, we treat it as pseudonymous information,
 not a guarantee of anonymity. These IDs are excluded from performance metrics
 and span attributes.
 
 The reporting code excludes MCP arguments/results, screenshots, screen video,
 app log content, typed/pasted text, App Intelligence graph contents, test source
-and step contents, app storage contents, profile contents, and device performance recordings. It scrubs common
-secrets, email addresses, URLs,
+and step contents, app storage contents, profile contents, and device performance
+recordings. It scrubs common secrets, email addresses, URLs,
 and local home paths from error text. Session Replay, minidumps, and profiling
 are disabled in the configured Sentry integrations. Scrubbing is a safeguard,
 not a reason to put secrets into your test data.
 
 ### Product analytics
 
-Release builds send basic product analytics to Mixpanel so we can see how many
-installations use Mobile Dev and which tools they use most. Events record that a
-host session started or that a tool was called, with the tool's name, whether it
-succeeded, the host (Codex, Claude, Cursor, the Mac app or other), the plugin
-version, the operating system type, a timestamp, and the random installation ID
-described above. Frequent polling and input tools are not recorded.
+Starting with version 0.1.191, release builds send basic product analytics to Anal
+at `anal.margelo.com` so we can see how many installations use Mobile Dev and which
+tools they use most. Events record that a host session started or that a tool
+was called, with the tool's name, whether it succeeded, the host (Codex, Claude,
+Cursor, the Mac app or other), the plugin version, the operating system type, a
+timestamp, and the random installation ID described above. Frequent polling and
+input tools are not recorded.
 
-Analytics events never contain MCP arguments or results, app or device content,
-device names or identifiers, project paths, or account details. They go to
-Mixpanel's EU ingestion endpoint with IP collection turned off, so Mixpanel does
-not derive a location from your IP address or store it in your analytics records.
+Analytics events exclude MCP arguments and results, app and device content,
+device names and identifiers, project paths, and account details. Anal receives
+requests with IP-derived location disabled and excludes the IP address from
+analytics records.
 Each connected session also creates or updates a pseudonymous installation profile
 using that same random installation ID, host, plugin version, and operating system
-type. This lets us view the installation's existing events together in Mixpanel.
+type. We use this ID to link events to the installation.
 Profiles contain no names, email addresses or account details. A persistent ID and
 usage history are not a guarantee of anonymisation. We do not combine these
 analytics with other data about you or use them for advertising.
@@ -156,8 +157,11 @@ telemetry controls and the right to object.
   Callstack. The configured ingestion endpoints are in Sentry's German region.
   This alone is not a promise that every support, subprocessor, or administrative
   operation takes place exclusively in Germany.
-- **Mixpanel:** processes the product analytics described above for Callstack,
-  in its EU data residency region.
+- **Anal:** Margelo operates the product analytics service. Vercel hosts
+  ingestion and processes batches in the United States. MotherDuck stores the
+  analytics records.
+- **Mixpanel:** earlier releases with product analytics send data to Mixpanel's
+  EU region.
 - **OpenAI or another host you use:** receives tool results and content supplied
   through that host. Its processing and retention are governed by your relationship
   with that provider, not the Sentry opt-out.
@@ -183,10 +187,13 @@ and [OpenAI's privacy policy](https://openai.com/policies/privacy-policy/).
 | --- | --- |
 | Sentry errors/crashes | 90 days under our Sentry Team plan. |
 | Sentry performance spans and Application Metrics | 30 days under our Sentry Team plan. |
-| Mixpanel product analytics | Up to 24 months, then deleted. |
+| Product analytics in Anal | Contact us for the retention period that applies to your records. |
+| Product analytics in Mixpanel | Up to 24 months, then deleted. |
 | Local live logs | Held in bounded memory buffers. A server log session expires after five minutes without reads or keep-alives; closing the session stops collection. Copies already attached to the host follow the host's retention. |
 | Saved App Intelligence graphs and project history | Stored under `~/Library/Application Support/mobile-dev/app-intelligence` until you clear a graph or remove the files. Clearing a graph keeps the project in the recent-project list. |
-| Testing project history and unsaved recordings | Stored under `~/Library/Application Support/mobile-dev/testing` until you delete a recording or remove the files. Saving a recording into the project removes the local draft it replaced; the draft store keeps at most 30 recordings. Tests saved into the project's `tests/` folder follow your repository's retention. |
+| Testing Studio project history and unsaved recordings | Stored under `~/Library/Application Support/mobile-dev/testing` until you delete a recording or remove the files. Saving a recording into the project removes the local draft it replaced; the draft store keeps at most 30 recordings. Tests saved into the project's `tests/` folder follow your repository's retention. |
+| agent-device session state, logs and artifacts | Kept in a `mobile-dev-agent-device-` directory in the system temporary folder after a session, so they stay readable, until the operating system or you remove them. |
+| agent-device's iOS test runner | Built from the plugin's included source and cached in `~/.agent-device/apple-runner` until you remove it. |
 | Saved performance recordings | Stored under `~/Library/Application Support/mobile-dev/recordings` until you remove them; the recording store has no automatic age-based expiry. |
 | TraceSift integration results/references and the chosen project folder | Stored under `~/.tracesift/integrations/mobile-dev` by default, or the corresponding `TRACE_SIFT_HOME` directory, until removed. Original profiles and the TraceSift service's own data are separate. |
 | Installation ID | Stored at `~/Library/Application Support/mobile-dev/telemetry/anonymous-user-id` until you remove it. Process-session IDs last for the process; copies in sent reports follow Sentry retention. |
@@ -208,7 +215,7 @@ operating system, and your own backup tools manage their copies separately.
   components and prevents creation of a new installation ID. It does not delete
   reports already sent or disable GitHub update checks or host processing.
 - **Disable product analytics only:** set `MOBILE_DEV_ANALYTICS=off` (or
-  `DO_NOT_TRACK=1`) in the same environment and restart. Mixpanel events stop;
+  `DO_NOT_TRACK=1`) in the same environment and restart. Product analytics stops.
   Sentry error and performance reporting continues unless you also turn it off.
 - **Reset the installation ID:** stop Mobile Dev processes and remove only the
   `anonymous-user-id` file listed above. A new ID is generated on the next start

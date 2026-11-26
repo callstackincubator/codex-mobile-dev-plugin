@@ -6,6 +6,15 @@ import type { SimulatorDevice, Status } from "@mobile-dev/shared/protocol.ts";
 import { SimulatorUnavailableError } from "./simulator-unavailable.ts";
 
 const execute = promisify(execFile);
+
+async function runSimctl(args: string[]) {
+  const { stdout } = await execute("xcrun", args, { timeout: 15000, maxBuffer: 8 * 1024 * 1024 });
+  return stdout;
+}
+
+export function unavailableLocalIosStatus(): Status {
+  return { connected: false, managed: false, baseUrl: "", devices: [], localIosSupported: false };
+}
 const listing = z.object({
   devices: z.record(z.string(), z.array(z.object({
     udid: z.string(), name: z.string(), state: z.string(), isAvailable: z.boolean().optional(),
@@ -33,13 +42,14 @@ export function parseSimulatorList(output: string): SimulatorDevice[] {
 
 /** Lists iOS simulators with `xcrun simctl`, without starting the panel's simulator backend. */
 export class Simctl {
-  private readonly run: (args: string[]) => Promise<string>;
+  private readonly run?: (args: string[]) => Promise<string>;
 
-  constructor(run = async (args: string[]) => (await execute("xcrun", args, { timeout: 15000, maxBuffer: 8 * 1024 * 1024 })).stdout) {
+  constructor(run = process.platform === "win32" ? undefined : runSimctl) {
     this.run = run;
   }
 
   async list(): Promise<Status> {
+    if (!this.run) return unavailableLocalIosStatus();
     try {
       const devices = parseSimulatorList(await this.run(["simctl", "list", "devices", "--json"]));
       return { connected: true, managed: false, baseUrl: "", devices };

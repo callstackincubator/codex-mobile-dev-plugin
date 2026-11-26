@@ -24,8 +24,8 @@ A prerelease version, such as `0.1.172-test.1`, runs the same workflow as a test
 deployment. Set that version in the same three places on a branch, commit it as
 `chore(release): prepare 0.1.172-test.1`, and push the commit and its
 `v0.1.172-test.1` tag. The workflow builds, tests and packages it like a release and
-publishes a GitHub prerelease with every package, including Claude's panel runtime
-archive, which the Claude plugin of that build downloads. A prerelease is never
+publishes a GitHub prerelease with every package, including the runtime archives pinned by the
+Codex and Claude packages. A prerelease is never
 marked Latest, later release notes skip it, and it stays off `release/latest` and
 `release/claude`, so Codex and Claude users do not receive it. Install its Claude
 plugin from the prerelease's `claude-plugin` ZIP to test the full download. Delete
@@ -84,7 +84,9 @@ tags and draft releases do not truncate the list. The first public release lists
 the full source history. Later releases also include a link to the full diff.
 
 Download `mobile-dev-<version>-darwin-arm64.zip` directly from the release's
-assets for manual store upload. The same ZIP is also retained, with the
+assets for manual store upload. The Codex ZIP contains at most 5,000 entries. Testing Studio downloads
+`mobile-dev-<version>-testing-runtime-darwin-arm64.tar.gz` from the same release on first use
+and caches it after verifying the pinned size and SHA-256. The same ZIP is also retained, with the
 Claude packages, as one Actions artifact for 30 days; extract the Actions artifact
 wrapper before uploading the plugin ZIP. Publishing a GitHub release does not submit or publish it to the OpenAI
 plugin directory. A tag that already has a GitHub release will fail release

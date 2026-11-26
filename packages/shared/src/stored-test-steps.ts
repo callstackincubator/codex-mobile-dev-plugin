@@ -69,7 +69,7 @@ export function changeStoredStepCommand(source: string, line: number, commandId:
   });
   if (!commandId.startsWith("assert") || /import\s*{[^}]*\bexpect\b[^}]*}\s*from\s*["']e2e["']/.test(changed)) return changed;
   const lines = changed.split("\n");
-  const lastImport = lines.findLastIndex(entry => /^import\s/.test(entry));
+  const lastImport = lines.map(entry => /^import\s/.test(entry)).lastIndexOf(true);
   lines.splice(lastImport + 1, 0, 'import { expect } from "e2e";');
   return lines.join("\n");
 }
@@ -99,4 +99,60 @@ export function storedTestUntilSource(source: string, line: number): string | un
   const indent = lines[line - 1]!.match(/^\s*/)?.[0] ?? "";
   lines.splice(line, 0, `${indent}return;`);
   return lines.join("\n");
+}
+
+/** The locator a stored step acts on, and where it sits in the step, or undefined if it cannot be found without guessing. */
+function stepLocator(label: string): string | undefined {
+  const assertion = label.match(/^expect\((.+)\)\.(?:toBeVisible|not\.toBeVisible|toBeEnabled|toBeDisabled|toBeSelected)\((?:\{\s*timeout:\s*\d+\s*\})?\)$/);
+  const action = label.match(/^(.+)\.(?:tap|doubleTap|longPress)\(\)$/);
+  const scroll = label.match(/^screen\.scrollUntilVisible\((.+)\)$/);
+  return assertion?.[1] ?? action?.[1] ?? scroll?.[1];
+}
+
+/** A branch this module wrote: `platform === "android" ? <a> : <b>`, possibly in parentheses. */
+const BRANCH = /^platform === "(ios|android)" \? (screen\..+?\)) : (.+)$/;
+
+/**
+ * Gives one step a locator for one platform and keeps the one it had for every other:
+ * `expect(screen.getByTestId("Home"))` becomes
+ * `expect(platform === "android" ? screen.getByText("Home") : screen.getByTestId("Home"))`.
+ *
+ * A step that already branches on that platform has its branch replaced rather than nested. The
+ * test callback gains the `platform` fixture the branch reads. Anything this cannot rewrite with
+ * certainty — a multi-line call, a step whose locator it cannot find — comes back unchanged.
+ */
+export function branchStoredStepLocator(source: string, line: number, platform: "ios" | "android", locator: string): string {
+  const step = storedTestSteps(source).find(entry => entry.line === line);
+  const current = step && stepLocator(step.label);
+  if (!step || !current || !locator.startsWith("screen.")) return source;
+  const withFixture = withPlatformFixture(source);
+  if (withFixture === undefined) return source;
+  // An action's branch is wrapped in parentheses so `.tap()` applies to it; read it without them.
+  const existing = (/^\(.*\)$/.test(current) ? current.slice(1, -1) : current).match(BRANCH);
+  // An action needs the branch parenthesised for `.tap()` to apply to its result; an argument does not.
+  const isAction = /\.(?:tap|doubleTap|longPress)\(\)$/.test(step.label) && !step.label.startsWith("expect(");
+  // Two platforms, so one branch is enough: an existing branch keeps its other side and takes the
+  // new locator on this platform's side, whichever side that is.
+  const branch = !existing ? `platform === "${platform}" ? ${locator} : ${current}`
+    : existing[1] === platform ? `platform === "${platform}" ? ${locator} : ${existing[3]}`
+    : `platform === "${existing[1]}" ? ${existing[2]} : ${locator}`;
+  const replacement = isAction ? `(${branch})` : branch;
+  const changed = editLine(withFixture, line, (lines, index) => {
+    const text = lines[index]!;
+    const at = text.indexOf(current);
+    if (at >= 0) lines[index] = text.slice(0, at) + replacement + text.slice(at + current.length);
+  });
+  return changed === withFixture ? source : changed;
+}
+
+/** Adds `platform` to the test callback's destructured fixtures when it is not there yet. */
+function withPlatformFixture(source: string): string | undefined {
+  let found = false;
+  const changed = source.replace(/(\btest\s*\(\s*(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)\s*,\s*async\s*\(\s*\{)([^}]*)(\}\s*\)\s*=>)/, (whole, open: string, fixtures: string, close: string) => {
+    found = true;
+    if (/\bplatform\b/.test(fixtures)) return whole;
+    const names = fixtures.trim().replace(/,$/, "");
+    return `${open} ${names ? `${names}, ` : ""}platform ${close}`;
+  });
+  return found ? changed : undefined;
 }

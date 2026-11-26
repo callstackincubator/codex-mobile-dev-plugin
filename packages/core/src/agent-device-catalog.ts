@@ -78,6 +78,13 @@ const commandAnnotations: Record<string, Annotations> = {
   doctor: { ...write, openWorldHint: true }, metro: { ...write, openWorldHint: true },
 };
 
+// The pinned runtime's close metadata says an omitted app closes the active app,
+// but its native session teardown only closes an explicitly supplied app target.
+// Keep the served contract aligned with that behavior across catalog regeneration.
+const commandDescriptions: Record<string, string> = {
+  close: "End the named local iOS or Android session and release its device claim. Omit app and shutdown to keep the app running in its current foreground state and leave the device booted, so another session can acquire it. Pass app only to intentionally close that app; set shutdown only to stop the simulator or emulator too. If cleanup fails, the session and claim may remain; retry close with the same options. Times out after 90s.",
+};
+
 /**
  * The agent-device commands Mobile Dev serves, with compact schemas, our annotations,
  * and without output schemas, since the tools return agent-device's own results.
@@ -89,7 +96,7 @@ export function agentDeviceCatalog(tools: Tool[]): Tool[] {
     .map(({ name, title, description, inputSchema }) => {
       const annotations = commandAnnotations[name];
       if (annotations === undefined) throw new Error(`Classify agent-device's ${name} command in commandAnnotations before serving it.`);
-      return { name, title, description, inputSchema, annotations };
+      return { name, title, description: commandDescriptions[name] ?? description, inputSchema, annotations };
     });
 }
 

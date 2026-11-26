@@ -51,8 +51,10 @@ async function sha256(url) {
 /** Reports a dependency's updates and returns the version to apply, if any. */
 function choose(group, name, current, versions, link, lane) {
   const { latest, safe } = targets(current, versions);
-  if (group === "agent-device" && name === "agent-device" && current === "0.21.33") {
-    if (latest) record(group, name, current, latest, { applied: false, reason: "manual pin: upstream #3995 breaks iOS input with a stale Xcode selection link", link });
+  // The bundled e2e runner and Mobile Dev's own client share one agent-device state directory, so
+  // the pin must match the version @e2e-dev/mobile brings in (agent-device-runtime-match.test.ts).
+  if (group === "agent-device" && name === "agent-device") {
+    if (latest) record(group, name, current, latest, { applied: false, reason: "manual pin: keep equal to the agent-device version @e2e-dev/mobile uses", link });
     return;
   }
   if (safe) record(group, name, current, safe, { link, lane });
@@ -91,8 +93,8 @@ if (wants("js")) {
   for (const path of workspaceManifests) workspaceChanged = updateManifest(path, "npm").changed || workspaceChanged;
   if (workspaceChanged) run("npm", ["install", "--no-audit", "--no-fund"], { stdio: "inherit", env: { ...process.env, HUSKY: "0" } });
 
-  // The device runtimes ship their own lockfiles; build.mjs checks agent-device against its manifest.
-  for (const runtime of ["packages/runtimes/agent-device", "packages/runtimes/serve-emu"]) {
+  // The device runtimes ship their own lockfiles; build.mjs checks them against release metadata.
+  for (const runtime of ["packages/runtimes/agent-device", "packages/runtimes/e2e", "packages/runtimes/serve-emu"]) {
     const path = `${runtime}/package.json`;
     const { manifest, changed } = updateManifest(path, runtime.split("/").pop());
     if (!changed) continue;

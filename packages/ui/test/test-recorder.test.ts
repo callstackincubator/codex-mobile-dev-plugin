@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ScreenComponent } from "../../shared/src/screen-annotations.ts";
-import { TestRecorder, formatRunDuration } from "../src/test-recorder.ts";
+import { TestRecorder, formatRunDuration, recorderShowsOn } from "../src/test-recorder.ts";
 import { agentActSuggestion } from "../../shared/src/test-recording.ts";
 
 const UDID = "11111111-2222-3333-4444-555555555555";
@@ -45,6 +45,28 @@ test("a tap row records the step and takes it on the device", async () => {
   // A step that is recorded but never taken leaves the flow on the screen before it, so the row
   // acts too — at the element's own centre, where the runner's locator action lands.
   assert.deepEqual(done, [{ kind: "tap", point: { x: 50, y: 820 } }]);
+});
+
+test("picking an element offers its locator to insert, hands it back on Insert, and records nothing", async () => {
+  const reads = { count: 0 };
+  const recorder = new TestRecorder();
+  recorder.attach(UDID, "android", reader([tab("SEE USERS", 800)], reads));
+  const picked: string[] = [];
+  assert.equal(recorder.pickElement(UDID, "android", locator => { picked.push(locator); }), true);
+  assert.equal(recorder.getSnapshot().picking, true);
+  await recorder.openMenu({ x: 50, y: 820 });
+  assert.deepEqual(picked, [], "nothing is written until Insert");
+  assert.deepEqual(recorder.getSnapshot().menu?.pick, { locator: 'screen.getByRole("button", "SEE USERS")' });
+  assert.deepEqual(recorder.getSnapshot().menu?.offers, [], "the pick menu offers no steps");
+  recorder.closeMenu();
+  assert.equal(recorder.getSnapshot().picking, true, "Cancel in the popover keeps picking");
+  await recorder.openMenu({ x: 50, y: 820 });
+  recorder.confirmPick();
+  assert.deepEqual(picked, ['screen.getByRole("button", "SEE USERS")']);
+  assert.equal(recorder.getSnapshot().steps.length, 0, "a pick is not a step");
+  assert.equal(recorder.getSnapshot().menu, undefined);
+  assert.equal(recorder.getSnapshot().picking, false);
+  assert.equal(recorder.getSnapshot().recordingDeviceId, "", "the mirror stops picking after one element");
 });
 
 test("an assertion is recorded from the element menu without touching the app", async () => {
@@ -252,7 +274,7 @@ test("recording again after a save starts a new flow rather than extending the s
   recorder.stop();
   assert.equal(recorder.getSnapshot().steps.length, 1);
 
-  // What the Testing panel passes when the steps on screen are already in a file.
+  // What the Testing Studio panel passes when the steps on screen are already in a file.
   recorder.start(UDID, "ios");
   assert.deepEqual(recorder.getSnapshot().steps, []);
 
@@ -395,6 +417,18 @@ test("the verdict stays, the ticks go, and a failing mark stays with them gone",
   assert.equal(recorder.getSnapshot().run?.durationMs, 420, "and how long it took before it broke");
   recorder.clearRun();
   recorder.detach(UDID, "ios");
+});
+
+test("a failed run with no failing line keeps the runner's reason", () => {
+  const recorder = new TestRecorder();
+  recorder.beginRun();
+  recorder.finishRun({ status: "failed", steps: [], error: "App com.example.android is not installed" });
+  assert.equal(recorder.getSnapshot().run?.error, "App com.example.android is not installed");
+  // A failing line's own error is the more precise one, so it wins.
+  recorder.beginRun();
+  recorder.finishRun({ status: "failed", steps: [{ line: 9, status: "failed", error: "Timed out" }], error: "Test failed" });
+  assert.equal(recorder.getSnapshot().run?.error, "Timed out");
+  recorder.clearRun();
 });
 
 test("a run's marks go when the steps move out from under them, and the verdict is flagged", async () => {
@@ -776,4 +810,11 @@ test("recording an Android emulator reads the tree with its serial and platform"
   assert.equal(recorder.isRecording("emulator-5554", "ios"), false, "the same string on another platform is another device");
   assert.deepEqual(seen[0], ["emulator-5554", "android"]);
   recorder.stop();
+});
+
+test("only the mirror of the platform being recorded or picked draws the recorder's overlay", () => {
+  assert.equal(recorderShowsOn("android", "android"), true);
+  assert.equal(recorderShowsOn("android", "ios"), false, "a re-record on Android must not paint the iOS mirror");
+  assert.equal(recorderShowsOn("ios", "android"), false);
+  assert.equal(recorderShowsOn("", "ios"), true, "nothing recording: nothing to hide");
 });

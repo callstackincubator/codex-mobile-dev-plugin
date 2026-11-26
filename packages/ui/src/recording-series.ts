@@ -2,7 +2,6 @@ import type { PerformanceRecording, RecordingRange } from "@mobile-dev/shared/re
 import type { DisplayFpsSample } from "@mobile-dev/shared/display-fps.ts";
 
 export type RecordingPoint = { time: number; value: number | null };
-
 export function createRecordingCpuSeries(recording: PerformanceRecording): RecordingPoint[] {
   return createIntervalSeries(recording.samples, recording.durationSeconds);
 }

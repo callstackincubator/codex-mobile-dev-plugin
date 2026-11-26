@@ -81,7 +81,11 @@ The Memory track shows the main process's current usage, sampled average, maximu
 
 The green **Display FPS** track shares the CPU and memory timeline, cursor, zoom and 150-second history. It records independently of the selected app, with current, average, maximum and minimum FPS. It includes other apps and system UI; a quiet or locked screen can report zero. This measures display updates rather than the panel's refresh rate, and does not identify which app caused a drop. Missing measurements remain gaps.
 
-Android 12+ uses only Perfetto FrameTimeline's presented actual display frames, excluding dropped frames and individual app/layer frames. A bundled external native consumer reads a bounded 4 MiB trace buffer once per second over ADB without creating a trace file, attaching a debugger, requiring root or installing an app SDK. Readback adds roughly three seconds of delay. SurfaceFlinger can report a frame later; the chart updates that frame's original interval. Devices without FrameTimeline and Android versions below 12 report an explicit limitation.
+On Android 12+, the FPS counter counts presented display frames from Perfetto FrameTimeline. A bundled external native consumer reads a bounded 4 MiB trace buffer once per second over ADB without creating a trace file, attaching a debugger, requiring root or installing an app SDK. Readback adds roughly three seconds of delay. SurfaceFlinger can report a frame later; the chart updates that frame's original interval. Devices without FrameTimeline and Android versions below 12 report an explicit limitation.
+
+Diamonds on the live and saved **Display FPS** graphs mark frames SurfaceFlinger reported as late, dropped or janky. A frame with multiple reasons gets one diamond. Select it to see its time, presentation status and reported reasons. For a dropped frame the time is the end of the frame event. The **Inspect** menu also lists FPS samples with their flagged-frame counts and distinguishes a captured interval with zero flags from one without FrameTimeline data. An idle interval adds no markers by itself. These events cover the whole display, including system UI.
+
+In chat hosts that can only show a recording preview, the diamonds appear when the frame data fits the tool result. Open the full recording in Mobile Dev to inspect larger runs.
 
 Android FPS intervals also retain `frameTimeline`: its `clock` is `boottime`,
 `intervalEndNs` identifies the device interval endpoint, and `frames` contains
@@ -157,8 +161,8 @@ duration (1–10 seconds); changing intervals within 80% of the highest density 
 highlighted. Flat or uniformly changing series have no distinct highlights, and
 missing readings and large delivery gaps are excluded. These regions describe
 changes, not their cause or absolute CPU/memory/FPS levels.
-Drag across any chart to select the same interval on CPU, memory, and FPS; click
-a chart to clear the selection. The selected thread list shows average
+Drag across any chart to select the same interval on CPU, memory, and FPS.
+Use **Clear** in the range overview to clear the selection. The selected thread list shows average
 CPU weighted by measured interval overlap. CPU and FPS chart readings span their measured
 intervals, so the first complete interval begins at zero; missing readings remain
 gaps. Memory labels, tooltips and changes use whole MiB, while saved samples retain
@@ -168,6 +172,27 @@ Android and physical footprint on iOS, so cross-platform values are not equivale
 Display FPS measures the whole device and cannot attribute a slowdown to one app.
 FPS range averages weight measured interval overlap; zero is valid, and missing
 readings remain gaps.
+
+On a paired physical iPhone, timed recordings also start Xcode’s Frame Lifetimes
+instrument. After export finishes, **Display FPS** shows each visible hitch as
+a diamond at its presentation time and the height of its device-wide FPS sample.
+Select a diamond to see the frame’s refresh rate and delay in milliseconds and
+refresh intervals. Click the plot to inspect an FPS sample and its hitch count.
+The **Inspect** menu also lists overlapping hitches and frames in FPS sampling gaps.
+A frame in a gap shows its timing with no FPS reading. The recording includes a late frame
+when its Core Animation contexts include the monitored app’s PID. App commits,
+the render server, or GPU work can contribute to the delay.
+
+In `mobile_read_performance_recording`, `recording.iosHitches` holds the
+recording-relative presentation times and the captured end time. The
+`summary.hitchStats` count uses presentations in the selected half-open range.
+Time lost is the overlap of their late intervals with the selection, including a
+delay that extends beyond the selection. Overlapping delays count once.
+Idle time adds no hitches. A selection that extends beyond the captured end
+reports totals for the portion covered. A selection entirely outside the capture
+returns a null summary. The plugin reads Xcode’s exported QuartzCore events.
+If the timing or attribution records are missing, the chart reports unavailable
+data. Temporary Instruments traces are removed after export.
 
 Android recordings save the exact display frames in each FPS interval's
 `frameTimeline`, retaining only frames ending within the recorded run. The

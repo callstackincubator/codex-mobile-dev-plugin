@@ -40,6 +40,11 @@ test("opening tools accept optional intent and preserve it in their results", as
     const invalid = await client.callTool({ name, arguments: { platform: "android", kind: "simulator" } });
     assert.equal(invalid.isError, true);
   }
+  for (const name of ["mobile_open_simulator", "mobile_open_workspace"]) {
+    const testing = await client.callTool({ name, arguments: { workspaceTool: "testing" } });
+    assert.equal(testing.isError, undefined, "the Testing Studio tab is a valid thing to open on");
+    assert.deepEqual(testing.structuredContent?.panelTarget, { workspaceTool: "testing" });
+  }
   const appIntel = await client.callTool({ name: "mobile_open_app_intel", arguments: {} });
   assert.equal(appIntel.isError, undefined);
   assert.deepEqual(appIntel.structuredContent?.panelTarget, { workspaceTool: "app-intel" });

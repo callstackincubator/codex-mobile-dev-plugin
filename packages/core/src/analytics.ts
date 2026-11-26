@@ -3,13 +3,13 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { CallToolRequest, CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
-import { isFrequentTool, MIXPANEL_TOKEN, MIXPANEL_TRACK_URL, MIXPANEL_ENGAGE_URL, TELEMETRY_INTERVAL_MS } from "@mobile-dev/shared/telemetry.ts";
+import { ANALYTICS_ENGAGE_URL, ANALYTICS_TOKEN, ANALYTICS_TRACK_URL, isFrequentTool, TELEMETRY_INTERVAL_MS } from "@mobile-dev/shared/telemetry.ts";
 import type { TelemetryEnvironment, TelemetryHost } from "@mobile-dev/shared/telemetry.ts";
 import { TELEMETRY_ENVIRONMENT } from "./telemetry-environment.ts";
 import { getTelemetryIdentity } from "./telemetry-identity.ts";
 import { recordAnalyticsFlush, serverTelemetryHost } from "./telemetry.ts";
 
-// Mixpanel takes at most 50 events per request; the queue stays bounded while it is unreachable.
+// Bound the request size and the queue while ingestion is unavailable.
 const BATCH_SIZE = 50;
 const MAX_QUEUED = 500;
 
@@ -54,12 +54,12 @@ async function deliver(send: Send, url: string, batch: AnalyticsEvent[] | Analyt
 }
 
 /**
- * Sends pseudonymous product analytics to Mixpanel from release servers: connected host sessions and
+ * Sends pseudonymous product analytics to Anal from release servers: connected host sessions and
  * the tools they call, plus an installation profile with its host, plugin version and OS. Never sends
  * arguments, results, device details, paths or IP properties. Install before tools register.
  */
 export function instrumentProductAnalytics(server: McpServer, options: AnalyticsOptions = {}): ProductAnalytics {
-  const { token = MIXPANEL_TOKEN, environment = TELEMETRY_ENVIRONMENT, userId = getTelemetryIdentity()?.userId, send = fetch } = options;
+  const { token = ANALYTICS_TOKEN, environment = TELEMETRY_ENVIRONMENT, userId = getTelemetryIdentity()?.userId, send = fetch } = options;
   if (token === "" || environment !== "release" || userId === undefined || optedOut()) return disabled;
   const distinctId = userId;
   const queue: AnalyticsEvent[] = [];
@@ -71,13 +71,13 @@ export function instrumentProductAnalytics(server: McpServer, options: Analytics
   async function drain() {
     const profile = pendingProfile;
     if (profile !== undefined) {
-      const outcome = await deliver(send, MIXPANEL_ENGAGE_URL, [profile]);
+      const outcome = await deliver(send, ANALYTICS_ENGAGE_URL, [profile]);
       recordAnalyticsFlush(outcome, "engage");
       if (outcome === "success" && pendingProfile === profile) pendingProfile = undefined;
     }
     while (queue.length > 0) {
       const batch = queue.splice(0, BATCH_SIZE);
-      const outcome = await deliver(send, MIXPANEL_TRACK_URL, batch);
+      const outcome = await deliver(send, ANALYTICS_TRACK_URL, batch);
       recordAnalyticsFlush(outcome, "track");
     }
   }

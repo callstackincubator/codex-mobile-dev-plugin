@@ -1,15 +1,18 @@
+import type { TestingRuntimeProgress } from "@mobile-dev/shared/testing-runtime.ts";
 import type { HostBridge } from "./host-bridge.ts";
 import type { DeviceAppsStore } from "./device-apps.ts";
 import { captureUiError, countUiEvent, getUiTelemetryAttributes, recordUiTiming } from "./telemetry.ts";
 import { testRecorder } from "./test-recorder.ts";
 import type { RecorderTreeSource } from "./test-recorder.ts";
-import { isRecordableDevice, recordablePlatform } from "@mobile-dev/shared/panel-target.ts";
+import { PANEL_HEARTBEAT_MS, isRecordableDevice, recordablePlatform } from "@mobile-dev/shared/panel-target.ts";
 import type { ScreenComponent } from "@mobile-dev/shared/screen-annotations.ts";
 import { screenSize } from "@mobile-dev/shared/screen-annotations.ts";
 import { testFileSlug } from "@mobile-dev/shared/test-recording.ts";
-import { storedTestCallLines, storedTestUntilSource } from "./stored-test-steps.ts";
+import { branchStoredStepLocator, storedTestCallLines, storedTestUntilSource } from "@mobile-dev/shared/stored-test-steps.ts";
 import type { RecordedStep } from "@mobile-dev/shared/test-recording.ts";
 import type { TestDraftSummary } from "@mobile-dev/shared/test-drafts.ts";
+import { DEFAULT_MATRIX_LIMIT, clampLimit, isTerminalLane, matrixFinished, parseMatrix, parseMatrixDevices, readMatrixPreferences, writeMatrixPreferences } from "./testing-matrix.ts";
+import type { MatrixDeviceOption, MatrixLane, MatrixView } from "./testing-matrix.ts";
 
 /**
  * One test the project already holds, as the server reports it.
@@ -18,7 +21,7 @@ import type { TestDraftSummary } from "@mobile-dev/shared/test-drafts.ts";
  * project already holds. A saved recording moves from one to the other, which is the whole reason
  * this exists — the draft is deleted on save, so before this the test left the list entirely.
  */
-export type StoredTestSummary = { relativePath: string; name: string; updatedAt: string; sizeBytes: number };
+export type StoredTestSummary = { relativePath: string; name: string; updatedAt: string; sizeBytes: number; /** The app a Testing Studio test is pinned to, and any app added for the other platform. */ target?: { platform: "ios" | "android"; bundleId: string; apps?: { ios?: string; android?: string } } };
 
 /**
  * An agent recording, as the server reports it.
@@ -36,13 +39,38 @@ export type TestingAgentView = {
   note: string;
   /** The unsaved recording a finished session was kept as; "" while it is still recording. */
   draftId: string;
+  /** The Testing Studio test a finished session was saved as, relative to Testing Studio; "" when it was kept as a draft. */
+  savedPath: string;
 };
+
+/**
+ * What survives the panel document: the project the user was last in, and the agent's project
+ * request this panel already applied. The host rebuilds the document often (and after a crash),
+ * and a fresh one must reopen on the same project rather than on the newest folder, or replay an
+ * agent's request the user has since moved past. Best effort: storage can be blocked.
+ */
+const PROJECT_STATE_KEY = "mobile-dev.testing.project";
+type StoredProjectState = { project?: string; request?: { id: number; path: string } };
+function readProjectState(): StoredProjectState {
+  try {
+    const stored = JSON.parse(globalThis.localStorage?.getItem(PROJECT_STATE_KEY) ?? "null") as unknown;
+    const data = object(stored);
+    const request = object(data?.request);
+    return {
+      ...(typeof data?.project === "string" && data.project ? { project: data.project } : {}),
+      ...(typeof request?.id === "number" && typeof request.path === "string" ? { request: { id: request.id, path: request.path } } : {}),
+    };
+  } catch { return {}; }
+}
+function writeProjectState(change: StoredProjectState) {
+  try { globalThis.localStorage?.setItem(PROJECT_STATE_KEY, JSON.stringify({ ...readProjectState(), ...change })); } catch { /* best effort */ }
+}
 
 /** 400 ms while an agent is recording, so a step lands in the panel as it is recorded. */
 const AGENT_POLL_ACTIVE_MS = 400;
 /**
  * And a slow tick otherwise, so a recording the agent starts is noticed even when the user is
- * looking at another tool. It is what opens the Testing tab for them.
+ * looking at another tool. It is what opens the Testing Studio tab for them.
  */
 const AGENT_POLL_IDLE_MS = 2_500;
 
@@ -60,16 +88,33 @@ const DRAFT_AUTOSAVE_MS = 700;
 export interface TestingProjectOption { path: string; name: string }
 /** A target as the project's e2e config declares it; a static read may not see every field. */
 export interface TestingTargetOption { name: string; platform?: string; bundleId?: string }
+export type TestingModelPreference = { provider: "vercel" | "openrouter" | "openai-compatible" | "chatgpt" | "copilot" | "opencode-console" | "grok"; model: string; endpoint?: string };
+export type TestingProviderOption = { id: string; label: string; subscription?: string; defaultModel?: string };
+export type TestingSetupOptions = { targets: { name: string; platform: "ios" | "android"; bundleId: string }[]; provider: TestingModelPreference["provider"] | "none"; model?: string; endpoint?: string; installDependencies: boolean; installSkill: boolean; registerMcp: boolean };
+export type TestingSetupOperation = { id: string; kind: "apply" | "login"; status: "running" | "waiting" | "succeeded" | "failed" | "cancelled"; message: string; completed: number; total: number; applied: string[]; auth?: { url: string; instructions: string; userCode?: string }; prompt?: { message: string; placeholder?: string } };
+export type TestingSetupDetails = { provider?: string; model?: string; endpoint?: string; dependencies: { e2e?: string; mobile?: string }; skillInstalled: boolean; mcpRegistrations: string[]; loginStatus: Record<string, boolean> };
 
 export type TestingSnapshot = {
   open: boolean;
   available: boolean;
   projectPath: string;
   projects: TestingProjectOption[];
+  /** The private workspace Testing Studio records against when no project is open; "" until the server says. */
+  studioPath: string;
   targets: TestingTargetOption[];
   /** The target the panel records against; "" until a project with targets is loaded. */
   targetName: string;
   configPath: string;
+  runtimeMode: "project" | "bundled";
+  setupState: "configured" | "available";
+  setupDetails?: TestingSetupDetails;
+  targetSource: "project" | "expo-cli" | "static-expo" | "foreground" | "none";
+  projectWarning: string;
+  modelPreference?: TestingModelPreference;
+  providers: TestingProviderOption[];
+  modelPickerOpen: boolean;
+  setupOpen: boolean;
+  needsRuntime?: boolean;
   loadingProject: boolean;
   pickingProject: boolean;
   launching: boolean;
@@ -91,8 +136,24 @@ export type TestingSnapshot = {
   running: boolean;
   /** Run asked to replace an existing file and is waiting on the answer. */
   pendingRun: boolean;
+  /** The matrix run on screen: one lane per device. Null for a run on a single device. */
+  matrix: MatrixView | null;
+  /** The lane whose steps the preview shows. */
+  selectedLane: string;
+  /** Devices the matrix checklist can offer, with whether each is booted and has the app. */
+  matrixDevices: MatrixDeviceOption[];
+  matrixLoading: boolean;
+  /** The devices the user ticked for the current test in this panel session. */
+  matrixSelected: string[];
+  /** How many devices run at once; the rest queue. Saved per project. */
+  matrixLimit: number;
   /** The agent recording the server holds, or null when no agent has ever recorded here. */
   agent: TestingAgentView | null;
+  /**
+   * An agent started the run on screen (`matrix`). Its lanes are live and the panel's editing is
+   * locked the way it is while the agent records, until every lane has finished.
+   */
+  agentRun: boolean;
   /**
    * The recordings that have not been written into a project yet, newest first.
    *
@@ -126,15 +187,41 @@ function object(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? value as Record<string, unknown> : null;
 }
 function text(value: unknown): string { return typeof value === "string" ? value : ""; }
-function projectName(projectPath: string): string { return projectPath.split("/").filter(Boolean).at(-1) ?? projectPath; }
+/** How a platform reads in the panel. */
+export function platformLabel(platform: "ios" | "android"): string { return platform === "ios" ? "iOS" : "Android"; }
 
 /**
- * The Testing panel: pick an e2e project, launch its app on the mirrored device, and (once the
+ * Launch app opens an app that is already installed; it never builds one, since a build is the
+ * project's own (Expo, EAS, Gradle, Xcode) and takes minutes. A missing app says so, with the way to fix it.
+ */
+export function launchErrorMessage(message: string, bundleId: string, platform: "ios" | "android"): string {
+  if (!/is not installed|Unable to find package|Unknown package/i.test(message)) return message;
+  const where = platform === "ios" ? "this simulator" : "this emulator";
+  return `${bundleId} is not installed on ${where}. Build and install it (for an Expo app, \`npx expo run:${platform}\`), then launch again.`;
+}
+
+function projectName(projectPath: string): string { return projectPath.split("/").filter(Boolean).at(-1) ?? projectPath; }
+
+/** The targets a `mobile_testing_project_config` result lists, keeping only named entries. */
+function parseTargets(data: Record<string, unknown>): TestingTargetOption[] {
+  const listed = Array.isArray(data.targets) ? data.targets : [];
+  return listed.map(entry => object(entry)).filter((entry): entry is Record<string, unknown> => entry !== null)
+    .filter(entry => text(entry.name))
+    .map(entry => ({
+      name: text(entry.name),
+      ...(text(entry.platform) ? { platform: text(entry.platform) } : {}),
+      ...(text(entry.bundleId) ? { bundleId: text(entry.bundleId) } : {}),
+    }));
+}
+
+/**
+ * The Testing Studio panel: pick an e2e project, launch its app on the mirrored device, and (once the
  * recorder lands) turn taps on the mirror into a deterministic test.
  *
  * This is the walking skeleton — project selection and launch only. Tap interception, selector
  * resolution and codegen are specified in `docs/testing-panel.md` and are not implemented yet.
  */
+
 export class TestingPanel {
   private readonly app: HostBridge;
   private readonly deviceApps: DeviceAppsStore;
@@ -146,17 +233,22 @@ export class TestingPanel {
   private loadRevision = 0;
   private testReadRevision = 0;
   private stageWrite?: Promise<void>;
+  private pendingModelAction?: { kind: "recording"; options: { untilStepId?: string } } | { kind: "stored"; untilLine?: number };
+  private savingModelPreference = false;
   /** The project and target the installed tree source reads; "" when there is no source. */
   private treeSourceKey = "";
   private snapshot: TestingSnapshot = {
-    open: false, available: false, projectPath: "", projects: [], targets: [], targetName: "", configPath: "",
+    open: false, available: false, projectPath: "", projects: [], studioPath: "", targets: [], targetName: "", configPath: "", runtimeMode: "bundled", setupState: "available", targetSource: "none", projectWarning: "", providers: [], modelPickerOpen: false, setupOpen: false,
     loadingProject: false, pickingProject: false, launching: false, appLaunched: false,
     fileName: "", saving: false, overwritePath: "", savedRevision: -1, savedPath: "", running: false, pendingRun: false,
-    agent: null, drafts: [], draftId: "", loadingDraft: false, tests: [], selectedTestPath: "", selectedTestSource: "", selectedTestOriginalHash: "", selectedTestStaged: false, loadingTest: false, deletingTest: "", error: null,
+    matrix: null, selectedLane: "", matrixDevices: [], matrixLoading: false, matrixSelected: [], matrixLimit: DEFAULT_MATRIX_LIMIT,
+    agent: null, agentRun: false, drafts: [], draftId: "", loadingDraft: false, tests: [], selectedTestPath: "", selectedTestSource: "", selectedTestOriginalHash: "", selectedTestStaged: false, loadingTest: false, deletingTest: "", error: null,
   };
 
   /** The agent recording's revision the panel has already adopted; -1 before the first poll. */
   private agentRevision = -1;
+  /** The server's stored-tests revision the panel has loaded; -1 before the first poll. */
+  private storedTestsRevision = -1;
   private agentTimer?: ReturnType<typeof setTimeout>;
   private agentPolling = false;
   /** The last selection reported to the server, so the context tool is not called on every tick. */
@@ -179,22 +271,50 @@ export class TestingPanel {
   private draftWrite?: Promise<void>;
   /** Set while `dispose` makes its last keep, so the guards do not refuse the flush. */
   private flushing = false;
-  /** Set when a session goes active, for the host chrome to show the Testing tab. */
+  /** Set when a session goes active, for the host chrome to show the Testing Studio tab. */
   private onAgentRecording?: () => void;
 
-  constructor(app: HostBridge, deviceApps: DeviceAppsStore) {
+  private heartbeatTimer?: ReturnType<typeof setInterval>;
+  private readonly onPageHide = () => { void this.clearReportedContext(); };
+  private beat() { if (this.snapshot.open) void this.reportContext(true); }
+  /** Coming back from throttling: report now rather than wait for the next (late) timer tick. */
+  private readonly onWake = () => { this.beat(); };
+
+  constructor(app: HostBridge, deviceApps: DeviceAppsStore, options: { heartbeatMs?: number } = {}) {
     this.app = app;
     this.deviceApps = deviceApps;
+    // The server only believes a panel that keeps reporting: a closed tab or window sends nothing.
+    // An unfocused host window reports the page hidden and throttles its timers; that is not the tab
+    // closing, so the beat does not check visibility. `snapshot.open` is the panel's own tab state.
+    this.heartbeatTimer = setInterval(() => { this.beat(); }, options.heartbeatMs ?? PANEL_HEARTBEAT_MS);
+    // An interval must not keep a host process alive on its own.
+    (this.heartbeatTimer as { unref?: () => void }).unref?.();
+    if (typeof window !== "undefined") {
+      window.addEventListener("pagehide", this.onPageHide);
+      window.addEventListener("focus", this.onWake);
+    }
+    if (typeof document !== "undefined") document.addEventListener("visibilitychange", this.onWake);
     // The device is half of what an agent recording needs and it belongs to the simulator panel,
     // so the selection is reported whenever either half moves.
-    this.stopWatchingDevices = deviceApps.subscribe(() => { void this.reportContext(); });
+    this.stopWatchingDevices = deviceApps.subscribe(() => {
+      void this.reportContext();
+      const { foregroundApp } = deviceApps.getSnapshot();
+      const front = foregroundApp?.bundleId;
+      if (this.snapshot.projectPath && this.snapshot.runtimeMode === "bundled") {
+        // Only the targets: reloading the whole project here would close the test the user has open.
+        if (front && this.snapshot.targets.every(entry => entry.bundleId !== front)) void this.refreshStudioTargets();
+        // An app the device list cannot name (Apple's own, or the home screen) is still the app in
+        // front: keeping the last app's target would have Record open that one instead.
+        else if (!front && foregroundApp?.pid && this.noProject && this.studioForegroundKey !== `pid:${foregroundApp.pid}`) void this.refreshStudioTargets();
+      }
+    });
     // Every change to what would be written bumps the recorder's revision, which is exactly the
     // thing worth keeping, so one subscription covers recording, editing, dragging and the title.
     this.stopWatchingRecorder = testRecorder.subscribe(() => { this.scheduleDraft(); });
   }
 
   /**
-   * The host chrome's way of being told to show the Testing tab.
+   * The host chrome's way of being told to show the Testing Studio tab.
    *
    * Which tool is on screen is the host's own state — the workspace component holds it — so the
    * panel asks rather than reaches. Opening the tab is the point of an agent recording: the user
@@ -209,6 +329,11 @@ export class TestingPanel {
   getSnapshot = () => this.snapshot;
 
   private update(fields: Partial<TestingSnapshot>) {
+    // A device choice belongs to one test in one panel session. Only concurrency follows the project.
+    if (fields.projectPath !== undefined && fields.projectPath !== this.snapshot.projectPath) {
+      const saved = readMatrixPreferences(fields.projectPath);
+      fields = { ...fields, matrixSelected: [], matrixLimit: saved.limit, matrix: null, selectedLane: "" };
+    }
     this.snapshot = { ...this.snapshot, ...fields };
     for (const listener of this.listeners) listener();
     this.syncTreeSource();
@@ -226,7 +351,7 @@ export class TestingPanel {
   private syncTreeSource() {
     const projectPath = this.snapshot.projectPath;
     const bundleId = this.target?.bundleId ?? "";
-    const key = this.disposed || !projectPath || !bundleId ? "" : `${projectPath}\u0000${bundleId}`;
+    const key = this.disposed || this.snapshot.needsRuntime || !projectPath || !bundleId ? "" : `${projectPath}\u0000${bundleId}`;
     if (key === this.treeSourceKey) return;
     this.treeSourceKey = key;
     testRecorder.useTreeSource(key ? this.treeSource(projectPath, bundleId) : undefined);
@@ -249,6 +374,18 @@ export class TestingPanel {
     };
   }
 
+  /** A host may advertise a preselection through configuration; host names never select behavior. */
+  private hostModelDefault(): TestingModelPreference | undefined {
+    const capabilities = this.app.getHostCapabilities() as unknown as Record<string, unknown> | undefined;
+    const configuration = object(capabilities?.configuration) ?? object(object(capabilities?.experimental)?.mobileDev);
+    const testing = object(configuration?.testing);
+    const candidate = object(testing?.defaultModel);
+    const provider = text(candidate?.provider) as TestingModelPreference["provider"];
+    const model = text(candidate?.model);
+    if (!provider || !model || !["vercel", "openrouter", "openai-compatible", "chatgpt", "copilot", "opencode-console", "grok"].includes(provider)) return;
+    return { provider, model, ...(text(candidate?.endpoint) ? { endpoint: text(candidate?.endpoint) } : {}) };
+  }
+
   private async call(name: string, arguments_: Record<string, unknown>, timeout = 30000) {
     const result = await this.app.callServerTool({ name, arguments: arguments_ }, { timeout });
     if (result.isError) throw textError(result, `${name} failed.`);
@@ -266,7 +403,7 @@ export class TestingPanel {
     // still theirs — nothing is ever inferred from the server's working directory.
     void this.restoreProject();
     // And the poll runs from here rather than from `show`, so a recording the agent starts while
-    // the user is in another tool is what opens the Testing tab for them.
+    // the user is in another tool is what opens the Testing Studio tab for them.
     this.pollAgent();
     void this.refreshDrafts();
     void this.refreshTests();
@@ -289,7 +426,20 @@ export class TestingPanel {
     if (!device || !target?.platform) return "";
     const mirrored = recordablePlatform(device);
     if (target.platform === mirrored) return "";
-    return `Target "${target.name}" is ${target.platform}, but the mirror shows ${mirrored === "ios" ? "an iOS" : "an Android"} device. Choose ${mirrored === "ios" ? "an iOS" : "an Android"} target.`;
+    // Testing Studio's target follows the app in front, which is unknown for a moment after the mirror changes:
+    // `selectDevice` clears it and `refreshStudioTargets` re-reads the target once it is found. Until
+    // then the target is still the other mirror's, and warning about it only flashes. Say nothing until
+    // the new device has answered and its target is in.
+    if (this.noProject) {
+      const { ready, foregroundApp } = this.deviceApps.getSnapshot();
+      if (!ready || this.refreshingTargets) return "";
+      if (foregroundApp?.bundleId && this.snapshot.targets.every(entry => entry.bundleId !== foregroundApp.bundleId)) return "";
+    }
+    const shown = mirrored === "ios" ? "an iOS simulator" : "an Android emulator";
+    const other = target.platform === "ios" ? "an iOS simulator" : "an Android emulator";
+    // Testing Studio's targets are the app in front, so its only target names are internal: say what to do on the device instead.
+    if (this.noProject) return `The mirror shows ${shown}, but the app was picked up on ${platformLabel(target.platform)}. Open the app on this device to record here, or switch the mirror to ${other}.`;
+    return `The "${target.name}" target runs on ${platformLabel(target.platform)}, but the mirror shows ${shown}. Choose ${mirrored === "ios" ? "an iOS" : "an Android"} target, or switch the mirror to ${other}.`;
   }
 
   /** Whether a launch is possible: a bundle id to launch and a booted device to launch it on. */
@@ -310,7 +460,7 @@ export class TestingPanel {
           .filter((entry): entry is Record<string, unknown> => entry !== null)
           .filter(entry => text(entry.path))
           .map(entry => ({ path: text(entry.path), name: text(entry.name) || projectName(text(entry.path)) }));
-        if (!this.disposed) this.update({ projects });
+        if (!this.disposed) this.update({ projects, studioPath: text(object(response.structuredContent)?.studioPath) || this.snapshot.studioPath });
       } catch {
         // The panel still works from the project it was last opened with, or the empty state.
       } finally {
@@ -326,22 +476,73 @@ export class TestingPanel {
     if (!this.snapshot.available || this.snapshot.projectPath || this.restoreRequest) return this.restoreRequest;
     const request = (async () => {
       await this.refreshProjects();
-      const latest = this.snapshot.projects[0];
-      if (latest && !this.disposed && !this.snapshot.projectPath) await this.selectProject(latest.path);
+      // An agent that opened the panel for its chat has already said which project it wants.
+      if (await this.applyServerProjectRequest()) return;
+      // No project is a state of its own: with nothing recorded against yet, Testing Studio opens on its
+      // private workspace so recording never waits for a folder to be chosen.
+      // The one the user was last in, whether that was Testing Studio or a folder; else the newest folder.
+      const last = readProjectState().project;
+      const known = last && (last === this.snapshot.studioPath || this.snapshot.projects.some(entry => entry.path === last)) ? last : "";
+      const latest = known || this.snapshot.projects[0]?.path || this.snapshot.studioPath;
+      if (latest && !this.disposed && !this.snapshot.projectPath) await this.selectProject(latest);
     })();
     this.restoreRequest = request;
     try { await request; } finally { if (this.restoreRequest === request) this.restoreRequest = undefined; }
+  }
+
+  private appliedProjectRequest = readProjectState().request;
+  private projectRequestApply?: Promise<void>;
+
+  /**
+   * The project an agent chose when it opened the panel for its chat: No project, or a folder
+   * (added to the list if missing, without the folder dialog). Applied once per request, so a
+   * project the user picks afterwards is never taken back. Returns whether a request was found.
+   */
+  private async applyProjectRequest(data: Record<string, unknown>): Promise<boolean> {
+    const request = object(data.projectRequest);
+    const id = request?.id, path = text(request?.path);
+    if (typeof id !== "number" || !path) return false;
+    // A request an earlier document of this panel already applied is spent, not a new instruction.
+    const applied = this.appliedProjectRequest;
+    if (applied && applied.id === id && applied.path === path && !this.projectRequestApply) return false;
+    if (!applied || applied.id !== id || applied.path !== path) {
+      this.appliedProjectRequest = { id, path };
+      writeProjectState({ request: { id, path } });
+      this.projectRequestApply = (async () => {
+        await this.refreshProjects();
+        if (this.disposed || path === this.snapshot.projectPath) return;
+        await this.chooseProject(path);
+      })();
+    }
+    await this.projectRequestApply;
+    return true;
+  }
+
+  private async applyServerProjectRequest(): Promise<boolean> {
+    try {
+      const response = await this.call("mobile_testing_agent_state", {}, 5_000);
+      return await this.applyProjectRequest(object(response.structuredContent) ?? {});
+    } catch { return false; }
   }
 
   private remembered(project: TestingProjectOption) {
     this.update({ projects: [project, ...this.snapshot.projects.filter(entry => entry.path !== project.path)] });
   }
 
+  /** Whether Testing Studio is on its private workspace rather than a project the user opened. */
+  get noProject(): boolean { return Boolean(this.snapshot.studioPath) && this.snapshot.projectPath === this.snapshot.studioPath; }
+
+  /** Leaves the open project and records in Testing Studio's own workspace. */
+  async useNoProject() {
+    await this.refreshProjects();
+    if (this.snapshot.studioPath) await this.selectProject(this.snapshot.studioPath);
+  }
+
   /** Selects a project the selector already lists, and makes it the one the panel reopens with. */
   async chooseProject(projectPath: string) {
     const path = projectPath.trim();
     if (!path) return;
-    if (!this.snapshot.available) { await this.selectProject(path); return; }
+    if (!this.snapshot.available || path === this.snapshot.studioPath) { await this.selectProject(path); return; }
     try {
       const response = await this.call("mobile_testing_choose_project", { projectPath: path });
       const project = object(object(response.structuredContent)?.project);
@@ -374,39 +575,81 @@ export class TestingPanel {
     }
   }
 
+  /**
+   * Testing Studio derives its only target from the app in front, so when another app comes to the front
+   * the target is re-read, in place: unlike `selectProject` it keeps drafts, tests and selection.
+   */
+  private async refreshStudioTargets() {
+    const { projectPath } = this.snapshot;
+    const { device, foregroundApp } = this.deviceApps.getSnapshot();
+    const foregroundBundleId = foregroundApp?.bundleId ?? undefined;
+    const pid = foregroundBundleId ? undefined : foregroundApp?.pid ?? undefined;
+    const key = foregroundBundleId ?? (pid ? `pid:${pid}` : "");
+    if (!projectPath || !device || !isRecordableDevice(device) || !key || this.refreshingTargets === key) return;
+    this.refreshingTargets = key;
+    this.studioForegroundKey = key;
+    const revision = this.loadRevision;
+    try {
+      const platform = recordablePlatform(device);
+      const response = await this.call("mobile_testing_project_config", { projectPath, foregroundPlatform: platform,
+        ...(foregroundBundleId ? { foregroundBundleId } : { foregroundDeviceId: device.udid, foregroundPid: pid }) });
+      if (revision !== this.loadRevision || this.snapshot.runtimeMode !== "bundled") return;
+      const data = object(response.structuredContent) ?? {};
+      const targets = parseTargets(data);
+      const preferred = targets.find(entry => entry.platform === platform) ?? targets[0];
+      const source = text(data.targetSource);
+      this.update({ targets, targetName: preferred?.name ?? "", ...(["expo-cli", "static-expo", "foreground", "none"].includes(source) ? { targetSource: source as TestingSnapshot["targetSource"] } : {}) });
+    } catch { /* the next foreground change retries */ } finally {
+      if (this.refreshingTargets === key) this.refreshingTargets = "";
+    }
+  }
+  private refreshingTargets = "";
+  /** The foreground the Testing Studio targets were last read for, so an unnamed app is read once, not on every device update. */
+  private studioForegroundKey = "";
+
   /** Loads one project's e2e config into the panel. */
   async selectProject(projectPath: string) {
     const path = projectPath.trim();
     const revision = ++this.loadRevision;
+    if (path) writeProjectState({ project: path });
     this.clearTestPreview();
     // The flow on screen belongs to the project it was recorded against, so the panel lets go of
     // its draft rather than rewriting that draft under a different project's path.
     clearTimeout(this.draftTimer);
     this.draftRevision = testRecorder.getSnapshot().revision;
     this.draftFlowId = "";
-    this.update({ projectPath: path, targets: [], targetName: "", configPath: "", appLaunched: false,
+    this.pendingModelAction = undefined;
+    this.update({ projectPath: path, needsRuntime: false, targets: [], targetName: "", configPath: "", runtimeMode: "bundled", setupState: "available", setupDetails: undefined, targetSource: "none", projectWarning: "", appLaunched: false,
       overwritePath: "", savedRevision: -1, savedPath: "", draftId: "", drafts: [], tests: [], error: null });
     void this.refreshDrafts();
     void this.refreshTests();
     if (!path || !this.snapshot.available) return;
     this.update({ loadingProject: true });
     try {
-      const response = await this.call("mobile_testing_project_config", { projectPath: path });
+      const device = this.deviceApps.getSnapshot().device;
+      const foregroundBundleId = this.deviceApps.getSnapshot().foregroundApp?.bundleId ?? undefined;
+      const foregroundPlatform = device && isRecordableDevice(device) ? recordablePlatform(device) : undefined;
+      const response = await this.call("mobile_testing_project_config", { projectPath: path, ...(foregroundPlatform && foregroundBundleId ? { foregroundPlatform, foregroundBundleId } : {}) });
       if (revision !== this.loadRevision) return;
       const data = object(response.structuredContent) ?? {};
-      const listed = Array.isArray(data.targets) ? data.targets : [];
-      const targets = listed.map(entry => object(entry)).filter((entry): entry is Record<string, unknown> => entry !== null)
-        .filter(entry => text(entry.name))
-        .map(entry => ({
-          name: text(entry.name),
-          ...(text(entry.platform) ? { platform: text(entry.platform) } : {}),
-          ...(text(entry.bundleId) ? { bundleId: text(entry.bundleId) } : {}),
-        }));
+      const targets = parseTargets(data);
       // The target on the mirrored device's platform, so a project with both records against the
       // right one without being asked; else the first, which `targetMismatch` then reports on.
-      const device = this.deviceApps.getSnapshot().device;
       const preferred = (device ? targets.find(entry => entry.platform === recordablePlatform(device)) : undefined) ?? targets[0];
-      this.update({ targets, targetName: preferred?.name ?? "", configPath: text(data.configPath) });
+      const preference = object(data.modelPreference);
+      const modelPreference = preference && text(preference.provider) && text(preference.model) ? { provider: text(preference.provider) as TestingModelPreference["provider"], model: text(preference.model), ...(text(preference.endpoint) ? { endpoint: text(preference.endpoint) } : {}) } : this.hostModelDefault();
+      const setup = object(data.setup);
+      const dependencyData = object(setup?.dependencies) ?? {};
+      const loginData = object(setup?.loginStatus) ?? {};
+      const setupDetails: TestingSetupDetails | undefined = setup ? {
+        ...(text(setup.provider) ? { provider: text(setup.provider) } : {}), ...(text(setup.model) ? { model: text(setup.model) } : {}), ...(text(setup.endpoint) ? { endpoint: text(setup.endpoint) } : {}),
+        dependencies: { ...(text(dependencyData.e2e) ? { e2e: text(dependencyData.e2e) } : {}), ...(text(dependencyData.mobile) ? { mobile: text(dependencyData.mobile) } : {}) },
+        skillInstalled: setup.skillInstalled === true,
+        mcpRegistrations: Array.isArray(setup.mcpRegistrations) ? setup.mcpRegistrations.map(text).filter(Boolean) : [],
+        loginStatus: Object.fromEntries(Object.entries(loginData).map(([key, value]) => [key, value === true])),
+      } : undefined;
+      const providers = (Array.isArray(data.providers) ? data.providers : []).map(entry => object(entry)).filter((entry): entry is Record<string, unknown> => entry !== null).map(entry => ({ id: text(entry.id), label: text(entry.label), ...(text(entry.subscription) ? { subscription: text(entry.subscription) } : {}), ...(text(entry.defaultModel) ? { defaultModel: text(entry.defaultModel) } : {}) })).filter(entry => entry.id && entry.label);
+      this.update({ targets, targetName: preferred?.name ?? "", needsRuntime: data.needsRuntime === true, configPath: text(data.configPath), runtimeMode: data.runtimeMode === "project" ? "project" : "bundled", setupState: data.setupState === "configured" ? "configured" : "available", setupDetails, targetSource: ["project", "expo-cli", "static-expo", "foreground"].includes(text(data.targetSource)) ? text(data.targetSource) as TestingSnapshot["targetSource"] : "none", projectWarning: text(data.warning), modelPreference, providers });
     } catch (error) {
       if (revision === this.loadRevision) this.update({ error: error instanceof Error ? error.message : String(error) });
     } finally {
@@ -414,11 +657,75 @@ export class TestingPanel {
     }
   }
 
+  async runtimeProgress(projectPath: string, start?: { retry: boolean }) {
+    const revision = this.loadRevision;
+    const tool = start ? "mobile_testing_prepare_runtime" : "mobile_testing_runtime_progress";
+    const response = await this.call(tool, start ?? {});
+    const data = response.structuredContent as { progress: TestingRuntimeProgress; loginStatus?: Record<string, boolean> };
+    if (data.progress.phase === "ready" && !this.disposed && revision === this.loadRevision && projectPath === this.snapshot.projectPath) {
+      const setupDetails = this.snapshot.setupDetails;
+      this.update({ needsRuntime: false, ...(setupDetails && data.loginStatus ? { setupDetails: { ...setupDetails, loginStatus: data.loginStatus } } : {}) });
+    }
+    return data.progress;
+  }
+
   /** Records against another target the config declares. */
   selectTarget(name: string) {
     if (!this.snapshot.targets.some(entry => entry.name === name)) return;
     this.update({ targetName: name, appLaunched: false });
   }
+
+  openSetup() { this.update({ setupOpen: true }); }
+  closeSetup() { this.update({ setupOpen: false }); }
+  openModelPicker() { this.update({ modelPickerOpen: true }); }
+  closeModelPicker() { this.pendingModelAction = undefined; this.update({ modelPickerOpen: false }); }
+
+  async saveModelPreference(preference?: TestingModelPreference) {
+    if (this.savingModelPreference) return;
+    this.savingModelPreference = true;
+    const pending = this.pendingModelAction;
+    this.pendingModelAction = undefined;
+    try {
+      await this.call("mobile_testing_model_preference", { ...(preference ? { preference } : {}) });
+      this.update({ modelPreference: preference, modelPickerOpen: false });
+      countUiEvent("ui.testing.model_preference");
+      if (preference && pending) {
+        if (pending.kind === "stored") void this.runStoredTest(pending.untilLine);
+        else void this.runTest(pending.options);
+      }
+    } catch (error) {
+      if (!this.pendingModelAction) this.pendingModelAction = pending;
+      throw error;
+    } finally {
+      this.savingModelPreference = false;
+    }
+  }
+
+  /** Opens an OAuth URL only for a sign-in flow the user explicitly started. */
+  async openLoginUrl(url: string) {
+    const destination = new URL(url);
+    if (destination.protocol !== "https:" && destination.protocol !== "http:") throw new Error("Only web sign-in links can be opened.");
+    await this.app.openLink({ url: destination.href });
+  }
+
+  async planSetup(options: TestingSetupOptions) {
+    const response = await this.call("mobile_testing_setup_plan", { projectPath: this.snapshot.projectPath, options }, 60_000);
+    return object(object(response.structuredContent)?.plan);
+  }
+  async applySetup(planId: string) {
+    const response = await this.call("mobile_testing_setup_apply", { planId }, 30_000);
+    return object(object(response.structuredContent)?.operation) as TestingSetupOperation | null;
+  }
+  async setupProgress(operationId: string) {
+    const response = await this.call("mobile_testing_setup_progress", { operationId }, 10_000);
+    return object(object(response.structuredContent)?.operation) as TestingSetupOperation | null;
+  }
+  async cancelSetup(operationId: string) { await this.call("mobile_testing_setup_cancel", { operationId }); }
+  async startLogin(provider: string) {
+    const response = await this.call("mobile_testing_setup_login", { provider }, 30_000);
+    return object(object(response.structuredContent)?.operation) as TestingSetupOperation | null;
+  }
+  async answerLogin(operationId: string, value: string) { await this.call("mobile_testing_setup_answer", { operationId, value }); }
 
   /**
    * Launches the selected target's app on the mirrored device, so recording starts from the app
@@ -440,7 +747,7 @@ export class TestingPanel {
       this.update({ appLaunched: true });
       countUiEvent("ui.testing.launch");
     } catch (error) {
-      this.update({ error: error instanceof Error ? error.message : String(error) });
+      this.update({ error: launchErrorMessage(error instanceof Error ? error.message : String(error), bundleId, recordablePlatform(device)) });
       captureUiError(error, "testing.launch", telemetryContext);
     } finally {
       if (getUiTelemetryAttributes() === telemetryContext) recordUiTiming("ui.testing.launch", performance.now() - startedAt);
@@ -475,6 +782,20 @@ export class TestingPanel {
    * checkout belongs in the list beside the recorded ones, and a recording that was saved has to
    * appear here the moment its draft goes.
    */
+  /**
+   * Pins the panel has just sent, keyed by project and test, so a test shows its app at once and a
+   * listing read before the server wrote `targets.json` does not drop it.
+   */
+  private readonly pendingPins = new Map<string, NonNullable<StoredTestSummary["target"]>>();
+
+  private notePinned(relativePath: string, target: NonNullable<StoredTestSummary["target"]>) {
+    const projectPath = this.snapshot.projectPath;
+    if (!projectPath) return;
+    this.pendingPins.set(`${projectPath}\0${relativePath}`, target);
+    if (this.snapshot.tests.some(test => test.relativePath === relativePath))
+      this.update({ tests: this.snapshot.tests.map(test => test.relativePath === relativePath ? { ...test, target } : test) });
+  }
+
   async refreshTests() {
     if (!this.snapshot.available || !this.snapshot.projectPath) {
       this.clearTestPreview();
@@ -485,7 +806,12 @@ export class TestingPanel {
     try {
       const response = await this.call("mobile_testing_tests", { projectPath }, 15_000);
       const listed = object(response.structuredContent)?.tests;
-      const tests = (Array.isArray(listed) ? listed : []) as StoredTestSummary[];
+      const tests = ((Array.isArray(listed) ? listed : []) as StoredTestSummary[]).map(test => {
+        const key = `${projectPath}\0${test.relativePath}`;
+        if (test.target) { this.pendingPins.delete(key); return test; }
+        const pending = this.pendingPins.get(key);
+        return pending ? { ...test, target: pending } : test;
+      });
       // A slow read must not land on a project the user has since left.
       if (!this.disposed && this.snapshot.projectPath === projectPath) {
         if (this.snapshot.selectedTestPath && !tests.some(test => test.relativePath === this.snapshot.selectedTestPath)) this.clearTestPreview();
@@ -505,7 +831,7 @@ export class TestingPanel {
   /** Shows the file exactly as stored. The recorder's current flow remains intact. */
   async openTest(relativePath: string) {
     const projectPath = this.snapshot.projectPath;
-    if (!relativePath || !projectPath || this.snapshot.agent?.active) return;
+    if (!relativePath || !projectPath || this.agentBusy) return;
     const revision = ++this.testReadRevision;
     clearTimeout(this.draftTimer);
     await this.keepDraft();
@@ -513,7 +839,7 @@ export class TestingPanel {
     if (this.disposed || this.snapshot.projectPath !== projectPath || revision !== this.testReadRevision) return;
     testRecorder.stop();
     testRecorder.clearRun();
-    this.update({ selectedTestPath: relativePath, selectedTestSource: "", loadingTest: true, error: null });
+    this.update({ selectedTestPath: relativePath, selectedTestSource: "", loadingTest: true, matrixSelected: [], error: null });
     const startedAt = performance.now(), telemetryContext = getUiTelemetryAttributes();
     try {
       const response = await this.call("mobile_testing_read_file", { projectPath, relativePath }, 15_000);
@@ -552,6 +878,103 @@ export class TestingPanel {
       if (getUiTelemetryAttributes() === telemetryContext) recordUiTiming("ui.testing.test_stage", performance.now() - startedAt);
     });
   }
+
+  /**
+   * The line a re-record would change: the selected Testing Studio test's first failed line, when the last
+   * run failed on the other platform than the one it was recorded on and the mirror shows that one.
+   * Zero when there is nothing to offer.
+   */
+  get reRecordLine(): number { return this.reRecord?.line ?? 0; }
+
+  /**
+   * The failed line that can take a locator for the platform it failed on, and whether the mirror
+   * shows that platform: the element is picked on the mirror, so a failure on an Android lane
+   * while an iOS device is mirrored can be named but not re-recorded yet.
+   */
+  get reRecord(): { line: number; platform: "ios" | "android"; ready: boolean } | undefined {
+    const stored = this.storedTarget;
+    const platform = this.runPlatform ?? this.mirroredPlatform;
+    const run = testRecorder.getSnapshot().run;
+    if (!stored || !platform || platform === stored.platform || !this.storedAppOn(platform) || run?.state !== "failed" || this.snapshot.running || this.snapshot.saving) return;
+    const failed = Object.entries(run.lines).filter(([, mark]) => mark === "failed").map(([line]) => Number(line)).sort((a, b) => a - b)[0] ?? 0;
+    // Only a line whose locator can be swapped: a multi-line call or an agent step stays the user's to edit.
+    if (!failed || branchStoredStepLocator(this.snapshot.selectedTestSource, failed, platform, "screen.getByText(\"\")") === this.snapshot.selectedTestSource) return;
+    return { line: failed, platform, ready: this.mirroredPlatform === platform };
+  }
+
+  /**
+   * Re-records one failed line's locator on the mirrored platform: the user right-clicks the
+   * element on the mirror, and the line keeps its locator for the recorded platform and takes the
+   * picked one on this platform behind a `platform` branch. The test is then saved.
+   */
+  /**
+   * The device workspace's way of making one platform's mirror the active one. It answers false
+   * when that platform has no device showing, which only the user can change.
+   */
+  private focusMirror: ((platform: "ios" | "android") => boolean) | undefined;
+  setMirrorFocus(focus: ((platform: "ios" | "android") => boolean) | undefined) { this.focusMirror = focus; }
+
+  private mirrorDevice: ((platform: "ios" | "android", deviceId: string) => boolean) | undefined;
+  setMirrorDevice(show: ((platform: "ios" | "android", deviceId: string) => boolean) | undefined) { this.mirrorDevice = show; }
+
+  /**
+   * A click on a result row: shows that lane's steps, and mirrors its device when the device is
+   * booted. Lanes run on their own device sessions, never through the mirror, so switching it
+   * during a run (the panel's or the agent's) does not touch the run.
+   */
+  openLane(runId: string) {
+    this.selectLane(runId);
+    const lane = this.snapshot.matrix?.lanes.find(entry => entry.runId === runId);
+    if (!lane) return;
+    // A single-mirror layout first switches to the lane's platform, since a hidden mirror cannot
+    // show a device. Only on the click itself, so a platform the user switches back to stays.
+    this.onLaneSelected?.(lane.platform);
+    const deviceId = lane.resolvedDeviceId ?? lane.deviceId;
+    if (this.deviceApps.getSnapshot().device?.udid === deviceId) return;
+    if (this.mirrorDevice?.(lane.platform, deviceId)) countUiEvent("ui.testing.lane_mirror");
+  }
+
+  private onLaneSelected?: (platform: "ios" | "android") => void;
+  /** The host chrome's way of hearing which platform a clicked lane ran on, to show that mirror. */
+  onLanePicked(listener: (platform: "ios" | "android") => void) {
+    this.onLaneSelected = listener;
+    return () => { if (this.onLaneSelected === listener) this.onLaneSelected = undefined; };
+  }
+
+  async reRecordStoredLine(line: number) {
+    const platform = this.reRecord?.platform;
+    if (!platform || line <= 0) return;
+    this.update({ error: null });
+    // The element is picked on the mirror, so the failing platform's mirror has to be the active one.
+    if (this.mirroredPlatform !== platform) this.focusMirror?.(platform);
+    if (this.mirroredPlatform !== platform) {
+      this.update({ error: `Show a booted ${platform === "ios" ? "iOS simulator" : "Android emulator"} in the mirror to re-record line ${line}.` });
+      return;
+    }
+    const mirrored = this.mirroredPlatform;
+    const app = mirrored ? this.storedAppOn(mirrored) : undefined;
+    const device = this.deviceApps.getSnapshot().device;
+    if (!mirrored || mirrored !== platform || !app || !device) return;
+    // The element tree is read from the app in front, so it has to be this platform's app.
+    if (this.deviceApps.getSnapshot().foregroundApp?.bundleId !== app.bundleId) {
+      try { await this.call("mobile_launch_app", { platform: app.platform, deviceId: device.udid, bundleId: app.bundleId }, 120_000); }
+      catch (error) { this.update({ error: `Could not open ${app.bundleId}: ${error instanceof Error ? error.message : String(error)}` }); return; }
+    }
+    const relativePath = this.snapshot.selectedTestPath;
+    const armed = testRecorder.pickElement(device.udid, mirrored, locator => {
+      const source = this.snapshot.selectedTestSource;
+      if (this.snapshot.selectedTestPath !== relativePath) return;
+      const next = branchStoredStepLocator(source, line, mirrored, locator);
+      if (next === source) { this.update({ error: `Line ${line} could not be changed. Edit it in Preview.` }); return; }
+      countUiEvent("ui.testing.rerecord_line");
+      this.editStoredTest(next);
+      void this.saveStoredTest();
+    });
+    if (!armed) this.update({ error: "The mirror is busy recording. Stop the recording, then try again." });
+  }
+
+  /** Leaves a re-record without changing the test. */
+  cancelReRecord() { if (testRecorder.getSnapshot().picking) testRecorder.stop(); }
 
   async saveStoredTest() {
     const { projectPath, selectedTestPath: relativePath } = this.snapshot;
@@ -696,7 +1119,7 @@ export class TestingPanel {
    * left. Nothing starts recording: the user opened a flow to look at it.
    */
   async openDraft(id: string) {
-    if (!id || this.snapshot.loadingDraft || this.snapshot.agent?.active) return;
+    if (!id || this.snapshot.loadingDraft || this.agentBusy) return;
     this.clearTestPreview();
     if (id === this.snapshot.draftId) return;
     clearTimeout(this.draftTimer);
@@ -717,7 +1140,7 @@ export class TestingPanel {
       // and the draft is pinned to the flow it came back as.
       this.draftRevision = testRecorder.getSnapshot().revision;
       this.draftFlowId = testRecorder.getSnapshot().flowId;
-      this.update({ draftId: text(draft.id), fileName: text(draft.fileName), savedRevision: -1, savedPath: "", overwritePath: "" });
+      this.update({ draftId: text(draft.id), fileName: text(draft.fileName), savedRevision: -1, savedPath: "", overwritePath: "", matrixSelected: [] });
     } catch (error) {
       this.update({ error: error instanceof Error ? error.message : String(error) });
     } finally {
@@ -732,7 +1155,7 @@ export class TestingPanel {
   async deleteDraft(id: string) {
     if (!id || !this.snapshot.available) return;
     const current = id === this.snapshot.draftId;
-    if (current && this.snapshot.agent?.active) return;
+    if (current && this.agentBusy) return;
     clearTimeout(this.draftTimer);
     try {
       await this.call("mobile_testing_draft_delete", { id }, 15_000);
@@ -763,7 +1186,7 @@ export class TestingPanel {
 
   /** Starts a new flow, keeping whatever is on screen as its own draft first. */
   async newRecording() {
-    if (this.snapshot.agent?.active) return;
+    if (this.agentBusy) return;
     this.clearTestPreview();
     clearTimeout(this.draftTimer);
     await this.keepDraft();
@@ -773,7 +1196,7 @@ export class TestingPanel {
     testRecorder.setTitle("");
     this.draftRevision = testRecorder.getSnapshot().revision;
     this.draftFlowId = "";
-    this.update({ draftId: "", fileName: "", savedRevision: -1, savedPath: "", overwritePath: "" });
+    this.update({ draftId: "", fileName: "", savedRevision: -1, savedPath: "", overwritePath: "", matrixSelected: [] });
   }
 
   setFileName(fileName: string) { this.update({ fileName: fileName.trim(), overwritePath: "" }); }
@@ -807,6 +1230,7 @@ export class TestingPanel {
     try {
       const response = await this.call("mobile_testing_write_file", {
         projectPath, relativePath, contents: testRecorder.source, overwrite: confirmOverwrite,
+        ...this.pinArguments(),
       }, 60_000);
       const data = object(response.structuredContent) ?? {};
       if (data.written === true) {
@@ -823,6 +1247,8 @@ export class TestingPanel {
         }
         // And it is one of the project's tests now, so it appears in the stored half of the list
         // rather than leaving the list with its draft.
+        const pin = this.pinArguments();
+        if ("bundleId" in pin) this.notePinned(relativePath, pin);
         void this.refreshTests();
         // The flow is written, so the recording is over: leaving it armed turns the next stray tap
         // on the mirror into a step the saved file does not have.
@@ -875,7 +1301,7 @@ export class TestingPanel {
    * config. `mobile_testing_agent_begin` reads it and refuses when any of the three is missing,
    * which is what keeps an OS folder dialog from opening inside an agent's turn.
    */
-  private async reportContext() {
+  private async reportContext(force = false) {
     if (this.disposed || !this.snapshot.available) return;
     const projectPath = this.snapshot.projectPath;
     const bundleId = this.target?.bundleId ?? "";
@@ -886,7 +1312,7 @@ export class TestingPanel {
     const deviceId = recordable ? device.udid : "";
     const platform = recordable ? recordablePlatform(device) : undefined;
     const key = `${projectPath}\u0000${platform ?? ""}\u0000${deviceId}\u0000${bundleId}`;
-    if (key === this.reportedContext) return;
+    if (key === this.reportedContext && !force) return;
     this.reportedContext = key;
     try {
       await this.call("mobile_testing_set_context", { projectPath, deviceId, ...(platform ? { platform } : {}), bundleId }, 10_000);
@@ -895,6 +1321,12 @@ export class TestingPanel {
       // to ask the user, which is the refusal it would have given anyway.
       this.reportedContext = "";
     }
+  }
+
+  /** Best effort on the way out: an empty project tells the server the tab is gone, without waiting out its expiry. */
+  private async clearReportedContext() {
+    this.reportedContext = "";
+    try { await this.call("mobile_testing_set_context", { projectPath: "", deviceId: "", bundleId: "" }, 3_000); } catch { /* the server's expiry covers it */ }
   }
 
   /**
@@ -912,11 +1344,86 @@ export class TestingPanel {
       if (this.disposed || !this.snapshot.available) return;
       clearTimeout(this.agentTimer);
       this.agentTimer = setTimeout(() => this.pollAgent(),
-        this.snapshot.agent?.active ? AGENT_POLL_ACTIVE_MS : AGENT_POLL_IDLE_MS);
+        this.agentBusy ? AGENT_POLL_ACTIVE_MS : AGENT_POLL_IDLE_MS);
     });
   }
 
+  /**
+   * A run the agent started: the server holds it in the same registry the panel's own runs use, so
+   * the latest one is on screen as live lanes while any of them is unfinished. The panel never
+   * adopts a finished one it did not see running, and never one while it is running its own.
+   */
+  private async readAgentRun() {
+    if (this.snapshot.running || this.disposed || !this.snapshot.projectPath) return;
+    let matrix: MatrixView | null;
+    let running: boolean;
+    try {
+      const response = await this.call("mobile_testing_run_progress", {}, 5_000);
+      matrix = parseMatrix(response.structuredContent);
+      running = object(response.structuredContent)?.running === true;
+    } catch { return; }
+    if (this.disposed || this.snapshot.running || !matrix) return;
+    const adopted = this.snapshot.agentRun;
+    if (!adopted) {
+      if (!running || matrix.matrixId === this.snapshot.matrix?.matrixId) return;
+      // The lanes show against the test they run, so that test is opened first.
+      if (matrix.testPath && matrix.testPath !== this.snapshot.selectedTestPath) {
+        if (!this.snapshot.tests.some(test => test.relativePath === matrix!.testPath)) await this.refreshTests();
+        if (this.snapshot.tests.some(test => test.relativePath === matrix!.testPath)) await this.openTest(matrix.testPath);
+      }
+      if (this.disposed || this.snapshot.running) return;
+      this.matrixCallLines = storedTestCallLines(this.snapshot.selectedTestSource);
+      this.matrixUntilLine = undefined;
+      this.laneSignature = "";
+      testRecorder.beginRun();
+      this.update({ agentRun: true, matrix, selectedLane: matrix.lanes[0]?.runId ?? "", error: null });
+      this.onAgentRecording?.();
+      this.showLane();
+      return;
+    }
+    // Only the run the panel adopted: a newer one replaces it from the top.
+    if (matrix.matrixId !== this.snapshot.matrix?.matrixId) { this.update({ agentRun: false }); testRecorder.invalidate(); return; }
+    this.update({ matrix, selectedLane: matrix.lanes.some(lane => lane.runId === this.snapshot.selectedLane) ? this.snapshot.selectedLane : (matrix.lanes[0]?.runId ?? "") });
+    this.showLane();
+    if (!running) {
+      this.update({ agentRun: false });
+      testRecorder.invalidate();
+      // The agent may have saved, branched or pinned a test while the run was going.
+      void this.refreshTests();
+    }
+  }
+
+  /**
+   * A test or its pinned app was written by someone else (the agent's branch_line, set_target,
+   * wait_for_app pin, a save). Reload the list, which carries the pins, and the open test's source,
+   * unless the user has unsaved edits to it.
+   */
+  private followStoredTests(revision: number) {
+    const previous = this.storedTestsRevision;
+    this.storedTestsRevision = revision;
+    if (previous < 0 || revision === previous) return;
+    const { selectedTestPath, selectedTestStaged, loadingTest } = this.snapshot;
+    void this.refreshTests().then(() => {
+      if (selectedTestPath && !selectedTestStaged && !loadingTest && this.snapshot.selectedTestPath === selectedTestPath && !this.snapshot.selectedTestStaged) void this.reloadSelectedTest();
+    });
+  }
+
+  /** Re-reads the open test's stored source in place, keeping the preview on screen meanwhile. */
+  private async reloadSelectedTest() {
+    const { projectPath, selectedTestPath: relativePath } = this.snapshot;
+    if (!projectPath || !relativePath) return;
+    const revision = ++this.testReadRevision;
+    try {
+      const response = await this.call("mobile_testing_read_file", { projectPath, relativePath }, 15_000);
+      if (this.disposed || revision !== this.testReadRevision || this.snapshot.selectedTestPath !== relativePath || this.snapshot.selectedTestStaged) return;
+      const data = object(response.structuredContent);
+      this.update({ selectedTestSource: text(data?.source), selectedTestOriginalHash: text(data?.originalHash), selectedTestStaged: data?.staged === true });
+      countUiEvent("ui.testing.test_preview_reload");
+    } catch { /* the next change reloads it */ }
+  }
+
   private async readAgentState() {
+    await this.readAgentRun();
     let data: Record<string, unknown>;
     try {
       const response = await this.call("mobile_testing_agent_state", {}, 5_000);
@@ -925,14 +1432,18 @@ export class TestingPanel {
       return;
     }
     if (this.disposed) return;
+    await this.applyProjectRequest(data);
+    if (this.disposed) return;
     const revision = typeof data.revision === "number" ? data.revision : 0;
     const status = data.status === "recording" || data.status === "finished" || data.status === "aborted" ? data.status : "idle";
     const steps = (Array.isArray(data.steps) ? data.steps : []) as RecordedStep[];
     const agent: TestingAgentView = {
       active: data.active === true, status,
       title: text(data.title), goal: text(data.goal), steps: steps.length, note: text(data.note),
-      draftId: text(data.draftId),
+      draftId: text(data.draftId), savedPath: text(data.savedPath),
     };
+    this.followStoredTests(typeof data.storedTestsRevision === "number" ? data.storedTestsRevision : 0);
+    const savedPath = agent.savedPath;
     const first = this.agentRevision < 0;
     const unchanged = !first && revision === this.agentRevision;
     this.agentRevision = revision;
@@ -961,17 +1472,27 @@ export class TestingPanel {
       // The server kept the finished flow, so the panel adopts that draft rather than autosaving
       // a second copy of the same steps a moment later.
       this.draftRevision = testRecorder.getSnapshot().revision;
-      this.draftFlowId = agent.draftId ? testRecorder.getSnapshot().flowId : "";
-      this.update({ savedRevision: -1, savedPath: "", ...(agent.draftId ? { draftId: agent.draftId } : {}) });
-      void this.refreshDrafts();
+      if (savedPath) {
+        // Testing Studio: finishing wrote the test, so there is no draft to adopt. The steps are in the
+        // stored list now, and the recorder's copy is marked saved so autosave does not keep it again.
+        this.draftFlowId = "";
+        this.update({ savedRevision: testRecorder.getSnapshot().revision, savedPath: `Testing Studio/${savedPath}` });
+        testRecorder.stop();
+        void this.refreshTests();
+        void this.refreshDrafts();
+      } else {
+        this.draftFlowId = agent.draftId ? testRecorder.getSnapshot().flowId : "";
+        this.update({ savedRevision: -1, savedPath: "", ...(agent.draftId ? { draftId: agent.draftId } : {}) });
+        void this.refreshDrafts();
+      }
     }
   }
 
   /** The user's Stop button on the agent banner. The server drops the session; the steps stay. */
   async stopAgent() {
-    if (!this.snapshot.agent?.active) return;
+    if (this.snapshot.agent?.active !== true) return;
     try {
-      await this.call("mobile_testing_agent_abort", { reason: "The user stopped the recording from the Testing panel." }, 10_000);
+      await this.call("mobile_testing_agent_abort", { reason: "The user stopped the recording from the Testing Studio panel." }, 10_000);
     } catch (error) {
       this.update({ error: error instanceof Error ? error.message : String(error) });
       return;
@@ -982,17 +1503,142 @@ export class TestingPanel {
     this.pollAgent();
   }
 
+  /** An agent is recording or running tests: the mirror, the editor and the run controls are its own. */
+  get agentBusy(): boolean { return this.snapshot.agent?.active === true || this.snapshot.agentRun; }
+
   /** Whether Run has something to run: a project, steps, and no run or save already in flight. */
   get canRun(): boolean {
     // Never while an agent is recording: a run resets the app and takes the one agent-device
     // session the device allows, which is the session the recording is being read through.
-    return Boolean(this.snapshot.available && this.snapshot.projectPath && !this.snapshot.selectedTestPath && !this.snapshot.agent?.active
+    return Boolean(this.snapshot.available && this.snapshot.projectPath && !this.snapshot.selectedTestPath && !this.agentBusy
       && (testRecorder.getSnapshot().steps.length > 0 || Boolean(testRecorder.getSnapshot().sourceOverride)) && !this.snapshot.running && !this.snapshot.saving);
   }
 
   get canRunStored(): boolean {
     return Boolean(this.snapshot.available && this.snapshot.projectPath && this.snapshot.selectedTestPath
-      && !this.snapshot.loadingTest && !this.snapshot.agent?.active && !this.snapshot.running && !this.snapshot.saving);
+      && !this.snapshot.loadingTest && !this.agentBusy && !this.snapshot.running && !this.snapshot.saving
+      && !this.storedRunHint);
+  }
+
+  /** The app a selected Testing Studio test is pinned to; undefined for project tests and unpinned tests. */
+  get storedTarget(): NonNullable<StoredTestSummary["target"]> | undefined {
+    if (this.snapshot.runtimeMode !== "bundled") return undefined;
+    return this.snapshot.tests.find(test => test.relativePath === this.snapshot.selectedTestPath)?.target;
+  }
+
+  /** Every app id the selected Testing Studio test has, per platform: the recorded one and any added one. */
+  get storedApps(): { ios?: string; android?: string } {
+    const stored = this.storedTarget;
+    return stored ? { ...stored.apps, [stored.platform]: stored.bundleId } : {};
+  }
+
+  /** The selected Testing Studio test's app on one platform, if it has one there. */
+  storedAppOn(platform: "ios" | "android"): { platform: "ios" | "android"; bundleId: string } | undefined {
+    const bundleId = this.storedApps[platform];
+    return bundleId ? { platform, bundleId } : undefined;
+  }
+
+  /** The platform of the mirrored device, when it is one Testing Studio can record and run on. */
+  get mirroredPlatform(): "ios" | "android" | undefined {
+    const { device } = this.deviceApps.getSnapshot();
+    return device && isRecordableDevice(device) ? recordablePlatform(device) : undefined;
+  }
+
+  /** The app in front on the mirrored device, as a Testing Studio target. */
+  get foregroundTarget(): NonNullable<StoredTestSummary["target"]> | undefined {
+    const { device, foregroundApp } = this.deviceApps.getSnapshot();
+    if (!device || !isRecordableDevice(device)) return undefined;
+    const platform = recordablePlatform(device);
+    if (foregroundApp?.bundleId) return { platform, bundleId: foregroundApp.bundleId };
+    // An Apple app in front reaches the panel as a pid alone; the server named it when it read the targets.
+    const read = this.noProject && foregroundApp?.pid && this.studioForegroundKey === `pid:${foregroundApp.pid}` && this.snapshot.targetSource === "foreground" ? this.target : undefined;
+    return read?.bundleId && read.platform === platform ? { platform, bundleId: read.bundleId } : undefined;
+  }
+
+  /** Why Run is unavailable for a selected Testing Studio test, or "": it needs a pinned app or one in front. */
+  get storedRunHint(): string {
+    if (this.snapshot.runtimeMode !== "bundled" || !this.snapshot.selectedTestPath) return "";
+    const pinned = this.storedTarget;
+    if (!pinned) return this.foregroundTarget ? "" : "This test has no app yet. Open the app in the mirror to run it; Testing Studio will pin it.";
+    const mirrored = this.mirroredPlatform;
+    if (mirrored && !this.storedAppOn(mirrored)) {
+      const recorded = platformLabel(pinned.platform), other = platformLabel(mirrored);
+      const back = pinned.platform === "ios" ? "an iOS simulator" : "an Android emulator";
+      // With this platform's app in front, the note carries the Add button; without it, the app has to be opened first.
+      return this.foregroundTarget
+        ? `This test was recorded on ${recorded} and has no ${other} app yet. Add ${this.foregroundTarget.bundleId}, the app in front, to run it here too.`
+        : `This test was recorded on ${recorded} and has no ${other} app yet. Open the app on this ${other} device to add it, or mirror ${back}.`;
+    }
+    // `deviceApps.apps` lists running apps, not installed ones, so it cannot say the pinned app is
+    // missing; Run opens it and reports a launch failure if it really is not on the device.
+    return "";
+  }
+
+  /** Whether the run hint can offer to add the app in front as this test's app on the mirrored platform. */
+  get canAddForegroundApp(): boolean {
+    const pinned = this.storedTarget, front = this.foregroundTarget;
+    return this.snapshot.runtimeMode === "bundled" && Boolean(pinned && front) && front!.platform !== pinned!.platform && !this.storedAppOn(front!.platform) && !this.snapshot.running;
+  }
+
+  /** The platform and bundle id sent with a save, so a Testing Studio test is pinned to the app it was recorded against. */
+  private pinArguments() {
+    // Testing Studio's `targets` can lag the mirror, so the app actually in front wins.
+    const target = this.snapshot.runtimeMode === "bundled" ? this.foregroundTarget ?? this.target : this.target;
+    return this.snapshot.runtimeMode === "bundled" && (target?.platform === "ios" || target?.platform === "android") && target.bundleId
+      ? { platform: target.platform, bundleId: target.bundleId } : {};
+  }
+
+  /**
+   * Pins the selected Testing Studio test to the app in front. On the recorded platform it replaces that
+   * app; on the other platform it adds the app there, so the test runs on both.
+   */
+  async repinStoredTest() {
+    const { projectPath, selectedTestPath: relativePath } = this.snapshot;
+    const target = this.foregroundTarget;
+    if (!projectPath || !relativePath || !target || this.snapshot.running) return;
+    const stored = this.storedTarget;
+    const mode = stored && stored.platform !== target.platform ? "add" : "replace";
+    try {
+      await this.call("mobile_testing_set_target", { projectPath, relativePath, ...target, mode }, 10_000);
+      await this.refreshTests();
+    } catch (error) {
+      this.update({ error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  private bundledRunArguments(pinned?: { platform: "ios" | "android"; bundleId: string }) {
+    if (this.snapshot.runtimeMode !== "bundled") return {};
+    const target = pinned ?? this.target;
+    return {
+      ...(target?.platform === "ios" || target?.platform === "android" ? { platform: target.platform } : {}),
+      ...(target?.bundleId ? { bundleId: target.bundleId } : {}),
+      ...(this.snapshot.modelPreference ? { model: this.snapshot.modelPreference } : {}),
+    };
+  }
+
+  /** Deterministic tests stay model-free; an agent step opens the chooser before any run starts. */
+  private hasBundledModel(source: string, action: NonNullable<TestingPanel["pendingModelAction"]>): boolean {
+    if (this.snapshot.runtimeMode !== "bundled" || !/\bagent\s*\.\s*(act|assert|waitFor|extract)\s*\(/.test(source)) return true;
+    if (this.snapshot.modelPreference) return true;
+    if (!this.pendingModelAction) this.pendingModelAction = action;
+    this.update({ modelPickerOpen: true });
+    return false;
+  }
+
+  private finishRun(data: Record<string, unknown>, calls: readonly number[]) {
+    const steps = (Array.isArray(data.steps) ? data.steps : []).flatMap(item => {
+      const step = object(item);
+      if (!step) return [];
+      const line = typeof step.line === "number" ? step.line : typeof step.stepIndex === "number" ? calls[step.stepIndex] : undefined;
+      if (line === undefined || line <= 0) return [];
+      return [{ line, status: text(step.status), ...(text(step.error) ? { error: text(step.error) } : {}) }];
+    });
+    const status = text(data.status) || "failed";
+    testRecorder.finishRun({ status, steps,
+      ...(text(data.error) ? { error: text(data.error) } : {}),
+      ...(text(data.output) ? { output: text(data.output) } : {}),
+      ...(typeof data.durationMs === "number" && Number.isFinite(data.durationMs) ? { durationMs: data.durationMs } : {}) });
+    countUiEvent(status === "passed" ? "ui.testing.run_passed" : "ui.testing.run_failed");
   }
 
   /** Runs a temporary sibling copy so Play and Run never save the working copy implicitly. */
@@ -1001,8 +1647,28 @@ export class TestingPanel {
     const { projectPath, selectedTestPath: relativePath, selectedTestSource: source } = this.snapshot;
     const untilSource = untilLine === undefined ? source : storedTestUntilSource(source, untilLine);
     if (untilSource === undefined) return;
+    if (!this.hasBundledModel(untilSource, { kind: "stored", ...(untilLine === undefined ? {} : { untilLine }) })) return;
+    // A Testing Studio test runs against the app it is pinned to, never whichever app is in front. A test
+    // with no app yet takes the one in front and keeps it, so later runs are pinned.
+    // A test with an app on both platforms runs the one for the mirrored device's platform.
+    const stored = this.storedTarget;
+    const mirrored = this.mirroredPlatform;
+    const pinned = stored && mirrored ? this.storedAppOn(mirrored) : stored;
+    const runTarget = pinned ?? (stored ? undefined : this.foregroundTarget);
+    if (this.snapshot.runtimeMode === "bundled" && !runTarget) return;
+    if (this.runsOnMatrix) { await this.runMatrix({ relativePath, source: untilSource, ...(untilLine === undefined ? {} : { untilLine }), callLines: storedTestCallLines(source) }); return; }
     this.update({ running: true, error: null });
+    if (pinned && this.deviceApps.getSnapshot().foregroundApp?.bundleId !== pinned.bundleId) {
+      try {
+        const device = this.deviceApps.getSnapshot().device;
+        if (device) await this.call("mobile_launch_app", { platform: pinned.platform, deviceId: device.udid, bundleId: pinned.bundleId }, 120_000);
+      } catch (error) {
+        this.update({ running: false, error: `Could not open ${pinned.bundleId}: ${error instanceof Error ? error.message : String(error)}` });
+        return;
+      }
+    }
     testRecorder.clearRun();
+    this.runPlatform = runTarget?.platform ?? mirrored;
     testRecorder.beginRun(untilLine);
     if (untilLine !== undefined) countUiEvent("ui.testing.run_until");
     const startedAt = performance.now(), telemetryContext = getUiTelemetryAttributes();
@@ -1013,20 +1679,16 @@ export class TestingPanel {
     try {
       await this.stageWrite;
       await this.call("mobile_testing_release_device", {}, 30_000).catch(() => undefined);
+      // The server pins before the run starts, so the badge shows it now rather than when the run ends.
+      if (!stored && runTarget && this.snapshot.runtimeMode === "bundled") this.notePinned(relativePath, runTarget);
       const response = await this.call("mobile_testing_run_test", {
         projectPath, relativePath, untilSource,
         ...(this.snapshot.configPath ? { configPath: this.snapshot.configPath } : {}),
         ...(this.snapshot.targetName ? { target: this.snapshot.targetName } : {}),
+        ...this.bundledRunArguments(runTarget),
+        ...(!stored && runTarget ? { pin: true } : {}),
       }, 15 * 60_000);
-      const data = object(response.structuredContent) ?? {};
-      const steps = (Array.isArray(data.steps) ? data.steps : []).map(entry => object(entry))
-        .filter((entry): entry is Record<string, unknown> => entry !== null)
-        .map(entry => ({ line: typeof entry.line === "number" ? entry.line : 0, status: text(entry.status), ...(text(entry.error) ? { error: text(entry.error) } : {}) }))
-        .filter(step => step.line > 0);
-      testRecorder.finishRun({ status: text(data.status) || "failed", steps,
-        ...(text(data.output) ? { output: text(data.output) } : {}),
-        ...(typeof data.durationMs === "number" ? { durationMs: data.durationMs } : {}) });
-      countUiEvent(text(data.status) === "passed" ? "ui.testing.run_passed" : "ui.testing.run_failed");
+      this.finishRun(object(response.structuredContent) ?? {}, callLines);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       testRecorder.failRun(message);
@@ -1037,17 +1699,16 @@ export class TestingPanel {
       if (getUiTelemetryAttributes() === telemetryContext) recordUiTiming("ui.testing.run", performance.now() - startedAt);
       this.update({ running: false });
       testRecorder.invalidate();
+      if (!stored && runTarget) void this.refreshTests();
     }
   }
 
   /**
    * Runs the recorded test against the device, and marks the preview with what the runner reports.
    *
-   * **Run saves.** The runner runs a file, so there has to be one; running a copy in a temporary
-   * path would run a test whose failures point at lines of a file the user cannot open. It saves
-   * through the same path the Save button uses, which means an existing file is still never
-   * replaced without being asked about — the overwrite question stops the run and resumes it from
-   * the answer.
+   * **Run does not save.** The runner receives the exact emitted preview and stages it in an
+   * isolated temporary workspace. Save remains an independent action and a run cannot create or
+   * replace a project test.
    *
    * **Run releases the device first.** The recorder holds the one agent-device session the device
    * allows, so a run started while it is held fails with `Device is already in use by session
@@ -1068,13 +1729,10 @@ export class TestingPanel {
     const until = options.untilStepId ? testRecorder.emittedThrough(options.untilStepId) : undefined;
     // The step went while the pointer was on its play button; there is nothing to run up to.
     if (options.untilStepId && !until) return;
-    if (!until && (this.dirty || !this.snapshot.savedPath)) {
-      await this.saveTest();
-      // The file is already there and the user has not answered yet; `saveTest(true)` resumes.
-      if (this.snapshot.overwritePath) { this.update({ pendingRun: true }); return; }
-      if (this.dirty) return;
-    }
+    const previewSource = until?.source ?? testRecorder.source;
+    if (!this.hasBundledModel(previewSource, { kind: "recording", options })) return;
     const relativePath = this.relativePath;
+    if (this.runsOnMatrix) { await this.runMatrix({ relativePath, source: previewSource, ...(until ? { untilLine: until.untilLine } : {}) }); return; }
     this.update({ running: true, error: null, pendingRun: false });
     testRecorder.clearRun();
     // A recording left armed would read the tree mid-run and take the session straight back.
@@ -1090,32 +1748,18 @@ export class TestingPanel {
     const startedAt = performance.now(), telemetryContext = getUiTelemetryAttributes();
     // The run's own tool call is one request and one response, so progress comes from polling a
     // second tool while it is in flight. See `mobile_testing_run_progress`.
-    const poll = setInterval(() => { void this.pollRunProgress(); }, 400);
+    const callLines = testRecorder.getSnapshot().sourceOverride !== undefined
+      ? storedTestCallLines(testRecorder.source) : testRecorder.emitted.calls;
+    const poll = setInterval(() => { void this.pollRunProgress(callLines); }, 400);
     try {
       const response = await this.call("mobile_testing_run_test", {
         projectPath: this.snapshot.projectPath, relativePath,
         ...(this.snapshot.configPath ? { configPath: this.snapshot.configPath } : {}),
         ...(this.snapshot.targetName ? { target: this.snapshot.targetName } : {}),
-        ...(until ? { untilSource: until.source } : {}),
+        untilSource: previewSource,
+        ...this.bundledRunArguments(),
       }, 15 * 60_000);
-      const data = object(response.structuredContent) ?? {};
-      const steps = (Array.isArray(data.steps) ? data.steps : []).map(entry => object(entry))
-        .filter((entry): entry is Record<string, unknown> => entry !== null)
-        .map(entry => ({
-          line: typeof entry.line === "number" ? entry.line : 0,
-          status: text(entry.status),
-          ...(text(entry.error) ? { error: text(entry.error) } : {}),
-        }))
-        .filter(step => step.line > 0);
-      // The runner's own number for the run, which is not the timing below: that one brackets the
-      // whole call, spawning the CLI and resolving the project included.
-      const durationMs = typeof data.durationMs === "number" && Number.isFinite(data.durationMs) ? data.durationMs : undefined;
-      testRecorder.finishRun({
-        status: text(data.status) || "failed", steps,
-        ...(text(data.output) ? { output: text(data.output) } : {}),
-        ...(durationMs === undefined ? {} : { durationMs }),
-      });
-      countUiEvent(text(data.status) === "passed" ? "ui.testing.run_passed" : "ui.testing.run_failed");
+      this.finishRun(object(response.structuredContent) ?? {}, callLines);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       testRecorder.failRun(message);
@@ -1130,6 +1774,225 @@ export class TestingPanel {
     }
   }
 
+  // ---- Test matrix: the same test on several devices at once -------------------------------------------------
+
+  /**
+   * Both runtimes can run on several devices: the bundled runner pins each lane's device in its own
+   * config, and a project's lanes run its own config's target with the device rewritten in a copy.
+   */
+  get matrixEnabled(): boolean { return this.snapshot.available; }
+
+  /** The ticked devices that still exist. Zero when the matrix is unavailable. */
+  get matrixSelection(): MatrixDeviceOption[] {
+    if (!this.matrixEnabled) return [];
+    const only = this.matrixPlatform;
+    const known = new Map(this.snapshot.matrixDevices.filter(device => !only || device.platform === only).map(device => [device.deviceId, device]));
+    return this.snapshot.matrixSelected.flatMap(id => known.get(id) ?? []);
+  }
+
+  /**
+   * The one platform a pinned Testing Studio test can run on: it was recorded against one app on one
+   * platform and has no app added for the other. Undefined when any platform may run.
+   */
+  get matrixPlatform(): "ios" | "android" | undefined {
+    const stored = this.snapshot.runtimeMode === "bundled" ? this.storedTarget : undefined;
+    return stored && !stored.apps?.[stored.platform === "ios" ? "android" : "ios"] ? stored.platform : undefined;
+  }
+
+  /** How many devices Run would use. */
+  get matrixRunCount(): number { return this.matrixSelection.length; }
+
+  /**
+   * Whether Run goes to the ticked devices rather than the mirror. Any tick does, except one tick on
+   * the mirrored device itself, which runs the plain way there (its preview and failure marks).
+   * One ticked device that is not the mirror must run there, never on the mirror.
+   */
+  get runsOnMatrix(): boolean {
+    const selection = this.matrixSelection;
+    if (selection.length !== 1) return selection.length > 1;
+    return selection[0]!.deviceId !== this.deviceApps.getSnapshot().device?.udid;
+  }
+
+  private matrixTargetOrder(): TestingTargetOption[] {
+    const selected = this.target;
+    return selected ? [selected, ...this.snapshot.targets.filter(entry => entry !== selected)] : this.snapshot.targets;
+  }
+
+  /** Project mode: the config target each platform's lanes run, so the server uses the selected one. */
+  private matrixProjectTargets(): { ios?: string; android?: string } {
+    const targets: { ios?: string; android?: string } = {};
+    for (const entry of this.matrixTargetOrder()) {
+      const platform = entry.platform;
+      if ((platform === "ios" || platform === "android") && entry.bundleId && !targets[platform]) targets[platform] = entry.name;
+    }
+    return targets;
+  }
+
+  /** The app a run would drive, per platform: the open test's own app first, then the project's targets. */
+  matrixApps(): { ios?: string; android?: string } {
+    // A pinned Testing Studio test runs only the apps it has; the project's targets are not its apps.
+    if (this.snapshot.runtimeMode === "bundled" && this.storedTarget) return this.storedApps;
+    const apps: { ios?: string; android?: string } = {};
+    // The selected target first, so its app wins its platform; the server picks the same target.
+    for (const entry of this.matrixTargetOrder()) {
+      const platform = entry.platform;
+      if ((platform === "ios" || platform === "android") && entry.bundleId && !apps[platform]) apps[platform] = entry.bundleId;
+    }
+    // A project's lanes run its config's targets, never the app in front on the mirror.
+    if (this.snapshot.runtimeMode !== "bundled") return apps;
+    const own: StoredTestSummary["target"] = this.snapshot.selectedTestPath ? (this.storedTarget ?? this.foregroundTarget)
+      : this.target?.platform && this.target.bundleId && (this.target.platform === "ios" || this.target.platform === "android") ? { platform: this.target.platform, bundleId: this.target.bundleId } : this.foregroundTarget;
+    if (own) apps[own.platform] = own.bundleId;
+    return apps;
+  }
+
+  /** Whether a lane of the run on screen still holds this device. */
+  matrixBusy(deviceId: string): boolean {
+    return this.snapshot.matrix?.lanes.some(lane => !isTerminalLane(lane.state) && (lane.deviceId === deviceId || lane.resolvedDeviceId === deviceId)) ?? false;
+  }
+
+  setMatrixSelection(ids: string[]) {
+    this.update({ matrixSelected: ids });
+  }
+
+  setMatrixLimit(limit: number) {
+    const next = clampLimit(limit);
+    this.update({ matrixLimit: next });
+    writeMatrixPreferences(this.snapshot.projectPath, { limit: next });
+  }
+
+  /** Lists the simulators and emulators, and for each booted one whether the app is on it. */
+  async loadMatrixDevices() {
+    if (!this.snapshot.available || this.snapshot.matrixLoading) return;
+    this.update({ matrixLoading: true });
+    try {
+      const read = (name: string) => this.call(name, {}, 20_000).then(result => result.structuredContent, () => undefined);
+      const [simulators, emulators] = await Promise.all([read("mobile_list_simulators"), read("mobile_list_android_devices")]);
+      const devices = [...parseMatrixDevices("ios", simulators), ...parseMatrixDevices("android", emulators)];
+      const apps = this.matrixApps();
+      const checked = await Promise.all(devices.map(async device => {
+        const appId = apps[device.platform];
+        if (!device.booted || !appId) return device;
+        try {
+          const result = await this.call("mobile_list_apps", { platform: device.platform, deviceId: device.deviceId }, 20_000);
+          const list = object(result.structuredContent)?.apps;
+          return { ...device, installed: Array.isArray(list) && list.some(entry => object(entry)?.bundleId === appId) };
+        } catch { return device; }
+      }));
+      if (!this.disposed) this.update({ matrixDevices: checked });
+    } finally {
+      if (!this.disposed) this.update({ matrixLoading: false });
+    }
+  }
+
+  private matrixCallLines?: readonly number[];
+  private matrixUntilLine?: number;
+  private laneSignature = "";
+  /** The platform the run on the preview ran on: a matrix lane's, not the mirror's. */
+  private runPlatform: "ios" | "android" | undefined;
+
+  selectLane(runId: string) {
+    this.update({ selectedLane: runId });
+    this.showLane();
+  }
+
+  dismissMatrix() {
+    if (this.snapshot.running || this.snapshot.agentRun) return;
+    this.update({ matrix: null, selectedLane: "" });
+    testRecorder.clearRun();
+  }
+
+  /** Cancels one device's lane, or every lane that has not finished. */
+  async cancelMatrix(deviceId?: string) {
+    const matrix = this.snapshot.matrix;
+    if (!matrix) return;
+    try { await this.call("mobile_testing_cancel", { matrixId: matrix.matrixId, ...(deviceId ? { deviceId } : {}) }, 10_000); }
+    catch (error) { this.update({ error: error instanceof Error ? error.message : String(error) }); }
+    await this.readMatrix(matrix.matrixId);
+  }
+
+  /** Puts the chosen lane's steps on the preview, the way a single run would have. */
+  private showLane() {
+    const matrix = this.snapshot.matrix;
+    const lane = matrix?.lanes.find(entry => entry.runId === this.snapshot.selectedLane) ?? matrix?.lanes[0];
+    if (!lane) return;
+    const signature = `${lane.runId}|${lane.state}|${lane.progress.length}|${lane.result?.steps.length ?? -1}`;
+    if (signature === this.laneSignature) return;
+    this.laneSignature = signature;
+    this.runPlatform = lane.platform;
+    testRecorder.beginRun(this.matrixUntilLine);
+    testRecorder.applyRunProgress(lane.progress, this.matrixCallLines);
+    if (lane.result) testRecorder.finishRun({ status: lane.result.status, steps: lane.result.steps, ...(lane.result.error ? { error: lane.result.error } : {}),
+      ...(lane.result.output ? { output: lane.result.output } : {}), ...(lane.result.durationMs === undefined ? {} : { durationMs: lane.result.durationMs }) });
+    else if (lane.state === "error" || lane.state === "cancelled") testRecorder.failRun(lane.error ?? (lane.state === "cancelled" ? "This device's run was cancelled." : "The run failed to start."));
+  }
+
+  private async readMatrix(matrixId: string): Promise<MatrixView | null> {
+    const response = await this.call("mobile_testing_run_progress", { matrixId }, 5_000);
+    const matrix = parseMatrix(response.structuredContent);
+    if (!matrix || this.disposed) return matrix;
+    this.update({ matrix, selectedLane: matrix.lanes.some(lane => lane.runId === this.snapshot.selectedLane) ? this.snapshot.selectedLane : (matrix.lanes[0]?.runId ?? "") });
+    this.showLane();
+    return matrix;
+  }
+
+  /**
+   * Runs the same test on every ticked device: one independent lane each, started by the server,
+   * which boots a device that is off and installs the app where it is missing. The panel polls the
+   * lanes and shows the selected one's steps on the preview.
+   */
+  private async runMatrix(input: { relativePath: string; source: string; untilLine?: number; callLines?: readonly number[] }) {
+    const selection = this.matrixSelection;
+    const apps = this.matrixApps();
+    const missing = selection.find(device => !apps[device.platform]);
+    if (missing) { this.update({ error: `There is no ${missing.platform === "ios" ? "iOS bundle id" : "Android package"} for this test, so ${missing.name} cannot run it.` }); return; }
+    this.matrixCallLines = input.callLines;
+    this.matrixUntilLine = input.untilLine;
+    this.laneSignature = "";
+    this.update({ running: true, error: null, matrix: null, selectedLane: "", pendingRun: false });
+    testRecorder.clearRun();
+    // Only a recorder on one of these devices has to let go; the server releases its own session the same way.
+    if (selection.some(device => device.deviceId === testRecorder.getSnapshot().recordingDeviceId)) testRecorder.stop();
+    testRecorder.beginRun(input.untilLine);
+    const startedAt = performance.now(), telemetryContext = getUiTelemetryAttributes();
+    countUiEvent("ui.testing.matrix_run");
+    try {
+      await this.stageWrite;
+      const response = await this.call("mobile_testing_run_matrix", {
+        projectPath: this.snapshot.projectPath, relativePath: input.relativePath, untilSource: input.source,
+        devices: selection.map(device => ({ deviceId: device.deviceId, platform: device.platform, name: device.name })),
+        apps, limit: this.snapshot.matrixLimit,
+        ...(this.snapshot.runtimeMode === "project" ? { targets: this.matrixProjectTargets() } : {}),
+        ...(this.snapshot.modelPreference ? { model: this.snapshot.modelPreference } : {}),
+      }, 60_000);
+      const started = parseMatrix(response.structuredContent);
+      if (!started) throw new Error("The run did not start.");
+      this.update({ matrix: started, selectedLane: started.lanes[0]?.runId ?? "" });
+      this.showLane();
+      let failures = 0;
+      for (;;) {
+        await new Promise(resolve => setTimeout(resolve, 400));
+        if (this.disposed) return;
+        try {
+          const matrix = await this.readMatrix(started.matrixId);
+          failures = 0;
+          if (matrixFinished(matrix)) break;
+        } catch (error) { if (++failures >= 5) throw error; }
+      }
+      const passed = this.snapshot.matrix?.lanes.every(lane => lane.state === "passed");
+      countUiEvent(passed ? "ui.testing.matrix_passed" : "ui.testing.matrix_failed");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      testRecorder.failRun(message);
+      this.update({ error: message });
+      captureUiError(error, "testing.run_matrix", telemetryContext);
+    } finally {
+      if (getUiTelemetryAttributes() === telemetryContext) recordUiTiming("ui.testing.matrix_run", performance.now() - startedAt);
+      this.update({ running: false });
+      testRecorder.invalidate();
+    }
+  }
+
   dismissError() { this.update({ error: null }); }
 
   dispose() {
@@ -1138,7 +2001,12 @@ export class TestingPanel {
     // debounce may still be holding the newest step.
     this.flushing = true;
     void this.keepDraft().finally(() => { this.flushing = false; });
+    // Before `disposed` is set, so the call still goes out.
+    void this.clearReportedContext();
     this.disposed = true;
+    clearInterval(this.heartbeatTimer);
+    if (typeof window !== "undefined") { window.removeEventListener("pagehide", this.onPageHide); window.removeEventListener("focus", this.onWake); }
+    if (typeof document !== "undefined") document.removeEventListener("visibilitychange", this.onWake);
     clearTimeout(this.agentTimer);
     clearTimeout(this.draftTimer);
     this.stopWatchingDevices();

@@ -26,6 +26,18 @@ html:is([data-view="recording"], [data-view="comparison"], [data-view="tracesift
 .recording-track-metric strong { color: var(--foreground); font-weight: 600; font-variant-numeric: tabular-nums; }
 .recording-info { width: 22px; height: 22px; border-radius: 50%; color: var(--muted-foreground); }
 .recording-info-content { width: min(280px, calc(100vw - 24px)); font-size: 12px; line-height: 1.5; }
+.recording-fps-legend, .recording-fps-inspector { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; color: var(--muted-foreground); font-size: 12px; }
+.recording-fps-legend { margin: 6px 0; }
+.recording-fps-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.recording-fps-legend span::before { content: ""; width: 14px; height: 2px; background: #36a269; }
+.recording-fps-legend span + span::before { width: 7px; height: 7px; transform: rotate(45deg); background: var(--destructive); }
+.fps-frame-marker { fill: var(--destructive); cursor: pointer; }
+.fps-frame-marker text { font-size: 11px; fill: var(--foreground); paint-order: stroke; stroke: var(--background); stroke-width: 3px; }
+.recharts-wrapper:has(.fps-frame-marker:hover) .recharts-tooltip-wrapper { visibility: hidden !important; }
+.recording-fps-inspector { padding-top: 8px; border-top: 1px solid var(--border); }
+.recording-fps-inspector label { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; }
+.recording-fps-inspector select { min-width: 0; background: var(--background); color: var(--foreground); border: 1px solid var(--border); border-radius: 6px; padding: 3px 4px; }
+.recording-fps-inspector p { font-variant-numeric: tabular-nums; }
 .recording-chart { width: 100%; touch-action: pan-y; user-select: none; cursor: crosshair; }
 .recording-track[data-reveal="pending"] .recording-change-highlight { opacity: 0; }
 .recording-track[data-reveal="finished"] .recording-change-highlight { animation: recording-highlight-reveal 150ms ease-out 250ms both; }
@@ -508,6 +520,32 @@ html[data-theme="dark"] .tracesift-upload { --tracesift-blue-ink: var(--tracesif
   .tracesift-upload .upload-pane { transition: none; }
 }
 
+#simulator-panels .device-dock {
+  /* Only the dock’s minimum size should make its parent scroll. Dockview rounds overlay bounds to whole pixels. */
+  overflow: clip;
+  color-scheme: inherit;
+  background: var(--border);
+  --dv-group-view-background-color: var(--background);
+  --dv-tabs-and-actions-container-height: 34px;
+  --dv-tabs-and-actions-container-background-color: var(--muted);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--background);
+  --dv-activegroup-hiddenpanel-tab-background-color: transparent;
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--background);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: transparent;
+  --dv-activegroup-visiblepanel-tab-color: var(--foreground);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--foreground);
+  --dv-activegroup-hiddenpanel-tab-color: var(--muted-foreground);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--muted-foreground);
+  --dv-separator-border: var(--border);
+  --dv-icon-hover-background-color: var(--accent);
+  --dv-active-sash-color: var(--ring);
+  --dv-drag-over-background-color: color-mix(in srgb, var(--ring) 18%, transparent);
+  --dv-drag-over-border: 1px solid var(--ring);
+  --dv-tab-font-size: 12px;
+}
+.device-dock .dv-active-group .dv-active-tab { box-shadow: inset 0 2px var(--foreground); }
+.device-dock .dv-default-tab { cursor: grab; }
+.device-dock .dv-default-tab-content { max-width: 24ch; overflow: hidden; text-overflow: ellipsis; }
 /*
  * The recorded test's preview. A step is added by tapping the mirror, where the user is looking —
  * not at the preview — so the new lines announce themselves: they settle in, hold a tint long

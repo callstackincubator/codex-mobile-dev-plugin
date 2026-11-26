@@ -49,7 +49,7 @@ export class CpuSessions {
 
   private key(target: CpuTarget) { return `${target.platform}:${target.deviceId}:${target.bundleId}`; }
 
-  open(input: z.input<typeof cpuTargetSchema>): string {
+  open(input: z.input<typeof cpuTargetSchema>, onProcess?: (pid: number) => void): string {
     const target = cpuTargetSchema.parse(input);
     if (this.disposed) throw new ExpectedOperationError("session_closed", "The plugin server has closed.");
     if (this.sessions.size >= 8) throw new ExpectedOperationError("resource_limit", "Too many CPU sessions. Close a performance panel and retry.");
@@ -61,17 +61,18 @@ export class CpuSessions {
     const id = bytes.toString("hex");
     this.sessions.set(id, session);
     this.targets.set(key, session);
-    session.start = this.initialize(session);
+    session.start = this.initialize(session, onProcess);
     return id;
   }
 
-  private async initialize(session: Session) {
+  private async initialize(session: Session, onProcess?: (pid: number) => void) {
     const signal = session.abort.signal;
     try {
       const apps = await this.sources.apps(session.target.deviceId, signal, session.target.platform, session.target.kind);
       signal.throwIfAborted();
       const app = apps.find(candidate => candidate.bundleId === session.target.bundleId);
       if (app === undefined) throw new ExpectedOperationError("app_unavailable", "The selected app is no longer running. Open it on the selected device.");
+      onProcess?.(app.pid);
       const startedAt = performance.now();
       session.buffer.timeOrigin = startedAt / 1000;
       session.monitor = await this.sources.monitor({ target: session.target, pid: app.pid, signal, onSample: reading => {

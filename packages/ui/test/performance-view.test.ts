@@ -7,6 +7,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { PerformancePanel } from "../src/performance-panel.ts";
 import type { CpuSample } from "../../shared/src/cpu.ts";
+import { recordingWithFramesFixture } from "../../test-support/recording-fixtures.ts";
 
 test("performance tracks share immediate zoom, fill a fixed scale, and preserve scrolled history", async t => {
   const dom = new JSDOM('<div id="root"></div>', { pretendToBeVisual: true });
@@ -63,7 +64,7 @@ test("performance tracks share immediate zoom, fill a fixed scale, and preserve 
   const output = resolve(directory, "performance-view.mjs");
   await build({ entryPoints: ["packages/ui/src/components/performance-view.tsx"], outfile: output,
     bundle: true, format: "esm", platform: "node", jsx: "automatic",
-    external: ["react", "react/*", "react-dom", "react-dom/*", "@legendapp/list/react", "lucide-react", "@base-ui/react/*", "radix-ui"],
+    external: ["react", "react/*", "react-dom", "react-dom/*", "recharts", "@legendapp/list/react", "lucide-react", "@base-ui/react/*", "radix-ui"],
     plugins: [{ name: "observe-chart-inputs", setup(builder) {
       builder.onLoad({ filter: /PerformanceAreaChart\.tsx$/ }, () => ({ loader: "tsx", contents: `
         import { useContext } from "react";
@@ -240,4 +241,32 @@ test("performance tracks share immediate zoom, fill a fixed scale, and preserve 
   assertRightFade(true);
   await click('[aria-label="Reset test range"]');
   assertRightFade(false);
+
+  const { fps } = recordingWithFramesFixture();
+  const reading = fps.samples[12];
+  const timeline = reading.frameTimeline;
+  assert.ok(timeline);
+  const [onTime, late, unknown, dropped] = timeline.frames;
+  const initial = { ...reading, frameTimeline: { ...timeline, frames: [onTime, unknown, dropped] } };
+  const later = { ...reading, time: reading.time + 1, frameTimeline: { ...timeline, intervalEndNs: "14000000000",
+    frames: [{ ...late, token: "6", startTimeNs: "13190000000", endTimeNs: "13200000000" }] } };
+  snapshot = { ...snapshot, platform: "android", fpsSamples: [fps.samples[0], initial, later] };
+  await publish([]);
+  const inspector = dom.window.document.querySelector<HTMLElement>('[aria-label="Android display frames"]');
+  const picker = inspector?.querySelector("select");
+  assert.ok(inspector && picker);
+  await act(async () => {
+    picker.value = "marker-0";
+    picker.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  });
+  assert.match(inspector.textContent, /12\.900 s · Dropped display frame/);
+  // Readback inserts a late frame ahead of the selection. The first interval has also aged out.
+  snapshot = { ...snapshot, fpsSamples: [reading, later] };
+  await publish([]);
+  assert.equal(picker.value, "marker-1");
+  assert.match(inspector.textContent, /12\.900 s · Dropped display frame/);
+  snapshot = { ...snapshot, fpsSamples: [later] };
+  await publish([]);
+  assert.equal(picker.value, "marker-0");
+  assert.match(inspector.textContent, /13\.200 s · Late display frame/);
 });

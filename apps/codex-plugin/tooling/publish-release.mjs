@@ -3,7 +3,7 @@ import { publishFromCommandLine, publishPluginRelease } from "../../../tooling/r
 
 // Codex installs the release from this branch as a Git marketplace.
 const release = {
-  manifestPath: ".codex-plugin/plugin.json", requiredFiles: ["dist/server.mjs", "scripts/launch-mcp.sh", ".mcp.json"],
+  manifestPath: ".codex-plugin/plugin.json", requiredFiles: ["dist/server.mjs", "scripts/launch-mcp", "scripts/launch-mcp.cmd", ".mcp.json"],
   branch: "release/latest", pluginPath: "plugins/mobile-dev", catalogPath: ".agents/plugins/marketplace.json",
   catalog: manifest => pluginMarketplace(manifest.name, true),
 };

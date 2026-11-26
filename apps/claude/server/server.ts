@@ -9,9 +9,13 @@ import { downloadedPanelRuntime, panelRuntimeReleaseSchema, usePanelRuntime } fr
 // which Claude Code shows in a browser beside the chat. The panel never renders inline,
 // even in the desktop app's Code tab, which renders MCP Apps: every host gets the
 // browser link, so the device stays beside the chat. The plugin directory's file limit
-// leaves the panel's native parts out of the package; it pins their release archive in
-// panel-runtime.json, which the server downloads on first use. Without that file, as in
-// host tests, the parts sit beside the server.
+// applies to the panel's native parts and the Testing Studio runner. The package pins
+// their release archive in panel-runtime.json, which the server downloads on first use.
 const pinned = await readFile(new URL("./panel-runtime.json", import.meta.url), "utf8").catch(() => undefined);
-if (pinned !== undefined) usePanelRuntime(downloadedPanelRuntime(panelRuntimeReleaseSchema.parse(JSON.parse(pinned))));
+if (pinned !== undefined) {
+  const metadata: unknown = JSON.parse(pinned);
+  const release = panelRuntimeReleaseSchema.parse(metadata);
+  const download = downloadedPanelRuntime(release);
+  usePanelRuntime(download.ensure);
+}
 await runStdioServer({ panel: createPanel({ inline: false }), features: [agentDeviceTools(readAgentDeviceCatalog()), browserPanel({ always: true })] });

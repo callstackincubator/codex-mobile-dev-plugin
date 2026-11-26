@@ -10,7 +10,6 @@ import { flushSync } from "react-dom";
 import { Workspace } from "./components/workspace";
 import { DisplayModeButton } from "./components/display-mode-button";
 import { ContextAttachments } from "./components/context-attachments";
-import type { DeviceLayout } from "@mobile-dev/ui/device-layout.ts";
 import { panelTargetSchema } from "@mobile-dev/shared/panel-target.ts";
 import { DeviceWorkspace } from "@mobile-dev/ui/device-workspace.ts";
 import { WorkspaceTools } from "@mobile-dev/ui/workspace-tools.ts";
@@ -36,19 +35,18 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
   const reactRoot = createRoot(document.getElementById("root")!);
   let automaticTool: ToolName | undefined;
   let automaticToolRevision = 0;
-  function renderWorkspace(automaticLayout?: DeviceLayout) {
+  const devices = new DeviceWorkspace(app, panels);
+  function renderWorkspace() {
     const workspace = <ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reopen the panel to try again.</p>}>
-      <Workspace panels={panels} recordingController={recordingController} banner={extension?.banner} displayModeControl={options.displayModeControl === false ? undefined : <DisplayModeButton app={app} />} contextControl={<ContextAttachments context={panels.context} />} automaticLayout={automaticLayout} automaticTool={automaticTool} automaticToolRevision={automaticToolRevision} onLayout={changeLayout} />
+      <Workspace panels={panels} recordingController={recordingController} banner={extension?.banner} displayModeControl={options.displayModeControl === false ? undefined : <DisplayModeButton app={app} />} contextControl={<ContextAttachments context={panels.context} />} devices={devices} automaticTool={automaticTool} automaticToolRevision={automaticToolRevision} />
     </ErrorBoundary>;
     reactRoot.render(workspace);
   }
   flushSync(() => { renderWorkspace(); });
 
-  const devices = new DeviceWorkspace(app, panels, { onAutomaticLayout: renderWorkspace, connectionFailed });
+  panels.testing.setMirrorFocus(platform => devices.focusPlatform(platform));
+  panels.testing.setMirrorDevice((platform, deviceId) => devices.showDevice(platform, deviceId));
   panels.logs.setLayout(document.documentElement.dataset.view === "workspace");
-  devices.changeLayout("none");
-
-  function changeLayout(layout: DeviceLayout, manual = false) { devices.changeLayout(layout, manual); }
 
   let stopLiveReload = () => {};
   let disposingUI: Promise<void> | undefined;

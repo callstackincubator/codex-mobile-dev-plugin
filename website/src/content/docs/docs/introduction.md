@@ -23,7 +23,7 @@ The agent opens Mobile Dev, selects a suitable installed device, and uses the pr
 | Install or relaunch an app, open a deep link, change permissions, or test another language | [App control](/docs/app-control) |
 | Trace screens through their source files and packages without running the app | [App Intelligence](/docs/app-intelligence) |
 | Map an app's screens and navigation, capture each screen, and record a path to one | [App Flow](/docs/app-flow) |
-| Record, edit, and run deterministic e2e tests from a simulator or emulator | [Testing](/docs/testing) |
+| Record, edit, and run deterministic e2e tests from a simulator or emulator | [Testing Studio](/docs/testing) |
 | Read native and Metro messages together and send a log to your agent | [Logs](/docs/logs) |
 | Record CPU, memory, and supported device Display FPS; select and compare ranges | [Performance](/docs/performance) |
 | Explore a CPU or React profile and investigate a measured finding | [Profiles](/docs/profiles) |

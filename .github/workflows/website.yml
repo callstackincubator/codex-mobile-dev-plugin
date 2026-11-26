@@ -28,7 +28,7 @@ jobs:
         working-directory: website
     env:
       SITE_URL: https://incubator.callstack.com
-      SITE_BASE: /codex-mobile-dev-plugin
+      SITE_BASE: /mobile-dev
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

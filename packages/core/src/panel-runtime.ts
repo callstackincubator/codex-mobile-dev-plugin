@@ -10,11 +10,13 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { z } from "zod";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
+import type { TestingRuntimeProgress } from "@mobile-dev/shared/testing-runtime.ts";
 import { captureServerError, recordPanelRuntime } from "./telemetry.ts";
 
-/** The panel's native parts, as the runtime archive and dist/ lay them out (tooling's PANEL_PARTS). */
-export const PANEL_RUNTIME_PARTS = ["baguette", "serve-emu", "ios-mirror", "ios-mirror-service.mjs", "resource-saving"] as const;
-export type PanelRuntimeFile = "baguette/Baguette" | "serve-emu/src/cli.mjs" | "ios-mirror-service.mjs" | "resource-saving/simslim" | "resource-saving/avdslim";
+/** The parts in the downloadable runtime, as laid out in dist/. */
+export const PANEL_RUNTIME_PARTS = ["baguette", "serve-emu", "ios-mirror", "ios-mirror-service.mjs", "resource-saving", "e2e"] as const;
+export type PanelRuntimeFile = "baguette/Baguette" | "serve-emu/src/cli.mjs" | "ios-mirror-service.mjs" | "resource-saving/simslim" | "resource-saving/avdslim" | "e2e";
+const E2E_CLI = "e2e/node_modules/e2e/dist/cli/bin.js";
 
 // Bundled, this module is server.mjs or a chunk in dist/, beside the parts.
 let locate: () => Promise<string> = async () => fileURLToPath(new URL("./", import.meta.url));
@@ -39,8 +41,9 @@ export const panelRuntimeReleaseSchema = z.object({
 export type PanelRuntimeRelease = z.infer<typeof panelRuntimeReleaseSchema>;
 
 export class PanelRuntimeUnavailableError extends ExpectedOperationError {
-  constructor(detail: string) {
-    super("download_failed", `Mobile Dev could not download its device runtime: ${detail} Check the internet connection, then open Mobile Dev again.`);
+  constructor(detail: string, testingOnly: boolean) {
+    const runtime = testingOnly ? "Testing Studio runtime" : "device and testing runtime";
+    super("download_failed", `Mobile Dev could not install its ${runtime}: ${detail} Check the internet connection, then try again.`);
   }
 }
 
@@ -56,8 +59,10 @@ const installed = /^\d+\.\d+\.\d+(?:-[\da-zA-Z.-]+)?-[0-9a-f]{12}$/;
 const run = promisify(execFile);
 
 /** The persistent folder for downloaded runtimes: the plugin's data folder in Claude Code, else the user's cache. */
-export function panelRuntimeDirectory(env: NodeJS.ProcessEnv = process.env) {
-  return env.CLAUDE_PLUGIN_DATA ? join(env.CLAUDE_PLUGIN_DATA, "panel-runtime") : join(homedir(), "Library", "Caches", "mobile-dev", "panel-runtime");
+export function panelRuntimeDirectory(env: NodeJS.ProcessEnv = process.env, folder = "panel-runtime") {
+  if (folder === "panel-runtime" && env.CLAUDE_PLUGIN_DATA) return join(env.CLAUDE_PLUGIN_DATA, "panel-runtime");
+  const cache = process.platform === "win32" ? env.LOCALAPPDATA || join(homedir(), "AppData", "Local") : join(homedir(), "Library", "Caches");
+  return join(cache, "mobile-dev", folder);
 }
 
 /**
@@ -65,50 +70,65 @@ export function panelRuntimeDirectory(env: NodeJS.ProcessEnv = process.env) {
  * use. Each version extracts into its own folder, which appears only once complete, so
  * servers of other sessions and releases can share the directory.
  */
-export function downloadedPanelRuntime(release: PanelRuntimeRelease, directory = panelRuntimeDirectory()): () => Promise<string> {
+export function downloadedPanelRuntime(release: PanelRuntimeRelease, directory = panelRuntimeDirectory(), testingOnly = false) {
   const target = join(directory, `${release.version}-${release.sha256.slice(0, 12)}`);
   let ready: Promise<string> | undefined;
-  return () => {
-    ready ??= prepare(release, directory, target).catch(error => {
+  const progress: TestingRuntimeProgress = { phase: "idle", received: 0, total: release.bytes };
+  function ensure() {
+    if (ready) return ready;
+    progress.phase = "checking";
+    progress.received = 0;
+    delete progress.message;
+    ready = prepare(release, directory, target, testingOnly, progress).then(root => {
+      progress.phase = "ready";
+      return root;
+    }, error => {
+      progress.phase = "failed";
+      progress.message = errorText(error);
       ready = undefined;
       throw error;
     });
     return ready;
-  };
+  }
+  return { target, ensure, progress };
 }
 
-async function prepare(release: PanelRuntimeRelease, directory: string, target: string): Promise<string> {
+async function prepare(release: PanelRuntimeRelease, directory: string, target: string, testingOnly: boolean, progress: TestingRuntimeProgress): Promise<string> {
   const startedAt = performance.now();
-  if (await complete(target, release)) {
-    recordPanelRuntime("cached", performance.now() - startedAt);
+  const runtime = testingOnly ? "testing" : "panel";
+  if (await complete(target, release, testingOnly)) {
+    recordPanelRuntime(runtime, "cached", performance.now() - startedAt);
     return target;
   }
-  try { await install(release, directory, target); }
+  try { await install(release, directory, target, testingOnly, progress); }
   catch (error) {
     const failure = error instanceof RuntimeFailure ? error : new RuntimeFailure("filesystem", errorText(error));
-    recordPanelRuntime("failed", performance.now() - startedAt, undefined, failure.reason);
+    recordPanelRuntime(runtime, "failed", performance.now() - startedAt, undefined, failure.reason);
     // Offline machines and unreachable releases are expected; a mismatch or a broken archive is not.
     if (failure.reason !== "network" && failure.reason !== "http") captureServerError(failure, "panel_runtime.prepare", { tags: { panel_runtime_failure: failure.reason } });
-    throw new PanelRuntimeUnavailableError(failure.message);
+    throw new PanelRuntimeUnavailableError(failure.message, testingOnly);
   }
-  recordPanelRuntime("downloaded", performance.now() - startedAt, release.bytes);
+  recordPanelRuntime(runtime, "downloaded", performance.now() - startedAt, release.bytes);
   void removeOtherVersions(directory, target).catch(() => {});
   return target;
 }
 
-async function install(release: PanelRuntimeRelease, directory: string, target: string) {
+async function install(release: PanelRuntimeRelease, directory: string, target: string, testingOnly: boolean, progress: TestingRuntimeProgress) {
   const suffix = randomBytes(6).toString("hex");
   const archive = join(directory, `.download-${suffix}.tar.gz`);
   const staging = join(directory, `.staging-${suffix}`);
   try {
     await mkdir(directory, { recursive: true });
-    await download(new URL(release.url), archive, release);
-    await extract(archive, staging);
+    progress.phase = "downloading";
+    const url = new URL(release.url);
+    await download(url, archive, release, progress);
+    progress.phase = "installing";
+    await extract(archive, staging, testingOnly);
     await writeFile(join(staging, "panel-runtime.json"), JSON.stringify(release) + "\n");
     try { await rename(staging, target); }
     catch (error) {
       // Another server finished the same version first.
-      if (await complete(target, release) === false) throw error;
+      if (await complete(target, release, testingOnly) === false) throw error;
     }
   } finally {
     await rm(archive, { force: true });
@@ -116,10 +136,13 @@ async function install(release: PanelRuntimeRelease, directory: string, target: 
   }
 }
 
-async function complete(target: string, release: PanelRuntimeRelease) {
+async function complete(target: string, release: PanelRuntimeRelease, testingOnly: boolean) {
   try {
     const marker: unknown = JSON.parse(await readFile(join(target, "panel-runtime.json"), "utf8"));
     if (typeof marker !== "object" || marker === null || ("sha256" in marker && marker.sha256 === release.sha256) === false) return false;
+    const e2eCli = join(target, E2E_CLI);
+    await access(e2eCli);
+    if (testingOnly) return true;
     await access(join(target, "baguette/Baguette"), constants.X_OK);
     for (const name of ["simslim", "avdslim"]) {
       const executable = join(target, "resource-saving", name);
@@ -129,7 +152,7 @@ async function complete(target: string, release: PanelRuntimeRelease) {
   } catch { return false; }
 }
 
-async function download(url: URL, destination: string, release: PanelRuntimeRelease) {
+async function download(url: URL, destination: string, release: PanelRuntimeRelease, progress: TestingRuntimeProgress) {
   let body: Readable;
   if (url.protocol === "file:") body = createReadStream(fileURLToPath(url));
   else {
@@ -145,6 +168,7 @@ async function download(url: URL, destination: string, release: PanelRuntimeRele
     transform(chunk: Buffer, _encoding, callback) {
       size += chunk.byteLength;
       if (size > release.bytes) return callback(new RuntimeFailure("checksum", "the archive is larger than the release it pins."));
+      progress.received = size;
       hash.update(chunk);
       callback(null, chunk);
     },
@@ -157,25 +181,32 @@ async function download(url: URL, destination: string, release: PanelRuntimeRele
   if (size !== release.bytes || hash.digest("hex") !== release.sha256) throw new RuntimeFailure("checksum", "the archive does not match the release it pins.");
 }
 
-async function extract(archive: string, staging: string) {
-  const { stdout } = await run("/usr/bin/tar", ["-tzf", archive], { maxBuffer: 16 * 1024 * 1024 }).catch(error => {
+async function extract(archive: string, staging: string, testingOnly: boolean) {
+  const parts: readonly string[] = testingOnly ? ["e2e"] : PANEL_RUNTIME_PARTS;
+  const tar = process.platform === "win32" ? "tar.exe" : "/usr/bin/tar";
+  const { stdout } = await run(tar, ["-tzf", archive], { maxBuffer: 16 * 1024 * 1024 }).catch(error => {
     throw new RuntimeFailure("archive", `the archive could not be read (${errorText(error)}).`);
   });
-  for (const member of stdout.split("\n").filter(Boolean)) {
+  for (const member of stdout.split(/\r?\n/).filter(Boolean)) {
     const segments = member.replace(/^\.\//, "").split("/");
-    if (member.startsWith("/") || segments.includes("..") || (PANEL_RUNTIME_PARTS as readonly string[]).includes(segments[0]) === false) {
+    if (/[\\:]/.test(member) || member.startsWith("/") || segments.includes("..") || parts.includes(segments[0]) === false) {
       throw new RuntimeFailure("archive", "the archive holds files outside the device runtime.");
     }
   }
   await mkdir(staging);
   // Without -P, bsdtar refuses absolute paths, .. and writes through symlinks.
-  await run("/usr/bin/tar", ["-xzf", archive, "-C", staging, "--no-same-owner"]).catch(error => {
+  await run(tar, ["-xzf", archive, "-C", staging, "--no-same-owner"]).catch(error => {
     throw new RuntimeFailure("archive", `the archive could not be extracted (${errorText(error)}).`);
   });
   await assertPlainFiles(staging);
-  for (const part of PANEL_RUNTIME_PARTS) {
+  for (const part of parts) {
     await access(join(staging, part)).catch(() => { throw new RuntimeFailure("archive", `the archive is missing ${part}.`); });
   }
+  const e2eCli = join(staging, E2E_CLI);
+  await access(e2eCli).catch(() => {
+    throw new RuntimeFailure("archive", "the archive is missing the Testing Studio runner.");
+  });
+  if (testingOnly) return;
   await access(join(staging, "baguette/Baguette"), constants.X_OK).catch(() => {
     throw new RuntimeFailure("archive", "the simulator backend in the archive is not executable.");
   });

@@ -6,6 +6,7 @@ import type { PluginOptions } from "./plugin.ts";
 import { closeServerTelemetry, installTracePropagation } from "./telemetry.ts";
 import { declareSchemaDialect } from "./schema-dialect.ts";
 import { SharedTransport } from "./shared-transport.ts";
+import { androidToolPath, sdkToolPath } from "./android-sdk.ts";
 
 /**
  * Runs the server over stdio, as every host launches it, with Mobile Dev's panel where
@@ -13,6 +14,10 @@ import { SharedTransport } from "./shared-transport.ts";
  * Import `./instrument.ts` before this module so telemetry starts first.
  */
 export async function runStdioServer({ panel, features }: Pick<PluginOptions, "panel" | "features"> = {}) {
+  if (process.platform === "win32") {
+    // Both the in-process recording client and the separate agent-device daemon inherit this PATH.
+    process.env.PATH = androidToolPath(await Promise.all([sdkToolPath("adb"), sdkToolPath("emulator")]));
+  }
   const html = await readFile(new URL("./app.html", import.meta.url), "utf8");
   // Features can let other connections, such as a browser panel, share the host's session.
   const transport = new SharedTransport(new StdioServerTransport());

@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { setTimeout } from "node:timers/promises";
 import { DisplayFpsSessions } from "../src/fps/sessions.ts";
 import { CpuSessions } from "../src/cpu/sessions.ts";
+import type { IosHitches } from "../../shared/src/ios-hitches.ts";
+import type { PerformanceRecording } from "../../shared/src/recordings.ts";
 import { PerformanceRecordings, RecordingStore } from "../src/performance-recordings.ts";
 import { summarizeRecording } from "../../shared/src/recordings.ts";
 import { recordingFixture, unavailableFps } from "../../test-support/recording-fixtures.ts";
@@ -69,13 +71,29 @@ test("timed recording returns immediately, collects and detaches without UI poll
   } });
   const store = new RecordingStore(directory);
   const recordings = new PerformanceRecordings(cpu, unavailableFps, store);
-  t.after(async () => { await recordings.close(); await cpu.close(); await rm(directory, { recursive: true, force: true }); });
+  const saving = Promise.withResolvers<void>();
+  const allowWrite = Promise.withResolvers<void>();
+  const save = store.save.bind(store);
+  let listedWhileSaving: string[] = [];
+  t.mock.method(store, "save", async (recording: PerformanceRecording) => {
+    saving.resolve();
+    await allowWrite.promise;
+    await save(recording);
+    const listed = await recordings.list(1);
+    listedWhileSaving = listed.map(item => item.status);
+  });
+  t.after(async () => { allowWrite.resolve(); await recordings.close(); await cpu.close(); await rm(directory, { recursive: true, force: true }); });
   const target = recordingFixture().target;
   const started = recordings.start(target, "Scroll", 1, "Pixel");
   assert.equal(started.status, "connecting");
   assert.deepEqual(started.samples, []);
-  await setTimeout(1200);
-  const finished = await recordings.read(started.id);
+  await saving.promise;
+  const writing = await recordings.read(started.id);
+  assert.equal(writing.status, "finishing");
+  assert.equal(writing.completedAt, undefined);
+  allowWrite.resolve();
+  const finished = await recordings.finish(started.id);
+  assert.deepEqual(listedWhileSaving, ["finishing"]);
   assert.equal(finished.status, "finished");
   assert.equal(stopped, 1);
   assert.ok(finished.samples.length >= 9);
@@ -107,6 +125,75 @@ test("early finish and server shutdown both detach collectors; failures persist 
   assert.equal(interrupted.status, "failed");
   assert.match(interrupted.error!, /server closed/);
   assert.equal(stopped, 2);
+});
+
+test("physical iOS recording waits for the trace, exports for the monitored PID, and preserves CPU on export failure", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "mobile-dev-hitch-recording-"));
+  const target = { platform: "ios", kind: "physical", deviceId: "iphone", bundleId: "com.example.shop" } as const;
+  const store = new RecordingStore(directory);
+  const cpu = new CpuSessions({
+    apps: async () => [{ bundleId: target.bundleId, pid: 123 }],
+    monitor: async options => {
+      const sample = () => options.onSample({ timestampUs: 1n, intervalUs: 10000, cpuPercent: 12, memoryBytes: 100, threads: [] });
+      sample();
+      const timer = setInterval(sample, 10);
+      return { closed: new Promise(() => {}), async stop() { clearInterval(timer); } };
+    },
+  });
+  t.after(async () => { await cpu.close(); await rm(directory, { recursive: true, force: true }); });
+  for (const failExport of [false, true]) {
+    const connecting = Promise.withResolvers<void>();
+    const ready = Promise.withResolvers<void>();
+    let closed = false;
+    let pid: number | undefined;
+    let origin: number | undefined;
+    const recordings = new PerformanceRecordings(cpu, unavailableFps, store, async (deviceId, duration, signal) => {
+      assert.equal(deviceId, target.deviceId);
+      assert.equal(duration, 30);
+      connecting.resolve();
+      await ready.promise;
+      signal.throwIfAborted();
+      return {
+        async finish(process, originMs, end): Promise<IosHitches> {
+          pid = process;
+          origin = originMs;
+          if (failExport) throw new Error("Export failed");
+          return { status: "finished", end, events: [] };
+        },
+        async close() { closed = true; },
+      };
+    });
+    try {
+      const started = recordings.start(target, "Scroll", 30, "iPhone");
+      await connecting.promise;
+      const connectingState = await recordings.read(started.id);
+      assert.equal(connectingState.status, "connecting");
+      assert.deepEqual(connectingState.samples, []);
+      const readyAt = performance.timeOrigin + performance.now();
+      ready.resolve();
+      for (let i = 0; i < 100; i++) {
+        const state = await recordings.read(started.id);
+        if (state.status === "recording") break;
+        await setTimeout(10);
+      }
+      const result = await recordings.finish(started.id);
+      assert.equal(result.status, "finished", result.error);
+      assert.equal(pid, 123);
+      assert.ok(origin !== undefined && origin >= readyAt);
+      assert.equal(closed, true);
+      assert.equal(result.samples[0].memoryBytes, 100);
+      const saved = await store.read(started.id);
+      assert.deepEqual(result, saved);
+      const summary = summarizeRecording(saved);
+      if (failExport) {
+        assert.equal(saved.iosHitches?.status, "unavailable");
+        assert.equal(summary.hitchStats, null);
+      } else {
+        assert.equal(saved.iosHitches?.status, "finished");
+        assert.deepEqual(summary.hitchStats, { count: 0, lateMs: 0 });
+      }
+    } finally { ready.resolve(); await recordings.close(); }
+  }
 });
 
 test("FPS summaries clip interval overlap, retain idle zero, and exclude missing readings", () => {
@@ -193,8 +280,7 @@ test("timed recordings align FPS, wait for Android readback, replace revised int
   assert.equal(draining.status, "finishing");
   assert.equal(cpuStopped, 1, "CPU stops at the recording deadline, before delayed FPS readback.");
   assert.equal(fpsStopped, 0);
-  await setTimeout(4900);
-  const finished = await recordings.read(started.id);
+  const finished = await recordings.finish(started.id);
   assert.equal(finished.status, "finished");
   assert.equal(finished.fps.status, "finished");
   const measured = finished.fps.samples.filter(sample => sample.fps !== null);

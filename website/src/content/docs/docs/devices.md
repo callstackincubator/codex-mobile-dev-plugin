@@ -13,7 +13,7 @@ Ask your agent to open the simulator beside chat, or open Mobile Dev from the Co
 - “Open the iPad simulator beside this chat.”
 - “Test this on my physical iPhone.”
 
-Use the platform menu to show iOS, Android, or both. Pick a device from each panel's dropdown. Selecting a stopped simulator or AVD boots it and starts its stream. Opening the panel by itself does not boot a device.
+Choose **+ Add device** in a tab strip and pick an iOS or Android device. The picker closes and the device opens beside that group. Open the picker again to add another device. Drag a tab to any edge of a view to split it, or to the center of another view to join its group. Drag tabs along the tab strip to reorder them and drag dividers to resize the views. Drag the empty part of a tab strip to move the whole group. Selecting a stopped simulator or AVD boots it and starts its stream. Opening the workspace by itself does not boot a device.
 
 The agent reuses a suitable selected or running device when the task establishes the target. It may ask you to choose when the choice affects the task.
 
@@ -21,9 +21,9 @@ The agent reuses a suitable selected or running device when the task establishes
 
 Click the device screen to focus it, then tap, drag, or type where supported. Home and app-switcher controls are in the toolbar; Android also provides Back, Recents, and Lock.
 
-On iOS simulators and Android screens, **Command-V** pastes up to 4,096 printable US-ASCII characters. Unsupported characters or line breaks show a notice without sending partial text. Paste is unavailable while **Select** is active or the stream is not ready.
+On iOS simulators and Android screens, **Ctrl+V** on Windows or **Command-V** on macOS pastes up to 4,096 printable US-ASCII characters. Unsupported characters or line breaks show a notice without sending partial text. Paste is unavailable while **Select** is active or the stream is not ready.
 
-Use **Screenshot** to attach a PNG to your next message and copy it to the macOS clipboard. Capturing a screenshot does not send a message.
+Use **Screenshot** to attach a PNG to your next message and copy it to the system clipboard. Capturing a screenshot does not send a message.
 
 ## Inspect and annotate
 
@@ -38,6 +38,12 @@ Pair the device with Xcode and enable Developer Mode. Connect it by USB, or enab
 Choose the phone under **Connected devices**. Physical iOS supports taps, long presses, and drags. Keyboard input and hardware-button controls are unavailable. Screenshots and region annotations require a ready mirrored frame; native accessibility component names are unavailable in that view.
 
 Close Device Hub's mirroring window while using Mobile Dev's physical iOS mirroring.
+
+## Android emulators on Windows
+
+On Windows, Mobile Dev cold boots AVDs it starts. Installed apps and AVD user data persist. To use Android Studio’s Quick Boot, start the AVD in Device Manager and select the running emulator in Mobile Dev.
+
+Windows uses the AVD's configured memory and CPU settings. The **Save resources** control uses the Apple Silicon macOS helper `avdslim` and is unavailable on Windows. The iOS tab remains visible. Local iOS simulators and physical iOS mirroring require macOS and Xcode. [Set up Android](/docs/getting-started#set-up-android)
 
 ## Physical Android devices
 

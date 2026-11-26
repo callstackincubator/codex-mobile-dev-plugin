@@ -1,6 +1,6 @@
 <p align="center">
-  <a href="https://incubator.callstack.com/codex-mobile-dev-plugin/">
-    <img src="https://incubator.callstack.com/codex-mobile-dev-plugin/banner.jpg" alt="Mobile Dev by Callstack. Mobile development in your ADE. Supports Codex, Claude, Cursor, and more." width="100%" />
+  <a href="https://incubator.callstack.com/mobile-dev/">
+    <img src="https://incubator.callstack.com/mobile-dev/banner.jpg" alt="Mobile Dev by Callstack. Mobile development in your ADE. Supports Codex, Claude, Cursor, and more." width="100%" />
   </a>
 </p>
 
@@ -61,6 +61,8 @@ See [storage privacy and review checks](docs/storage-privacy.md).
 **[Add Mobile Dev to Codex](https://chatgpt.com/plugins/plugins_6ac4c117f76881918d3676e851fa4005)**
 from the plugin directory, then open a new chat.
 
+On Windows, choose **Android** to connect an emulator or phone. The iOS tab stays visible for future cloud devices. [Set up Android on Windows](docs/devices.md#android-on-windows)
+
 To install the prebuilt plugin from this repository instead, see
 [Install from the GitHub marketplace](CONTRIBUTING.md#install-from-the-github-marketplace).
 
@@ -115,8 +117,9 @@ What the Claude version runs on your Mac, besides its Node.js server:
 - **A Node.js launcher and a session check** in the Claude Code plugin, which find
   Node.js and start the server.
 
-It sends plugin errors and aggregate measurements to Sentry, as described under
-[Privacy and support](#privacy-and-support), and nothing else to Callstack;
+It sends plugin errors and aggregate measurements to Sentry and basic product
+analytics to Anal, as described under [Privacy and support](#privacy-and-support),
+and nothing else to Callstack;
 profiles go only to the TraceSift service on your Mac.
 
 ### T3 Code
@@ -126,7 +129,7 @@ the Mobile Dev plugin that each of them has installed. On the Mac that runs T3 C
 install the [Claude Code plugin](#claude-code-and-claude-desktop) for Claude threads
 (run the two `claude plugin` commands in a terminal, then start a new Claude thread)
 and the [Codex plugin](#codex) for Codex threads. In both, the panel opens in T3 Code's
-Browser. See the [T3 Code setup guide](https://incubator.callstack.com/codex-mobile-dev-plugin/docs/getting-started#t3-code)
+Browser. See the [T3 Code setup guide](https://incubator.callstack.com/mobile-dev/docs/getting-started#t3-code)
 for the settings each provider needs.
 
 Turn off T3 Code's own device integration while you use Mobile Dev. In
@@ -168,7 +171,7 @@ to avoid duplicate Mobile Dev servers. See [Cursor's plugin guide](https://curso
 ### Mac app
 
 The Mac app shows the devices and tools in their own window, without a chat. Pick
-a tool and the visible platforms in the sidebar. It runs the same server as the
+a tool in the sidebar and devices from **+ Add device** in the tab strip. It runs the same server as the
 plugins, so the device panels, logs, performance, storage, and TraceSift work the
 same way. Chat actions such as Send to chat and annotations are hidden because
 there is no chat to send to.
@@ -185,7 +188,7 @@ open "release/mac/Mobile Dev.app"
 
 ## Requirements
 
-Mobile Dev runs on an Apple Silicon Mac. In Codex desktop, the prebuilt plugin
+Codex desktop supports Android on Windows and Apple Silicon Macs. Local iOS devices require an Apple Silicon Mac. The prebuilt Codex plugin
 uses Codex's bundled Node runtime from its workspace dependency cache; the Claude
 Desktop bundle uses Claude's Node runtime, the Cursor plugin uses Node.js from
 `PATH`, and the Mac app bundles its own. Install the tools for the platforms you use:
@@ -194,12 +197,12 @@ Desktop bundle uses Claude's Node runtime, the Cursor plugin uses Node.js from
 | --- | --- |
 | iOS simulators | Xcode 26 or later with an installed simulator runtime. |
 | Physical iPhones and iPads | Xcode 27 or later, a paired device with Developer Mode enabled, and USB or Wi-Fi connectivity. Screen mirroring requires HEVC WebCodecs support in the host. |
-| Android | Android SDK platform-tools and emulator, and an AVD or a physical device with authorized USB or wireless debugging. Screen streaming requires H.264 WebCodecs support in the host. |
+| Android | Android SDK Platform-Tools for an authorized USB or wireless device. For an AVD, also install Android Emulator and a system image. Screen streaming requires H.264 WebCodecs support in the host. |
 | Metro logs and React Native inspection | An existing local Metro server with a compatible app inspector target. |
 | Physical iOS CPU and memory | iOS 17.4 or later, a running development-signed app with `get-task-allow`, a mounted developer disk image, and Xcode/LLDB detached. |
 | Display FPS | Android 12 or later with FrameTimeline support, or a physical iOS device running iOS 17.4 or later. iOS simulators do not support Display FPS. |
 | Testing Studio | A booted iOS simulator or Android emulator, plus an existing e2e project with its dependencies installed and a target bundle ID in `e2e.config.*`. |
-| Profile analysis | The TraceSift CLI installed with `npm install -g @callstack/tracesift`, initialized once with `tracesift init`, and found on `PATH` or through `TRACE_SIFT_COMMAND`. |
+| TraceSift profile analysis (macOS or Linux) | The TraceSift CLI installed with `npm install -g @callstack/tracesift`, initialized once with `tracesift init`, and found on `PATH` or through `TRACE_SIFT_COMMAND`. |
 
 Simulator tools use the full Xcode installation selected by `xcode-select` (or
 `DEVELOPER_DIR`), including its Swift compatibility libraries. Custom Xcode names
@@ -214,9 +217,9 @@ its device panel, inspection, logs, and performance tools.
 Ask your agent to open the simulator beside this chat. In Codex, you can also
 open Mobile Dev from the sidebar; in Cursor, ask **"Open Mobile Dev"** in an agent chat.
 Pick a device from the toolbar; selecting a stopped simulator or AVD
-boots it. Use the iOS and Android toggles to show either platform or both.
+boots it. Choose additional iOS or Android devices from **+ Add device** in the tab strip to open them side by side. Drag a device tab to an edge to split the view, or into another group to collect its tabs.
 
-Click an iOS simulator or Android screen to focus it, then press **Command-V** to
+Click an iOS simulator or Android screen to focus it, then press **Ctrl+V** on Windows or **Command-V** on macOS to
 paste text into the device. Paste accepts up to 4,096 printable US-ASCII characters;
 line breaks and other characters show a notice without sending partial text.
 
@@ -240,8 +243,8 @@ Detailed guides are available for
 [devices](https://github.com/callstackincubator/mobile-dev/blob/main/docs/devices.md),
 [logs](https://github.com/callstackincubator/mobile-dev/blob/main/docs/logs.md),
 [performance](https://github.com/callstackincubator/mobile-dev/blob/main/docs/performance.md),
-[App Intelligence](https://incubator.callstack.com/codex-mobile-dev-plugin/docs/app-intelligence),
-[Testing](https://incubator.callstack.com/codex-mobile-dev-plugin/docs/testing),
+[App Intelligence](https://incubator.callstack.com/mobile-dev/docs/app-intelligence),
+[Testing](https://incubator.callstack.com/mobile-dev/docs/testing),
 and [MCP tools](https://github.com/callstackincubator/mobile-dev/blob/main/docs/mcp-tools.md).
 [Architecture](https://github.com/callstackincubator/mobile-dev/blob/main/docs/architecture.md) explains how the hosts share the server
 and panel.
@@ -272,9 +275,14 @@ Mobile Dev reports plugin errors, crashes, usage counters, sampled traces, and
 aggregate plugin performance measurements to Sentry by default. App logs,
 screenshots, input content, tool payloads, app storage contents, profiles, and
 device performance recordings are excluded from that telemetry. Errors and
-crashes use a randomly generated persistent installation ID. Set
-`MOBILE_DEV_TELEMETRY=off` in the MCP launch environment and restart the plugin
-processes to disable reporting. For the Mac app, start it with
+crashes use a randomly generated persistent installation ID. Release builds also
+send basic product analytics to Anal at `anal.margelo.com`: that a session started
+or a tool was called, with the tool's name, whether it succeeded, the host, the
+plugin version, the operating system type, and the same installation ID. Analytics
+exclude tool arguments and results, app and device content, device names, project
+paths, and account details. Set `MOBILE_DEV_TELEMETRY=off` in the MCP launch
+environment and restart the plugin processes to disable reporting, or set
+`MOBILE_DEV_ANALYTICS=off` to disable only product analytics. For the Mac app, start it with
 `open --env MOBILE_DEV_TELEMETRY=off "Mobile Dev.app"`. Tool results and content sent to chat are handled
 by the host separately. Read the [Privacy Policy](PRIVACY.md) and
 [Terms of Service](TERMS.md), or see

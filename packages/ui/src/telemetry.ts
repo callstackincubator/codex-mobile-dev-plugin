@@ -151,11 +151,15 @@ export function setUiSurface(next: Surface) {
   }
 }
 
-export function setUiTelemetryContext(next: TelemetryAttributes) {
+export function setUiTelemetryContext(next: Partial<TelemetryAttributes>) {
   const changed = Object.entries(next).some(([key, value]) => attributes[key] !== value);
   if (changed === false) return;
   flushUiMeasurements();
-  attributes = { ...attributes, ...next };
+  attributes = { ...attributes };
+  for (const [key, value] of Object.entries(next)) {
+    if (value === undefined) delete attributes[key];
+    else attributes[key] = value;
+  }
   if (running) Sentry.setAttributes(attributes);
 }
 

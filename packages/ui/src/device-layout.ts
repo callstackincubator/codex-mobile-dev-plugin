@@ -2,25 +2,19 @@ import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
 import { panelTargetPlatform } from "@mobile-dev/shared/panel-target.ts";
 import type { PanelTarget } from "@mobile-dev/shared/panel-target.ts";
 
-export type DeviceLayout = "both" | "ios" | "android" | "none";
-
 export function isDeviceActive(device?: SimulatorDevice): boolean {
   if (device?.kind === "physical" && device.platform === "ios") return device.state === "connected";
   return device?.state === "Booted";
-}
-
-// Open one platform by default. iOS wins when both have an active device; the
-// platform select can still show both.
-export function activeDeviceLayout(ios?: SimulatorDevice, android?: SimulatorDevice): DeviceLayout {
-  if (isDeviceActive(ios)) return "ios";
-  return isDeviceActive(android) ? "android" : "none";
 }
 
 export function initialPanelDevice(devices: SimulatorDevice[], platform: "ios" | "android", previous?: string, target?: PanelTarget): SimulatorDevice | undefined {
   const requestedPlatform = target ? panelTargetPlatform(target) : undefined;
   if (requestedPlatform !== undefined && requestedPlatform !== platform) return;
   const candidates = devices.filter(device => {
-    if (target?.deviceId !== undefined && device.udid !== target.deviceId) return false;
+    if (target?.deviceId !== undefined && device.udid !== target.deviceId) {
+      const bootedAvd = platform === "android" && device.kind !== "physical" && target.deviceId === `avd:${device.name}` && device.state === "Booted";
+      if (!bootedAvd) return false;
+    }
     const kind = device.kind ?? (platform === "ios" ? "simulator" : "emulator");
     return target?.kind === undefined || kind === target.kind;
   });

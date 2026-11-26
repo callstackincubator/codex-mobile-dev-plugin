@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIcon, RefreshCwIcon, SlidersHorizontalIcon, SquareIcon } from "lucide-react";
 import type { PerformancePanel } from "../performance-panel.ts";
 import { SIDEBAR_WIDTH, TIMELINE_HEIGHT } from "../performance/constants";
@@ -8,6 +8,9 @@ import { TimelineChartWidth } from "../performance/TimelineChartWidth";
 import { CpuTrack } from "./performance/CpuTrack";
 import { MemoryTrack } from "./performance/MemoryTrack";
 import { DisplayFpsTrack } from "./performance/DisplayFpsTrack";
+import { createAndroidFrameOverlay } from "../fps-frame-overlay.ts";
+import { recordUiTiming } from "../telemetry.ts";
+import { FrameMarkers, FpsInspector, useFpsInspection } from "./fps-frame-markers";
 import { TimelineRuler } from "./performance/TimelineRuler";
 import { Button } from "./ui/button";
 import { NativeSelect, NativeSelectOption } from "./ui/native-select";
@@ -17,6 +20,15 @@ import { Alert, AlertDescription } from "./ui/alert";
 
 export function PerformanceView({ panel }: { panel: PerformancePanel }) {
   const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
+  const overlay = useMemo(() => {
+    if (state.platform !== "android" || state.fpsSamples.length === 0) return;
+    const started = performance.now();
+    const frames = createAndroidFrameOverlay(state.fpsSamples);
+    const elapsed = performance.now() - started;
+    recordUiTiming("ui.performance.frame_markers", elapsed, "android");
+    return frames;
+  }, [state.platform, state.fpsSamples]);
+  const { inspection, inspect } = useFpsInspection(overlay, true);
   const container = useRef<HTMLDivElement>(null);
   const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
   const { zoom, following, contentWidth, chartWidth, hasMoreToRight, reset, change, handleScroll } = useTimelineViewport(state.samples, scrollElement, state.fpsSamples);
@@ -73,7 +85,10 @@ export function PerformanceView({ panel }: { panel: PerformancePanel }) {
               <div className="min-w-0 flex-1"><TimelineRuler cursorLabel={cursorLabel} zoomState={zoom} onZoomOut={reset} /></div>
             </div>
             <DisplayFpsTrack samples={state.fpsSamples} phase={state.fpsPhase} error={state.fpsError} supported={state.fpsSupported}
-              platform={state.platform} zoomState={zoom} onZoomChange={change} onZoomOut={reset} onRetry={() => panel.retryFps()} />
+              platform={state.platform} zoomState={zoom} onZoomChange={change} onZoomOut={reset} onRetry={() => panel.retryFps()}>
+              {overlay && <FrameMarkers overlay={overlay} selected={inspection.kind === "marker" ? inspection.index : undefined}
+                onPick={index => inspect({ kind: "marker", index })} />}
+            </DisplayFpsTrack>
             <CpuTrack samples={state.samples} threadHistory={state.threadHistory} platform={state.platform}
               threadOrder={state.threadOrder} onThreadOrderChange={order => panel.setThreadOrder(order)}
               phase={state.phase} error={state.error || null} scrollElement={scrollElement}
@@ -88,5 +103,9 @@ export function PerformanceView({ panel }: { panel: PerformancePanel }) {
           bottom: scrollElement ? scrollElement.offsetHeight - scrollElement.clientHeight : 0,
           background: "linear-gradient(to right, transparent, var(--background))" }} />}
     </div>
+    {overlay && <section aria-label="Android display frames" className="shrink-0 border-t px-3 py-2">
+      <div className="recording-fps-legend"><span>Device-wide FPS</span><span>Flagged display frame</span></div>
+      <FpsInspector overlay={overlay} inspection={inspection} onInspect={inspect} />
+    </section>}
   </section>;
 }

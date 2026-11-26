@@ -35,7 +35,9 @@ test("the element menu renders the runner's own steps over the mirror and record
   testRecorder.start("udid", "ios");
 
   const root = createRoot(dom.window.document.getElementById("root")!);
-  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations })); });
+  const firstMirror = createElement(TestRecorderOverlay, { store: annotations, platform: "ios", deviceId: "udid" });
+  const secondMirror = createElement(TestRecorderOverlay, { store: annotations, platform: "ios", deviceId: "another-iphone" });
+  await act(async () => { root.render(createElement("div", null, firstMirror, secondMirror)); });
   onTeardown(async () => {
     await act(async () => { root.unmount(); });
     await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
@@ -45,6 +47,7 @@ test("the element menu renders the runner's own steps over the mirror and record
 
   await act(async () => { await testRecorder.openMenu({ x: 150, y: 420 }); });
   assert.ok(menu(), "the right-click opens the menu over the outline");
+  assert.equal(dom.window.document.querySelectorAll("[data-element=recorder-menu]").length, 1, "only the recording device shows the menu");
   // The selector is named once and rows stay compact; exact code is still available as a tooltip.
   assert.match(menu()?.textContent ?? "", /Selected element"Go To Explore List" \(button\)/);
   assert.deepEqual(rows().map(row => row.textContent), [
@@ -109,7 +112,7 @@ test("a row that needs a value asks for it instead of emitting an empty string",
   });
   testRecorder.start("udid", "ios");
   const root = createRoot(dom.window.document.getElementById("root")!);
-  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations })); });
+  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations, platform: "ios", deviceId: "udid" })); });
   onTeardown(async () => {
     await act(async () => { root.unmount(); });
     await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
@@ -148,8 +151,10 @@ test("a run marks the preview line by line, and marks nothing it was not told ab
   let panelState: Record<string, unknown> = {
     open: true, available: true, projectPath: "/app", projects: [], targets: [{ name: "ios", platform: "ios", bundleId: "com.app" }],
     targetName: "ios", configPath: "/app/e2e.config.ts", loadingProject: false, pickingProject: false, launching: false,
+    runtimeMode: "project", setupState: "configured", setupDetails: { dependencies: {}, skillInstalled: false, mcpRegistrations: [], loginStatus: {} },
+    providers: [], modelPickerOpen: false, setupOpen: false, targetSource: "project", projectWarning: "",
     appLaunched: true, fileName: "flow", saving: false, overwritePath: "", savedRevision: -1, savedPath: "", running: false,
-    pendingRun: false, drafts: [], draftId: "", loadingDraft: false, tests: [], deletingTest: "", error: null,
+    pendingRun: false, matrix: null, selectedLane: "", matrixDevices: [], matrixLoading: false, matrixSelected: [], matrixLimit: 3, drafts: [], draftId: "", loadingDraft: false, tests: [], deletingTest: "", error: null,
   };
   /** What Run was asked for, so Play until here can be told apart from the Run test button. */
   const runs: unknown[] = [];
@@ -157,6 +162,9 @@ test("a run marks the preview line by line, and marks nothing it was not told ab
     subscribe: (listener: () => void) => { panelListeners.add(listener); return () => { panelListeners.delete(listener); }; },
     getSnapshot: () => panelState,
     canLaunch: true, canRun: true, canRunStored: true, dirty: true,
+    noProject: false, storedTarget: undefined, foregroundTarget: undefined, storedRunHint: "", repinStoredTest: async () => {},
+    matrixEnabled: true, matrixRunCount: 0, runsOnMatrix: false, matrixApps: () => ({}), matrixBusy: () => false, loadMatrixDevices: async () => {},
+    setMatrixSelection: () => {}, setMatrixLimit: () => {}, selectLane: () => {}, cancelMatrix: async () => {}, dismissMatrix: () => {},
     refreshProjects: async () => {}, chooseProject: async () => {}, pickProject: async () => {},
     launchApp: async () => {}, saveTest: async () => {}, runTest: async (options?: unknown) => { runs.push(options); }, selectTarget: () => {},
     setFileName: () => {}, cancelOverwrite: () => {}, dismissError: () => {},
@@ -184,9 +192,9 @@ test("a run marks the preview line by line, and marks nothing it was not told ab
   const preview = () => (dom.window.document.querySelector("[data-testing-preview]") as HTMLElement).innerText
     ?? dom.window.document.querySelector("[data-testing-preview]")!.textContent!;
 
-  assert.equal(dom.window.document.querySelector("[aria-label=Testing] dl"), null,
+  assert.equal(dom.window.document.querySelector("[aria-label='Testing Studio'] dl"), null,
     "project, config, target, bundle and device metadata no longer duplicate the controls");
-  const testing = dom.window.document.querySelector("[aria-label=Testing]");
+  const testing = dom.window.document.querySelector("[aria-label='Testing Studio']");
   assert.ok(testing?.className.includes("cursor-pointer"), "testing panel buttons use a pointer cursor");
   // The title and file name fields are folded into Test Description: they are touched once per
   // recording, at the end, while the step list beside them is touched on every tap.
@@ -228,7 +236,7 @@ test("a run marks the preview line by line, and marks nothing it was not told ab
   assert.match(workspace.textContent ?? "", /Preview.*Test Description.*Steps/s,
     "the recorder is organized around preview, naming and steps");
   await act(async () => { description.click(); });
-  const header = dom.window.document.querySelector("[aria-label=Testing] > header")!;
+  const header = dom.window.document.querySelector("[aria-label='Testing Studio'] > header")!;
   assert.ok(header.contains(dom.window.document.querySelector("[data-testing-controls]")),
     "record and run controls share the project and launch bar");
 
@@ -296,10 +304,14 @@ test("a run marks the preview line by line, and marks nothing it was not told ab
   assert.equal(marks()[7], "is-failed", "a failure stays on the line the report blames");
   assert.match(dom.window.document.body.textContent ?? "", /Timed out waiting for the element/);
 
-  // A run that produced no report has no line to mark, so the runner's own words stand in.
+  // A run that produced no report has no line to mark. The runner's raw output is not shown.
   await act(async () => { testRecorder.finishRun({ status: "failed", steps: [], output: "No tests matched" }); });
   assert.deepEqual(marks().filter(mark => mark !== ""), [], "no invented marks");
-  assert.match(dom.window.document.body.textContent ?? "", /No tests matched/);
+  assert.doesNotMatch(dom.window.document.body.textContent ?? "", /No tests matched/);
+
+  // A failure no line carries still shows its reason, in a chip under the verdict.
+  await act(async () => { testRecorder.finishRun({ status: "failed", steps: [], error: "App com.example.android is not installed" }); });
+  assert.equal(dom.window.document.querySelector("[data-testing-run-error]")?.textContent, "App com.example.android is not installed");
 
   testRecorder.clearRun();
   testRecorder.clearSteps();
@@ -320,7 +332,7 @@ test("the element menu survives a tree invalidation that takes the hover outline
   testRecorder.attach("udid", "ios", { readComponents: async () => [button], screen: () => SCREEN, release: () => undefined });
   testRecorder.start("udid", "ios");
   const root = createRoot(dom.window.document.getElementById("root")!);
-  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations })); });
+  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations, platform: "ios", deviceId: "udid" })); });
   onTeardown(async () => {
     await act(async () => { root.unmount(); });
     await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
@@ -354,7 +366,7 @@ test("a coordinate gets the tap row and is told why that is all", async t => {
   testRecorder.attach("udid", "ios", { readComponents: async () => [button], screen: () => SCREEN, release: () => undefined });
   testRecorder.start("udid", "ios");
   const root = createRoot(dom.window.document.getElementById("root")!);
-  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations })); });
+  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations, platform: "ios", deviceId: "udid" })); });
   onTeardown(async () => {
     await act(async () => { root.unmount(); });
     await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
@@ -404,7 +416,7 @@ test("the command list is a submenu of its own, opened by pointing at its row", 
   testRecorder.attach("udid", "ios", { readComponents: async () => [button], screen: () => SCREEN, release: () => undefined });
   testRecorder.start("udid", "ios");
   const root = createRoot(dom.window.document.getElementById("root")!);
-  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations })); });
+  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations, platform: "ios", deviceId: "udid" })); });
   onTeardown(async () => {
     await act(async () => { root.unmount(); });
     await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
@@ -472,7 +484,7 @@ test("the agentic branches cascade to the side, and record a sentence with its p
   });
   testRecorder.start("udid", "ios");
   const root = createRoot(dom.window.document.getElementById("root")!);
-  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations })); });
+  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations, platform: "ios", deviceId: "udid" })); });
   onTeardown(async () => {
     await act(async () => { root.unmount(); });
     await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
@@ -560,26 +572,55 @@ test("the agentic branches cascade to the side, and record a sentence with its p
 });
 
 /** A `TestingPanel` stub for the view: enough snapshot for the controls, no server behind it. */
+/** Opens one E2E setup section by its title; every section starts collapsed. */
+async function openSection(act: (callback: () => Promise<void>) => Promise<void>, doc: Document, title: string) {
+  const toggle = [...doc.querySelectorAll('[data-slot="collapsible-trigger"]')].find(el => el.textContent?.startsWith(title) && el.getAttribute("data-state") !== "open") as HTMLElement | undefined;
+  if (toggle) await act(async () => { toggle.click(); });
+}
+
 function panelStub(overrides: Record<string, unknown> = {}) {
   const listeners = new Set<() => void>();
   const state: Record<string, unknown> = {
     open: true, available: true, projectPath: "/app", projects: [], targets: [{ name: "ios", platform: "ios", bundleId: "com.app" }],
     targetName: "ios", configPath: "/app/e2e.config.ts", loadingProject: false, pickingProject: false, launching: false,
+    runtimeMode: "project", setupState: "configured", setupDetails: { dependencies: {}, skillInstalled: false, mcpRegistrations: [], loginStatus: {} },
+    providers: [], modelPickerOpen: false, setupOpen: false, targetSource: "project", projectWarning: "",
     appLaunched: true, fileName: "flow", saving: false, overwritePath: "", savedRevision: -1, savedPath: "", running: false,
-    pendingRun: false, agent: null, drafts: [], draftId: "", loadingDraft: false, tests: [], deletingTest: "", error: null,
+    pendingRun: false, agent: null, matrix: null, selectedLane: "", matrixDevices: [], matrixLoading: false, matrixSelected: [], matrixLimit: 3, drafts: [], draftId: "", loadingDraft: false, tests: [], deletingTest: "", error: null,
     ...overrides,
   };
   return {
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
     getSnapshot: () => state,
     canLaunch: true, canRun: true, canRunStored: true, dirty: true,
+    get noProject() { return state.projectPath === state.studioPath; }, useNoProject: async () => {},
+    storedTarget: undefined, foregroundTarget: undefined, storedRunHint: "", repinStoredTest: async () => {},
+    matrixEnabled: true, matrixRunCount: 0, runsOnMatrix: false, matrixApps: () => ({}), matrixBusy: () => false, loadMatrixDevices: async () => {},
+    setMatrixSelection: () => {}, setMatrixLimit: () => {}, selectLane: () => {}, cancelMatrix: async () => {}, dismissMatrix: () => {},
     refreshProjects: async () => {}, chooseProject: async () => {}, pickProject: async () => {},
     launchApp: async () => {}, saveTest: async () => {}, runTest: async () => {}, selectTarget: () => {},
     setFileName: () => {}, cancelOverwrite: () => {}, dismissError: () => {},
     refreshDrafts: async () => {}, openDraft: async () => {}, deleteDraft: async () => {}, newRecording: async () => {},
     refreshTests: async () => {}, openTest: async () => {}, editStoredTest: () => {}, saveStoredTest: async () => {}, undoStoredTest: async () => {}, runStoredTest: async () => {}, deleteTest: async () => {},
+    openSetup: () => {}, closeSetup: () => {}, openModelPicker: () => {}, closeModelPicker: () => {}, planSetup: async () => null, applySetup: async () => null,
   };
 }
+
+test("the recording blocker explains how to show an already-running device", async t => {
+  const { module: { TestingView }, dom } = await renderEnvironment<any>(t, {
+    exports: 'export { TestingView } from "./packages/ui/src/components/testing-view.tsx";', slug: "testing-mirror-guidance",
+  });
+  const { act, createElement } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+  const root = createRoot(dom.window.document.getElementById("root")!);
+  const emptyDeviceSnapshot = { device: undefined };
+  const deviceApps = { subscribe: () => () => undefined, getSnapshot: () => emptyDeviceSnapshot };
+
+  await act(async () => { root.render(createElement(TestingView, { panel: panelStub(), deviceApps })); });
+
+  assert.match(dom.window.document.querySelector("[data-testing-blocker]")?.textContent ?? "", /choose it from Add device/);
+  await act(async () => { root.unmount(); });
+});
 
 test("a step's commands open beside it, and Clear asks before it throws the flow away", async t => {
   const { module: { TestingView, testRecorder }, dom, onTeardown } = await renderEnvironment<any>(t, {
@@ -660,7 +701,7 @@ test("Record says the mirror is not ready yet, until selection actually is", asy
   testRecorder.attach("udid", "ios", { readComponents: () => tree, screen: () => SCREEN, release: () => undefined });
 
   const root = createRoot(dom.window.document.getElementById("root")!);
-  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations })); });
+  await act(async () => { root.render(createElement(TestRecorderOverlay, { store: annotations, platform: "ios", deviceId: "udid" })); });
   onTeardown(async () => {
     await act(async () => { root.unmount(); });
     await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
@@ -746,6 +787,149 @@ test("the list keeps what is not stored above what the project holds, and asks b
   assert.equal(query("[role=alertdialog]"), null, "answering it closes the question");
 
   testRecorder.clearSteps();
+});
+
+test("bundled tests are labeled In Testing Studio and configured projects show read-only setup", async t => {
+  const { module: { TestingView }, dom, onTeardown } = await renderEnvironment<any>(t, {
+    exports: 'export { TestingView } from "./packages/ui/src/components/testing-view.tsx";', slug: "testing-setup-modes",
+  });
+  const { act, createElement } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+  const root = createRoot(dom.window.document.getElementById("root")!);
+  const deviceApps = { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT };
+  const configured = panelStub({ setupOpen: true, setupDetails: {
+    provider: "chatgpt", model: "gpt-6-luna", dependencies: { e2e: "0.17.0", mobile: "0.9.2" },
+    skillInstalled: true, mcpRegistrations: [".mcp.json", ".cursor/mcp.json"], loginStatus: { openai: true },
+  } });
+  await act(async () => { root.render(createElement(TestingView, { panel: configured, deviceApps })); });
+  assert.match(dom.window.document.body.textContent ?? "", /E2E setup/);
+  await openSection(act, dom.window.document, "Project");
+  await openSection(act, dom.window.document, "Mobile apps");
+  assert.match(dom.window.document.body.textContent ?? "", /chatgpt · gpt-6-luna/);
+  assert.match(dom.window.document.body.textContent ?? "", /\.mcp\.json, \.cursor\/mcp\.json/);
+  assert.equal(dom.window.document.querySelectorAll("[data-testing-setup]").length, 1, "model and project setup share one toolbar entry");
+  assert.equal(dom.window.document.querySelector("[data-testing-model]"), null);
+  await act(async () => { root.render(createElement("div")); });
+  await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
+
+  const bundled = panelStub({ runtimeMode: "bundled", setupState: "available", setupOpen: false,
+    tests: [{ relativePath: "tests/studio.e2e.ts", name: "studio.e2e.ts", updatedAt: "2026-01-01T00:00:00.000Z", sizeBytes: 10 }] });
+  await act(async () => { root.render(createElement(TestingView, { panel: bundled, deviceApps })); });
+  await act(async () => { (dom.window.document.querySelector("[data-testing-drafts]") as HTMLElement).click(); });
+  assert.match(dom.window.document.querySelector("[data-testing-group=stored]")?.textContent ?? "", /In Testing Studio/);
+  await act(async () => { root.render(createElement("div")); });
+  await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
+  onTeardown(async () => { await act(async () => { root.unmount(); }); });
+});
+
+test("with no project open the picker says so and setup offers no project files", async t => {
+  const { module: { TestingView }, dom, onTeardown } = await renderEnvironment<any>(t, {
+    exports: 'export { TestingView } from "./packages/ui/src/components/testing-view.tsx";', slug: "testing-no-project",
+  });
+  const { act, createElement } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+  const root = createRoot(dom.window.document.getElementById("root")!);
+  const deviceApps = { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT };
+  let chosen = 0;
+  const panel = { ...panelStub({ projectPath: "/studio", studioPath: "/studio", runtimeMode: "bundled", setupState: "available", configPath: "", setupOpen: true }), useNoProject: async () => { chosen += 1; } };
+  await act(async () => { root.render(createElement(TestingView, { panel, deviceApps })); });
+  const trigger = dom.window.document.querySelector("[aria-label='Testing project']") as HTMLElement;
+  assert.match(trigger.textContent ?? "", /No project/);
+  await openSection(act, dom.window.document, "Project");
+  assert.match(dom.window.document.body.textContent ?? "", /No project open/);
+  assert.doesNotMatch(dom.window.document.body.textContent ?? "", /Set up project/);
+  await act(async () => { trigger.click(); });
+  await act(async () => { (dom.window.document.querySelector("[data-testing-no-project]") as HTMLElement).click(); });
+  assert.equal(chosen, 1);
+  await act(async () => { root.render(createElement("div")); });
+  await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
+  onTeardown(async () => { await act(async () => { root.unmount(); }); });
+});
+
+test("a stored Testing Studio test shows its pinned app and offers to re-pin it to the app in front", async t => {
+  const { module: { TestingView }, dom, onTeardown } = await renderEnvironment<any>(t, {
+    exports: 'export { TestingView } from "./packages/ui/src/components/testing-view.tsx";', slug: "testing-pinned-app",
+  });
+  const { act, createElement } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+  const root = createRoot(dom.window.document.getElementById("root")!);
+  const deviceApps = { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT };
+  let repinned = 0;
+  const panel = { ...panelStub({ runtimeMode: "bundled", selectedTestPath: "tests/flow.e2e.ts", selectedTestSource: "await tap();\n" }),
+    storedTarget: { platform: "ios", bundleId: "com.a" }, storedApps: { ios: "com.a" }, foregroundTarget: { platform: "ios", bundleId: "com.b" },
+    storedRunHint: "com.a is not installed on the mirrored device.", canRunStored: false, repinStoredTest: async () => { repinned += 1; } };
+  await act(async () => { root.render(createElement(TestingView, { panel, deviceApps })); });
+  assert.match(dom.window.document.querySelector("[data-testing-pinned-app]")?.textContent ?? "", /com\.a/);
+  assert.match(dom.window.document.querySelector("[data-testing-run-hint]")?.textContent ?? "", /not installed/);
+  assert.equal((dom.window.document.querySelector("[data-testing-run]") as HTMLButtonElement).disabled, true);
+  await act(async () => { (dom.window.document.querySelector("[data-testing-repin]") as HTMLElement).click(); });
+  assert.equal(repinned, 1);
+  assert.equal(dom.window.document.querySelector("[data-testing-repin]")?.textContent, "Use current app");
+  // With an Android app in front, the warning itself offers to add it for Android, and the header does not.
+  const android = { ...panel, foregroundTarget: { platform: "android", bundleId: "com.b.android" }, canAddForegroundApp: true };
+  await act(async () => { root.render(createElement(TestingView, { panel: android, deviceApps })); });
+  assert.equal(dom.window.document.querySelector("[data-testing-run-hint] [data-testing-add-app]")?.textContent, "Add Android app");
+  assert.equal(dom.window.document.querySelector("[data-testing-repin]"), null);
+  await act(async () => { (dom.window.document.querySelector("[data-testing-add-app]") as HTMLElement).click(); });
+  assert.equal(repinned, 2);
+  // Once added, both apps show, and the app in front needs no button.
+  const both = { ...android, canAddForegroundApp: false, storedTarget: { platform: "ios", bundleId: "com.a", apps: { android: "com.b.android" } }, storedApps: { ios: "com.a", android: "com.b.android" } };
+  await act(async () => { root.render(createElement(TestingView, { panel: both, deviceApps })); });
+  assert.match(dom.window.document.querySelector('[data-testing-added-app="android"]')?.textContent ?? "", /com\.b\.android/);
+  assert.equal(dom.window.document.querySelector("[data-testing-repin]"), null);
+  await act(async () => { root.render(createElement("div")); });
+  await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
+  onTeardown(async () => { await act(async () => { root.unmount(); }); });
+});
+
+test("async project data prefills model and every discovered setup target", async t => {
+  const { module: { TestingView }, dom, onTeardown } = await renderEnvironment<any>(t, {
+    exports: 'export { TestingView } from "./packages/ui/src/components/testing-view.tsx";', slug: "testing-async-setup",
+  });
+  const { act, createElement } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+  const root = createRoot(dom.window.document.getElementById("root")!);
+  const opened: string[] = [];
+  const panel = { ...panelStub({ runtimeMode: "bundled", setupState: "available", setupOpen: true, modelPickerOpen: true,
+    modelPreference: { provider: "chatgpt", model: "gpt-6-luna" },
+    setupDetails: { dependencies: {}, skillInstalled: false, mcpRegistrations: [], loginStatus: { openai: true } },
+    providers: [{ id: "none", label: "None" }, { id: "chatgpt", label: "ChatGPT", subscription: "openai", defaultModel: "gpt-default" }],
+    targets: [
+      { name: "ios", platform: "ios", bundleId: "com.anonymous.expoapp57" },
+      { name: "android", platform: "android", bundleId: "com.anonymous.expoapp57" },
+    ],
+  }), startLogin: async () => ({ id: "11111111-1111-4111-8111-111111111111", kind: "login", status: "waiting", message: "Open the browser", completed: 0, total: 1, applied: [], auth: { url: "https://auth.example.test/start", instructions: "Open the browser" } }),
+    openLoginUrl: async (url: string) => { opened.push(url); }, setupProgress: async () => null, cancelSetup: async () => {} };
+  await act(async () => { root.render(createElement(TestingView, { panel, deviceApps: { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT } })); });
+  assert.equal(dom.window.document.querySelectorAll('[aria-label$="app identifier"]').length, 0, "bundled opens on a summary, not the setup form");
+  assert.equal(dom.window.document.querySelector('[aria-label="Model ID"]'), null, "Agent model starts collapsed");
+  const modelToggle = [...dom.window.document.querySelectorAll('[data-slot="collapsible-trigger"]')].find(el => el.textContent?.includes("Agent model")) as HTMLElement;
+  await act(async () => { modelToggle.click(); });
+  assert.equal((dom.window.document.querySelector('[aria-label="Model ID"]') as HTMLInputElement | null)?.value, "gpt-6-luna");
+  assert.match(dom.window.document.body.textContent ?? "", /Signed in/, "stored e2e login status is reused");
+  const signIn = [...dom.window.document.querySelectorAll("button")].find(button => button.textContent?.includes("Sign in with")) as HTMLButtonElement;
+  await act(async () => { signIn.click(); await Promise.resolve(); });
+  assert.deepEqual(opened, ["https://auth.example.test/start"], "a user-started OAuth flow auto-opens its emitted URL");
+  await openSection(act, dom.window.document, "Project");
+  const setUp = [...dom.window.document.querySelectorAll("button")].find(button => button.textContent?.includes("Set up project")) as HTMLButtonElement;
+  await act(async () => { setUp.click(); });
+  await openSection(act, dom.window.document, "Mobile apps");
+  await openSection(act, dom.window.document, "Project");
+  const identifiers = [...dom.window.document.querySelectorAll('[aria-label$="app identifier"]')] as HTMLInputElement[];
+  assert.deepEqual(identifiers.map(input => input.value), ["com.anonymous.expoapp57", "com.anonymous.expoapp57"]);
+  assert.deepEqual([...dom.window.document.querySelectorAll('[aria-label^="Target "][aria-label$=" name"]')].map(input => (input as HTMLInputElement).value), ["ios", "android"]);
+  const mcp = dom.window.document.querySelector('[role="switch"][aria-label*="MCP"]') as HTMLElement;
+  assert.equal(mcp.getAttribute("aria-checked"), "true", "new setup preselects MCP registration");
+  const waitingSnapshot = { ...panel.getSnapshot(), modelPreference: undefined };
+  const waiting = { ...panel, getSnapshot: () => waitingSnapshot };
+  await act(async () => { root.render(createElement(TestingView, { panel: waiting, deviceApps: { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT } })); });
+  assert.ok(dom.window.document.querySelector('[aria-label="Model provider"]'), "Agent model opens by itself when a run needs a model");
+  const waitingToggle = [...dom.window.document.querySelectorAll('[data-slot="collapsible-trigger"]')].find(el => el.textContent?.includes("Agent model")) as HTMLElement;
+  await act(async () => { waitingToggle.click(); });
+  assert.equal(dom.window.document.querySelector('[aria-label="Model provider"]'), null, "the user can still collapse it");
+  await act(async () => { root.render(createElement("div")); });
+  await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
+  onTeardown(async () => { await act(async () => { root.unmount(); }); });
 });
 
 test("a selected project test offers temporary step edits and per-line runs", async t => {
@@ -940,4 +1124,71 @@ test("moving from one step to the next hands the highlight over without dimming 
 
   testRecorder.clearSteps();
   testRecorder.detach("udid", "ios");
+});
+
+test("the matrix shows its devices, one lane per device with a cancel, and Run on N devices", async t => {
+  const { module: { TestingView }, dom, onTeardown } = await renderEnvironment<any>(t, {
+    exports: 'export { TestingView } from "./packages/ui/src/components/testing-view.tsx";', slug: "testing-matrix",
+  });
+  const { act, createElement } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+  const root = createRoot(dom.window.document.getElementById("root")!);
+  const cancelled: (string | undefined)[] = [];
+  const selected: string[][] = [];
+  const lane = (n: number, state: string, extra: object = {}) => ({ runId: `r${n}`, deviceId: `d${n}`, deviceName: `Phone ${n}`, platform: "ios", state, progress: [], ...extra });
+  const panel = { ...panelStub({
+    runtimeMode: "bundled", setupState: "available", setupOpen: true, targets: [{ name: "ios", platform: "ios", bundleId: "com.example.app" }],
+    matrixLimit: 3, matrixSelected: ["d0", "d1", "d2"],
+    matrixDevices: [
+      { deviceId: "d0", name: "iPhone 17", platform: "ios", runtime: "iOS 26", booted: true, installed: true },
+      { deviceId: "d1", name: "iPhone 16", platform: "ios", runtime: "iOS 18", booted: false },
+      { deviceId: "d2", name: "Pixel", platform: "android", runtime: "", booted: true, installed: false },
+    ],
+    matrix: { matrixId: "m", limit: 3, startedAt: 1, lanes: [lane(0, "running", { startedAt: Date.now() }), lane(1, "queued"), lane(2, "passed", { result: { status: "passed", steps: [], durationMs: 1500 } })] },
+    selectedLane: "r0",
+  }), matrixRunCount: 2, runsOnMatrix: true, matrixApps: () => ({ ios: "com.example.app" }),
+    cancelMatrix: async (id?: string) => { cancelled.push(id); }, setMatrixSelection: (ids: string[]) => { selected.push(ids); } };
+  await act(async () => { root.render(createElement(TestingView, { panel, deviceApps: { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT } })); });
+  const doc = dom.window.document;
+  assert.match(doc.querySelector("[data-testing-run]")?.textContent ?? "", /Run on 2 devices/);
+  const rows = [...doc.querySelectorAll("[data-matrix-lane]")];
+  assert.deepEqual(rows.map(row => row.getAttribute("data-lane-state")), ["running", "queued", "passed"]);
+  assert.match(doc.querySelector("[data-testing-lanes]")?.textContent ?? "", /1 passed · 2 in progress/);
+  const cancel = doc.querySelector('[aria-label="Cancel Phone 0"]') as HTMLButtonElement;
+  await act(async () => { cancel.click(); });
+  assert.deepEqual(cancelled, ["d0"]);
+  assert.equal((doc.querySelector('[aria-label="Cancel Phone 2"]') as HTMLButtonElement).disabled, true, "a finished lane has nothing to cancel");
+  const devicesToggle = [...doc.querySelectorAll('[data-slot="collapsible-trigger"]')].find(el => el.textContent?.includes("Devices")) as HTMLElement;
+  await act(async () => { devicesToggle.click(); });
+  const text = doc.querySelector("[data-testing-matrix]")?.textContent ?? "";
+  assert.match(text, /iPhone 17/); assert.match(text, /Installed/); assert.match(text, /App missing/); assert.match(text, /Off/);
+  assert.match(text, /No Android app id/, "a platform without an app id says so");
+  const incompatible = doc.querySelector('[data-matrix-device="d2"] input') as HTMLInputElement;
+  assert.equal(incompatible.disabled, false, "an incompatible device that was already checked can still be unchecked");
+  await act(async () => { incompatible.click(); });
+  assert.deepEqual(selected, [["d0", "d1"]]);
+  await act(async () => { (doc.querySelector('[data-matrix-device="d0"] input') as HTMLInputElement).click(); });
+  assert.deepEqual(selected, [["d0", "d1"], ["d1", "d2"]]);
+  await act(async () => { root.render(createElement("div")); });
+  await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
+  onTeardown(async () => { await act(async () => { root.unmount(); }); });
+});
+
+test("a panel without the matrix shows it as unavailable", async t => {
+  const { module: { TestingView }, dom, onTeardown } = await renderEnvironment<any>(t, {
+    exports: 'export { TestingView } from "./packages/ui/src/components/testing-view.tsx";', slug: "testing-matrix-project",
+  });
+  const { act, createElement } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+  const root = createRoot(dom.window.document.getElementById("root")!);
+  const panel = { ...panelStub({ runtimeMode: "project", setupOpen: true }), matrixEnabled: false };
+  await act(async () => { root.render(createElement(TestingView, { panel, deviceApps: { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT } })); });
+  const doc = dom.window.document;
+  const toggle = [...doc.querySelectorAll('[data-slot="collapsible-trigger"]')].find(el => el.textContent?.includes("Devices")) as HTMLElement;
+  await act(async () => { toggle.click(); });
+  assert.match(doc.querySelector("[data-matrix-disabled]")?.textContent ?? "", /not available/);
+  assert.equal(doc.querySelector("[data-testing-matrix]"), null);
+  await act(async () => { root.render(createElement("div")); });
+  await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
+  onTeardown(async () => { await act(async () => { root.unmount(); }); });
 });

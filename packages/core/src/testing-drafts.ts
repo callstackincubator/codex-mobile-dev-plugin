@@ -25,7 +25,7 @@ function sameProject(left: string, right: string): boolean {
 }
 
 /**
- * The recordings the Testing panel has not written into a project yet.
+ * The recordings the Testing Studio panel has not written into a project yet.
  *
  * One file per draft, named by its id, the same shape `RecordingStore` uses for performance
  * recordings: a draft is read and replaced whole, and a file per draft means a delete is an

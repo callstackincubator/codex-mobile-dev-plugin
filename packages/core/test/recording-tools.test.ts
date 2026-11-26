@@ -95,11 +95,11 @@ test("recording tools distinguish data, inline rendering, workspace opening and 
       assert.equal(result.structuredContent?.title, recording.title);
       const text = result.content.map(item => item.type === "text" ? item.text : "").join("");
       assert.match(text, new RegExp(`recordingId ${recording.id}`));
-      // A preview for cards that cannot read the recording: every sample, no thread or frame detail.
+      // Small Android recordings carry exact frame timings for preview-only hosts.
       const preview = result.structuredContent?.preview as typeof recording | undefined;
       assert.equal(preview?.samples.length, recording.samples.length);
       assert.ok(preview?.samples.every(sample => sample.threads.length === 0));
-      assert.ok(preview?.fps.samples.every(sample => sample.frameTimeline === undefined));
+      assert.deepEqual(preview?.fps, recording.fps);
       assert.ok(JSON.stringify(result).length < 45_000, `${name} fits a host's tool result cap`);
     }
     assert.deepEqual(result.structuredContent?.range, { start: 12, end: 18 });
@@ -160,10 +160,17 @@ test("recording tools distinguish data, inline rendering, workspace opening and 
   assert.equal(conflict.isError, true);
 });
 
-test("recordings show in chat cards; opening them in the workspace is the panel's tool", async t => {
+test("iPhone recordings show hitch markers and selected-range totals in chat cards", async t => {
   const directory = await mkdtemp(join(tmpdir(), "mobile-dev-recording-tools-"));
   const store = new RecordingStore(directory);
   const recording = recordingFixture();
+  recording.target = { platform: "ios", kind: "physical", deviceId: "iphone", bundleId: recording.target.bundleId };
+  recording.deviceName = "iPhone";
+  recording.memoryMetric = "physical-footprint";
+  recording.iosHitches = { status: "finished", end: 30, events: [
+    { time: 12.5, lateMs: 125, refreshIntervalMs: 1000 / 120 },
+    { time: 17, lateMs: 250, refreshIntervalMs: 1000 / 60 },
+  ] };
   await store.save(recording);
   const recordings = new PerformanceRecordings({ open() { throw new Error("Not used"); }, async read() { throw new Error("Not running"); }, async closeSession() {} }, unavailableFps, store);
   const server = new McpServer({ name: "recordings-test", version: "1" });
@@ -177,14 +184,31 @@ test("recordings show in chat cards; opening them in the workspace is the panel'
   assert.equal(tools.some(tool => tool.name === "mobile_open_performance_recording"), false);
   const rendering = tools.find(tool => tool.name === "mobile_render_performance_recording");
   assert.doesNotMatch(rendering?.description ?? "", /Open in Mobile Dev/);
-  const shown = await client.callTool({ name: "mobile_render_performance_recording", arguments: { recordingId: recording.id } });
+  const args = { recordingId: recording.id, range: { start: 12, end: 13 } };
+  const shown = await client.callTool({ name: "mobile_render_performance_recording", arguments: args });
   assert.equal(shown.structuredContent?.recordingId, recording.id);
+  const preview = shown.structuredContent?.preview as typeof recording;
+  assert.deepEqual(preview.iosHitches, recording.iosHitches);
+  const summary = shown.structuredContent?.summary;
+  assert.ok(summary && typeof summary === "object" && "hitchStats" in summary);
+  assert.deepEqual(summary.hitchStats, { count: 1, lateMs: 125 });
+  const read = await client.callTool({ name: "mobile_read_performance_recording", arguments: args });
+  assert.deepEqual(read.structuredContent?.summary, summary);
+  const listing = await client.callTool({ name: "mobile_list_performance_recordings", arguments: {} });
+  const items = listing.structuredContent?.recordings;
+  assert.ok(Array.isArray(items));
+  assert.deepEqual(items[0].iosHitches, { status: "finished" });
 });
 
 test("results that show recordings fit a host's result limit, leaving out previews that do not", async t => {
   const directory = await mkdtemp(join(tmpdir(), "mobile-dev-recording-tools-"));
   const store = new RecordingStore(directory);
   const longest = longestRecordingFixture();
+  const frames = Array.from({ length: 900 }, (_, index) => {
+    const time = String(index + 1);
+    return { token: time, startTimeNs: time, endTimeNs: time, presentType: 2, jankType: 2 };
+  });
+  longest.fps.samples[0].frameTimeline = { clock: "boottime", intervalEndNs: "1000000000", frames };
   const second = { ...longestRecordingFixture(), id: "44b7030b-a74e-466f-aeb0-bcd3ae8af972" };
   const short = { ...recordingFixture(), id: "27cfecab-d99c-4533-90dd-e14a7cb0087b" };
   const shortSecond = { ...recordingFixture(), id: "5d1f3c0e-8a4b-4e2a-9c61-0f7e2b9d4a13" };
@@ -200,7 +224,9 @@ test("results that show recordings fit a host's result limit, leaving out previe
   const bytes = (result: unknown) => Buffer.byteLength(JSON.stringify(result));
   // The longest recording still carries its preview, for cards that cannot read it.
   const shown = await client.callTool({ name: "mobile_render_performance_recording", arguments: { recordingId: longest.id } });
-  assert.ok(shown.structuredContent?.preview);
+  const preview = shown.structuredContent?.preview as typeof longest;
+  assert.equal(preview.fps.samples.length, longest.fps.samples.length);
+  assert.equal(preview.fps.samples[0].frameTimeline, undefined);
   assert.ok(bytes(shown) <= RESULT_BYTES, `${bytes(shown)} bytes`);
   const compared = await client.callTool({ name: "mobile_compare_performance_recordings", arguments: { recordingIds: [longest.id, second.id] } });
   assert.equal(compared.structuredContent?.previews, undefined);

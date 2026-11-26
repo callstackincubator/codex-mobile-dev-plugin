@@ -47,8 +47,8 @@ calls when prompted. Run `claude plugin marketplace update mobile-dev` to update
   [nodejs.org](https://nodejs.org), then restart Claude.
 - **iOS:** Xcode 26 or later with an installed simulator runtime. Physical iPhone
   logs need Xcode 27 or later.
-- **Android:** Android SDK platform-tools and emulator, and an AVD or a device with
-  USB or wireless debugging authorized.
+- **Android:** Android SDK Platform-Tools for an authorized USB or wireless device.
+  For a virtual device, also install Android Emulator and create an AVD with a system image.
 
 ## What it runs on your Mac
 
@@ -56,15 +56,15 @@ The plugin bundles most of its runtimes and native helpers, so no `npm install`,
 account, or hosted service is needed. Your project's own tools build the app. Besides
 its Node.js server, it runs:
 
-- **The device panel's runtime, downloaded once.** The first time you open the panel,
+- **The device and Testing Studio runtime, downloaded once.** On first use,
   Mobile Dev downloads one archive from this project's GitHub release for the
   installed version (`mobile-dev-<version>-panel-runtime-darwin-arm64.tar.gz`, from
-  `github.com/callstackincubator/codex-mobile-dev-plugin/releases`). The plugin pins
+  `github.com/callstackincubator/mobile-dev/releases`). The plugin pins
   the archive's size and SHA-256 checksum and refuses any other file. It holds
   [Baguette](https://github.com/tddworks/baguette), which streams and controls iOS
   simulators, serve-emu with scrcpy for Android streaming, and the physical iPhone
-  mirroring addon and its service, built from the source and versions this
-  repository pins. It is unpacked into Claude Code's data folder for the plugin
+  mirroring addon and its service, plus the Testing Studio runner. The repository
+  pins their versions. The archive is unpacked into Claude Code's plugin data folder
   (`~/.claude/plugins/data/`), or `~/Library/Caches/mobile-dev` elsewhere, and kept
   across sessions; an update downloads its own version and removes older ones.
   Nothing is downloaded until you open the panel, and the other tools work without it.
@@ -90,9 +90,15 @@ Mobile Dev reports plugin errors, crashes, usage counters, sampled traces, and
 aggregate plugin performance measurements to Sentry by default. App logs,
 screenshots, input content, tool payloads, app storage contents, profiles, and device
 performance recordings are excluded from that telemetry. Errors and crashes use a
-randomly generated persistent installation ID. Nothing else goes to Callstack, and
-profiles go only to the TraceSift service on your Mac. Set `MOBILE_DEV_TELEMETRY=off`
-in the environment Claude starts from, then restart Claude, to turn reporting off.
+randomly generated persistent installation ID. Mobile Dev also sends basic product
+analytics to Anal at `anal.margelo.com`: that a session started or a tool was called,
+with the tool's name, whether it succeeded, the host, the plugin version, the
+operating system type, and the same installation ID. Analytics exclude tool arguments
+and results, app and device content, device names, project paths, and account details.
+Nothing else goes to Callstack, and profiles go only to the TraceSift service on your
+Mac. Set `MOBILE_DEV_TELEMETRY=off` in the environment Claude starts from, then restart
+Claude, to turn reporting off, or `MOBILE_DEV_ANALYTICS=off` to turn off only product
+analytics.
 Read the [Privacy Policy](PRIVACY.md) and [Terms of Service](TERMS.md).
 
 For help, email [hello@callstack.com](mailto:hello@callstack.com) or see

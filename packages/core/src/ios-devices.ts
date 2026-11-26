@@ -37,8 +37,9 @@ function normalizedUdid(udid: string) {
   return compact.toLowerCase();
 }
 
-export async function listIosDevices(signal?: AbortSignal, run: DeviceCommand = execute, listConnections = listNativeIosConnections): Promise<PhysicalIosDevice[]> {
+export async function listIosDevices(signal?: AbortSignal, run: DeviceCommand | undefined = process.platform === "win32" ? undefined : execute, listConnections = listNativeIosConnections): Promise<PhysicalIosDevice[]> {
   signal?.throwIfAborted();
+  if (!run) return [];
   const args = ["devicectl", "list", "devices", "--quiet", "--timeout", "10", "--omit-deprecated-fields-in-json",
     "--filter", "properties.hardware.reality = 'physical' AND properties.hardware.platform = 'iOS'", "--json-output", "-"];
   const output = await run("/usr/bin/xcrun", args, { encoding: "utf8", timeout: 15000, maxBuffer: 4 * 1024 * 1024, signal });

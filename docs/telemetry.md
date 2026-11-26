@@ -4,6 +4,11 @@
 
 ## Hosts
 
+On Windows, SDK and project paths in error messages are redacted. Stack frames for
+packaged server bundles use the same path as their source-map debug image after
+redaction, retaining the release's debug ID. Android FPS, input acknowledgement,
+screen inspection and chat attachment measurements use the existing boundaries.
+
 Since 0.1.165, UI and server telemetry carry a `host` tag and attribute with one of
 `codex`, `claude`, `cursor`, `mac` or `other`. Codex, Claude, Cursor and other MCP
 Apps hosts load the same panel and server; the Mac app runs the same server and shared UI.
@@ -30,13 +35,17 @@ Behavior never depends on this value; it only attributes measurements and errors
   model context updates by `outcome` (`stored`, `invalid` or `too_large`), and
   `browser_panel.context_bytes` records the size of stored updates in bytes; the
   context's text and images are never sent.
-- Packages that download the panel's native parts, such as Claude's, measure that
-  step. `panel_runtime.ready` records, in milliseconds, how long the runtime took to be
-  ready on a panel's first backend start in a server, by `outcome`: `cached` when a
+- Codex measures its Testing Studio runtime download. Claude measures its combined
+  device and Testing Studio runtime download. `panel_runtime.ready` records, in milliseconds, how long the runtime took to be
+  ready on its first use in a server, by `outcome`: `cached` when a
   complete folder was already there, `downloaded` for a download, checksum check and
   extraction, or `failed` with a bounded `reason` (`network`, `http`, `checksum`,
   `archive` or `filesystem`). `panel_runtime.download_bytes` records the archive size
-  of each download. A failure surfaces as the expected `download_failed` outcome;
+  of each download. Claude includes Testing Studio since 0.1.191. Codex reports its
+  standalone archive since 0.1.192. Both metrics identify the archive with `runtime`
+  (`testing` or `panel`). The UI’s installation progress polls are excluded
+  from MCP traces and product analytics. A failure
+  surfaces as the expected `download_failed` outcome;
   checksum, archive and filesystem failures are also captured as
   `panel_runtime.prepare` errors with a `panel_runtime_failure` tag, while offline
   machines and unreachable releases are not. URLs, paths and versions are never
@@ -55,8 +64,9 @@ shell has no native Sentry SDK.
 
 ## Product analytics
 
-Since 0.1.177, release MCP servers send basic product analytics to Mixpanel's EU
-project to count installations and feature use. `instrumentProductAnalytics`
+Starting with 0.1.191, release MCP servers send basic product analytics to the
+Mobile Dev project in Anal to count installations and feature use. Earlier
+releases from 0.1.177 send to Mixpanel's EU endpoint. `instrumentProductAnalytics`
 (`packages/core/src/analytics.ts`) wraps the `tools/call` handler and reports
 `Tool Called` with the tool name and a `success` or `error` outcome; the chat
 client's initialization reports `Session Started`. Every event carries only
@@ -64,13 +74,13 @@ client's initialization reports `Session Started`. Every event carries only
 the server-owned installation ID as `distinct_id`. Tools `isFrequentTool` lists are
 skipped. Events are batched (50 per request, at most 500 queued), sent every 30
 seconds and when the plugin closes; failed batches are dropped. Requests go to
-`api-eu.mixpanel.com/track?ip=0&verbose=1`: Mixpanel neither stores nor geolocates
-the IP, and reports rejected batches in its reply.
+`https://anal.margelo.com/track?ip=0&verbose=1`. Anal skips IP-derived location
+enrichment and reports batch acceptance in its JSON reply.
 
 Each connected session also queues an installation profile with the same
 `distinct_id`, `host`, `plugin_version` and `os`. Profiles are sent through
-`api-eu.mixpanel.com/engage?ip=0&verbose=1` with `$ip: "0"`, so they appear in
-Mixpanel's Users view without IP-derived location, names or account details.
+`https://anal.margelo.com/engage?ip=0&verbose=1` with `$ip: "0"`, so they appear
+in Anal's Users view without IP-derived location, names or account details.
 Existing events join the profile by installation ID. Profiles are pseudonymous,
 not a guarantee of anonymisation under data protection law. A failed profile
 update stays pending until the next flush; closing makes one final attempt and
@@ -79,13 +89,20 @@ discards any pending update. Profile failures do not prevent event delivery.
 Development builds send nothing, and neither does the iOS mirror service. The
 choice is made when the server starts: `MOBILE_DEV_TELEMETRY=off` turns analytics
 off along with Sentry; `MOBILE_DEV_ANALYTICS=off` or `DO_NOT_TRACK=1` turns off only
-analytics, including profile updates. `analytics.flush` counts each Mixpanel request
-with `component=server` and `outcome=success` only when Mixpanel accepted the batch.
+analytics, including profile updates. `analytics.flush` counts each ingestion request
+with `component=server` and `outcome=success` only when the service accepts the batch.
 The bounded `endpoint` attribute distinguishes `track` event batches from `engage`
 profile updates; before installation profiles, the metric counted only event batches.
-The panel UI sends nothing to Mixpanel, and its CSP is unchanged.
+The MCP server handles all product analytics requests.
 
 ## Volume policy
+
+Testing setup adds `testing.setup.operation.samples`. Its attributes are limited to `component`,
+`surface`, `operation` (`plan`, `apply`, `login`, `preference`), bounded `outcome`, and a supported
+provider id (unknown values become `other`). It never includes project paths, bundle identifiers,
+model ids, endpoints, prompts, test/source text, OAuth codes, API keys or tokens. The existing UI
+Testing timings and outcome counters likewise carry no user content. Cancellation and partial failure
+are outcomes, not error payloads, and telemetry opt-out applies unchanged.
 
 Since 0.1.164, application metrics in the UI, Node servers and native helpers use
 independent 0.5% point sampling before SDK buffering and network transmission.
@@ -526,6 +543,8 @@ Since 0.1.69, inspection timing also includes the bounded Metro source-map looku
 
 Since 0.1.92, Android inspection timing also includes the full-resolution display-size read and bounds scaling. Existing inspection, fallback and tree-processing coverage stays on the active selection path. Display sizes and element bounds remain local.
 
+The device workspace records the number of visible screens in the numeric gauge `ui.devices.visible`. Since 0.1.194 this counts the selected tab in each split. A background tab suspends its stream and frame measurements until it becomes visible. The layout attribute describes the platforms shown. Workspaces with multiple screens omit device platform and kind attributes because their timing windows can contain work from several devices. Platform-specific frame counters continue to count each painted frame.
+
 Since 0.1.93, `ui.video.paint` and the platform frame counters also cover frames drawn to the local buffer while Select freezes the visible screen. These remain bounded plugin processing measurements, not device FPS. Recovery uses the same surface attribution and timing units; screenshots and element details remain local.
 
 `ui.annotations.send` measures the host send round trip, including composer retries. Outcome counters distinguish success, a missing composer, timeout and other failures. Unexpected send failures use a fixed error message. No message content goes to Sentry. A timeout keeps notes for a manual retry; it never triggers an automatic resend, since delivery may have succeeded without acknowledgement.
@@ -539,7 +558,7 @@ it does not confirm user submission or a model response. Notes remain until the
 user clears them. Message/context construction timings, surface attribution, and
 content scrubbing are preserved; no note text or selection evidence enters telemetry.
 
-The Testing panel's recorder measures `ui.testing.tree_read`, the read that resolves a tap into a
+The Testing Studio panel's recorder measures `ui.testing.tree_read`, the read that resolves a tap into a
 selector, and counts `ui.testing.record_start`/`record_stop`, `ui.testing.step_tap`,
 `ui.testing.step_assert`, `ui.testing.step_unresolved`, `ui.testing.hover_walk`,
 `ui.testing.menu_open`. Editing a recorded step counts `ui.testing.step_duplicate`,
@@ -603,6 +622,11 @@ as well, so a flow tried a step at a time is not read as a flow run end to end; 
 beside the verdict, not instead of it. The test's title, its path, the project path, the steps and
 the runner's output are the user's own content and are **not** sent.
 
+A run on several devices measures `ui.testing.matrix_run`, the panel's whole call from starting the
+matrix to its last lane ending, and counts `ui.testing.matrix_run` at the start and
+`ui.testing.matrix_passed` or `ui.testing.matrix_failed` at the end (passed only when every lane
+passed). Device names and ids, app ids and the number of devices are not sent.
+
 Unsaved recordings — the flows the panel keeps so one survives the panel document being rebuilt —
 measure `ui.testing.draft_save`, the autosave write, and count `ui.testing.draft_restore` when one
 is reopened into the step list and `ui.testing.draft_delete` when the user throws one away. The
@@ -633,7 +657,7 @@ while this one answers "how long is Record unusable for" — the number the over
 of. A read that fails still records the timing, because the wait happened; it carries no selector,
 element name, bundle id or project path.
 
-The Testing panel records on Android emulators as well as iOS simulators, so `ui.testing.tree_read`,
+The Testing Studio panel records on Android emulators as well as iOS simulators, so `ui.testing.tree_read`,
 `ui.testing.record_prepare` and the `testing.agent.screen.*` metrics now carry a `platform`
 attribute (`ios` or `android`; two values, no device ids). One series hid that waiting on an
 emulator is a different number from waiting on a simulator. Names, units and boundaries are
@@ -663,8 +687,11 @@ handled failures retain their tool error paths. Since 0.1.170, physical iOS beze
 failures report under `ios-mirror.bezel` instead. Setup failures use fixed messages without
 developer directories or scanner output. Native telemetry initialization and
 matching dSYMs are preserved; rebuilds remove build-toolchain rpaths and re-sign
-the executable before retaining symbols. No additional telemetry fields or
-measurement boundaries are introduced.
+the executable before retaining symbols. Since 0.1.197,
+`baguette.runtime.command.duration` measures each discovery command in milliseconds,
+including commands that fail or time out. The `operation` attribute identifies
+`xcode-select`, `otool` or `swift-stdlib-tool`. The latter two run concurrently,
+so their durations can overlap.
 
 Since 0.1.117, Android's bundled serve-emu backend runs under Node.js. Existing MCP error capture, sampled tool traces, UI readiness, and input acknowledgement measurements remain on the active paths. `android.backend.startup.samples` and `android.backend.startup.duration` measure owned backend launches from process spawn through matching device health readiness or startup failure, in milliseconds, with a fixed `outcome` of `ready` or `failed`. These measure plugin backend startup, excluding emulator boot. They carry only product attributes, never device IDs, process diagnostics, paths, or input content, and honor telemetry opt-out. The child backend retains its local frame, queue, and recovery diagnostics without emitting per-frame Sentry events.
 
@@ -874,6 +901,17 @@ attached to any of them, matching the parameter store's own refusal to log
 values; the route and the reason a dispatch was refused appear only in the local
 console line and in the error shown on the node, neither of which leaves the
 machine. No new data is collected.
+
+The server measures Instruments startup and finalization with
+`ios.hitches.operation.duration` in milliseconds. Operation (`connect` or
+`finish`), outcome, recording surface, and platform describe collector overhead.
+Hitch events, app identity, and trace contents stay local. Existing
+`ui.recording.derive` timing includes matching hitches to recorded FPS intervals and summarizing the selected range.
+
+Since 0.1.195, `ui.performance.frame_markers` measures the time in milliseconds
+to derive Android markers when the live FPS history changes. It uses the existing
+bounded UI timing windows. Saved Android marker processing is included in
+`ui.recording.derive`. Frame times, tokens and jank reasons stay local.
 
 ## Resource-saving operations
 

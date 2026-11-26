@@ -16,49 +16,53 @@ const telemetryEnvironment = telemetryBuildEnvironment();
 // A fresh dist/, so packages never carry outputs an earlier build or branch left behind.
 await rm("dist", { recursive: true, force: true });
 await mkdir("dist", { recursive: true });
-await verifyResourceSaving();
-await cp("packages/native/vendor/resource-saving", "dist/resource-saving", { recursive: true });
-await access("packages/native/vendor/baguette/Baguette");
-await access("packages/native/vendor/baguette/Baguette_Baguette.bundle");
-const baguetteReleaseText = await readFile("packages/native/vendor/baguette/release.json", "utf8");
-const baguetteRelease = JSON.parse(baguetteReleaseText);
-const baguetteTelemetryHash = await baguetteTelemetrySourceHash();
-if (baguetteRelease.build.telemetrySourceSHA256 !== baguetteTelemetryHash) throw new Error("Run npm run rebuild:baguette after changing native telemetry.");
-await cp("packages/native/vendor/baguette", "dist/baguette", { recursive: true });
-const iosMirrorRelease = JSON.parse(await readFile("packages/native/vendor/ios-mirror/release.json", "utf8"));
-const iosMirrorHash = await iosMirrorSourceHash();
-if (iosMirrorHash !== iosMirrorRelease.sourceSHA256) throw new Error("Run npm run rebuild:ios-mirror after editing the physical iOS capture addon.");
-const iosMirrorBinary = await readFile("packages/native/vendor/ios-mirror/darwin-arm64.node");
-const iosMirrorBinaryHash = createHash("sha256").update(iosMirrorBinary).digest("hex");
-if (iosMirrorBinaryHash !== iosMirrorRelease.binarySHA256) throw new Error("Physical iOS capture addon integrity check failed.");
-await cp("packages/native/vendor/ios-mirror", "dist/ios-mirror", { recursive: true });
-for (const file of ["README.md", "IDEVICE-LICENSE.txt", "DEVICE-HUB-LICENSE.txt"]) await copyFile(`packages/native/ios-mirror/${file}`, `dist/ios-mirror/${file}`);
-const iosLogsReleaseText = await readFile("packages/native/vendor/ios-logs/release.json", "utf8");
-const iosLogsRelease = JSON.parse(iosLogsReleaseText);
-const iosLogsHash = await iosLogsSourceHash();
-if (iosLogsHash !== iosLogsRelease.sourceSHA256) throw new Error("Run npm run rebuild:ios-logs after editing the physical iOS log reader.");
-for (const [file, metadata] of Object.entries(iosLogsRelease.binaries)) {
-  const bytes = await readFile(`packages/native/vendor/ios-logs/${file}`);
-  const hash = createHash("sha256");
-  hash.update(bytes);
-  const sha256 = hash.digest("hex");
-  if (sha256 !== metadata.sha256) throw new Error(`Physical iOS log reader integrity check failed for ${file}.`);
+// Windows development packages use the Android device binaries checked into the repository.
+const includeAppleHelpers = process.platform !== "win32";
+if (includeAppleHelpers) {
+  await verifyResourceSaving();
+  await cp("packages/native/vendor/resource-saving", "dist/resource-saving", { recursive: true });
+  await access("packages/native/vendor/baguette/Baguette");
+  await access("packages/native/vendor/baguette/Baguette_Baguette.bundle");
+  const baguetteReleaseText = await readFile("packages/native/vendor/baguette/release.json", "utf8");
+  const baguetteRelease = JSON.parse(baguetteReleaseText);
+  const baguetteTelemetryHash = await baguetteTelemetrySourceHash();
+  if (baguetteRelease.build.telemetrySourceSHA256 !== baguetteTelemetryHash) throw new Error("Run npm run rebuild:baguette after changing native telemetry.");
+  await cp("packages/native/vendor/baguette", "dist/baguette", { recursive: true });
+  const iosMirrorRelease = JSON.parse(await readFile("packages/native/vendor/ios-mirror/release.json", "utf8"));
+  const iosMirrorHash = await iosMirrorSourceHash();
+  if (iosMirrorHash !== iosMirrorRelease.sourceSHA256) throw new Error("Run npm run rebuild:ios-mirror after editing the physical iOS capture addon.");
+  const iosMirrorBinary = await readFile("packages/native/vendor/ios-mirror/darwin-arm64.node");
+  const iosMirrorBinaryHash = createHash("sha256").update(iosMirrorBinary).digest("hex");
+  if (iosMirrorBinaryHash !== iosMirrorRelease.binarySHA256) throw new Error("Physical iOS capture addon integrity check failed.");
+  await cp("packages/native/vendor/ios-mirror", "dist/ios-mirror", { recursive: true });
+  for (const file of ["README.md", "IDEVICE-LICENSE.txt", "DEVICE-HUB-LICENSE.txt"]) await copyFile(`packages/native/ios-mirror/${file}`, `dist/ios-mirror/${file}`);
+  const iosLogsReleaseText = await readFile("packages/native/vendor/ios-logs/release.json", "utf8");
+  const iosLogsRelease = JSON.parse(iosLogsReleaseText);
+  const iosLogsHash = await iosLogsSourceHash();
+  if (iosLogsHash !== iosLogsRelease.sourceSHA256) throw new Error("Run npm run rebuild:ios-logs after editing the physical iOS log reader.");
+  for (const [file, metadata] of Object.entries(iosLogsRelease.binaries)) {
+    const bytes = await readFile(`packages/native/vendor/ios-logs/${file}`);
+    const hash = createHash("sha256");
+    hash.update(bytes);
+    const sha256 = hash.digest("hex");
+    if (sha256 !== metadata.sha256) throw new Error(`Physical iOS log reader integrity check failed for ${file}.`);
+  }
+  await cp("packages/native/vendor/ios-logs", "dist/ios-logs", { recursive: true });
+  for (const source of iosLogsRelease.sources) {
+    const archive = `${source.name}-${source.version}.tar.bz2`;
+    const bytes = await readFile(`packages/native/vendor/ios-logs/sources/${archive}`);
+    const hash = createHash("sha256");
+    hash.update(bytes);
+    const sha256 = hash.digest("hex");
+    if (sha256 !== source.sha256) throw new Error(`Physical iOS log dependency source integrity check failed for ${archive}.`);
+  }
+  for (const file of ["README.md", "LICENSE", "collector.c", "dependencies.json"]) await copyFile(`packages/native/ios-logs/${file}`, `dist/ios-logs/${file}`);
+  await copyFile("tooling/build-ios-logs.mjs", "dist/ios-logs/build-ios-logs.mjs");
+  await copyFile("tooling/native-telemetry.mjs", "dist/ios-logs/native-telemetry.mjs");
+  await mkdir("dist/telemetry", { recursive: true });
+  for (const file of ["telemetry.c", "telemetry.h"]) await copyFile(`packages/native/telemetry/${file}`, `dist/telemetry/${file}`);
 }
-await cp("packages/native/vendor/ios-logs", "dist/ios-logs", { recursive: true });
-for (const source of iosLogsRelease.sources) {
-  const archive = `${source.name}-${source.version}.tar.bz2`;
-  const bytes = await readFile(`packages/native/vendor/ios-logs/sources/${archive}`);
-  const hash = createHash("sha256");
-  hash.update(bytes);
-  const sha256 = hash.digest("hex");
-  if (sha256 !== source.sha256) throw new Error(`Physical iOS log dependency source integrity check failed for ${archive}.`);
-}
-for (const file of ["README.md", "LICENSE", "collector.c", "dependencies.json"]) await copyFile(`packages/native/ios-logs/${file}`, `dist/ios-logs/${file}`);
-await copyFile("tooling/build-ios-logs.mjs", "dist/ios-logs/build-ios-logs.mjs");
-await copyFile("tooling/native-telemetry.mjs", "dist/ios-logs/native-telemetry.mjs");
-await mkdir("dist/telemetry", { recursive: true });
-for (const file of ["telemetry.c", "telemetry.h"]) await copyFile(`packages/native/telemetry/${file}`, `dist/telemetry/${file}`);
-for (const platform of ["ios", "android"]) {
+for (const platform of includeAppleHelpers ? ["ios", "android"] : ["android"]) {
   const root = `packages/native/vendor/${platform}-fps`;
   const text = await readFile(`${root}/release.json`, "utf8");
   const release = JSON.parse(text);
@@ -102,6 +106,19 @@ await writeFile("dist/agent-device/release.json", JSON.stringify({
 }, null, 2) + "\n");
 // The commands the plugin servers register without starting the runtime (npm run catalog:agent-device).
 await copyFile(`${runtime}/tools.json`, "dist/agent-device/tools.json");
+const e2eRuntime = "packages/runtimes/e2e";
+const e2eLock = await readFile(`${e2eRuntime}/package-lock.json`, "utf8");
+const e2eRelease = JSON.parse(await readFile(`${e2eRuntime}/release.json`, "utf8"));
+if (createHash("sha256").update(e2eLock).digest("hex") !== e2eRelease.lockfileSHA256)
+  throw new Error("Run npm run vendor:e2e after changing the pinned e2e runtime.");
+for (const name of Object.keys(e2eRelease.packages ?? {})) {
+  const installed = JSON.parse(await readFile(`${e2eRuntime}/node_modules/${name}/package.json`, "utf8"));
+  if (installed.version !== e2eRelease.packages[name]?.version)
+    throw new Error(`Run npm run vendor:e2e: ${name} does not match release.json.`);
+}
+await cp(`${e2eRuntime}/node_modules`, "dist/e2e/node_modules", { recursive: true, verbatimSymlinks: true });
+for (const file of ["package.json", "package-lock.json", "release.json", "THIRD_PARTY_NOTICES.txt"])
+  await copyFile(`${e2eRuntime}/${file}`, `dist/e2e/${file}`);
 await buildServeEmu("dist/serve-emu");
 // The host-neutral runtime: the shared server, its services and the MCP Apps panel
 // as hosts without their own chrome load it. A host that adds to them builds its

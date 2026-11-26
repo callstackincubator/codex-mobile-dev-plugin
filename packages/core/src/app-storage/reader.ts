@@ -5,9 +5,10 @@ import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import { storageLimits } from "@mobile-dev/shared/app-storage.ts";
 import type { StorageEntry, StorageFile, StorageSnapshot, StorageStore, StorageTable, StoreKind } from "@mobile-dev/shared/app-storage.ts";
 import { withTemporaryDirectory } from "../app-control/commands.ts";
+import { sdkToolPath } from "../android-sdk.ts";
 import type { CommandRunner } from "../app-control/commands.ts";
 import type { AppContainer, ContainerFile } from "./container.ts";
-import { basename, classifyFiles, nullEntry, parseDataStorePreferences, parsePlistXml, parseSharedPreferences, plistEntries, protobufEntries, storeId, textEntry } from "./formats.ts";
+import { classifyFiles, nullEntry, parseDataStorePreferences, parsePlistXml, parseSharedPreferences, plistEntries, protobufEntries, storeId, textEntry } from "./formats.ts";
 import type { ParsedEntry, StoreCandidate } from "./formats.ts";
 import { decodeMmkv, guessMmkvValue } from "./mmkv.ts";
 import { REDACTED, redactStorageEntry, redactStorageValue, sensitiveStorageName, sensitiveStorageText, sensitiveStoragePath } from "./redaction.ts";
@@ -16,11 +17,11 @@ export type ReadOptions = { entries: number; valueLength: number; bundleId: stri
 // AsyncStorage databases are SQLite files recognized by their tables, so reading one can change its kind.
 type StoreContent = { status: StorageStore["status"]; note?: string; entries: ParsedEntry[]; kind?: StoreKind };
 
-const sqlite3 = process.platform === "darwin" ? "/usr/bin/sqlite3" : "sqlite3";
 const quoteIdentifier = (name: string) => `"${name.replaceAll("\"", "\"\"")}"`;
 const sqlString = (text: string) => `'${text.replaceAll("'", "''")}'`;
 
 async function sqlite(run: CommandRunner, file: string, sql: string): Promise<Record<string, unknown>[]> {
+  const sqlite3 = process.platform === "win32" ? await sdkToolPath("sqlite3") : process.platform === "darwin" ? "/usr/bin/sqlite3" : "sqlite3";
   const output = await run(sqlite3, ["-json", file, sql], { timeout: 15000, maxBuffer: 64 * 1024 * 1024 });
   return output.trim() ? JSON.parse(output) : [];
 }
@@ -40,8 +41,11 @@ async function describeTables(run: CommandRunner, file: string): Promise<Map<str
 // sqlite3 reads a local copy that includes the write-ahead log, so writes SQLite has not checkpointed are read too.
 function withDatabase<T>(container: AppContainer, candidate: StoreCandidate, work: (file: string) => Promise<T>): Promise<T> {
   return withTemporaryDirectory(async directory => {
-    await Promise.all(candidate.files.map(async path => writeFile(join(directory, basename(path)), await container.read(path))));
-    return work(join(directory, candidate.name));
+    // Guest file names need not be valid Windows file names. SQLite only needs the
+    // database and its -wal, -shm or -journal companions to share a local basename.
+    const database = join(directory, "database");
+    await Promise.all(candidate.files.map(async path => writeFile(database + path.slice(candidate.path.length), await container.read(path))));
+    return work(database);
   });
 }
 

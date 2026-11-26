@@ -1,8 +1,9 @@
 import { CameraIcon, HouseIcon, CopyIcon, PowerIcon, SmartphoneIcon, type LucideIcon } from "lucide-react";
-import { memo, useState } from "react";
+import { memo, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "./ui/button";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "./ui/empty";
-import { DevicePicker } from "./device-picker";
+import type { DeviceWorkspace } from "../device-workspace";
+import type { Platform } from "../device-inventory";
 import { DeviceSettings } from "./device-settings";
 import { bindScreenAnnotations, ScreenAnnotationsStore } from "../screen-annotations";
 import { ScreenAnnotationOverlay, ScreenSelectButton } from "./screen-annotations";
@@ -14,15 +15,16 @@ const deviceButtons: { action: string; icon: LucideIcon; label: string }[] = [
 ];
 
 // The stream controller owns the canvas after mount; keep this subtree stable so log batches never reset a live device.
-export const SimulatorView = memo(function SimulatorView({ platform, visible }: { platform: "ios" | "android"; visible: boolean }) {
+export const SimulatorView = memo(function SimulatorView({ workspace, paneKey, deviceId, platform, name, active }: { workspace: DeviceWorkspace; paneKey: number; deviceId?: string; platform: Platform; name: string; active: boolean }) {
   const [annotations] = useState(() => new ScreenAnnotationsStore());
   const label = platform === "ios" ? "iOS" : "Android";
   const sidebar = document.documentElement.dataset.view !== "workspace";
-  const id = (name: string) => `${platform}-${name}`;
-  return <section hidden={!visible} id={`${platform}-panel`} className="simulator-panel group/simulator @container relative flex h-full min-w-0 flex-1 flex-col" data-platform={platform} aria-label={`${label} simulator`}>
-    <header className="panel-toolbar flex h-[49px] shrink-0 items-center border-b px-2">
+  const root = useRef<HTMLElement>(null);
+  useLayoutEffect(() => { if (root.current) return workspace.mount(paneKey, root.current); }, [workspace, paneKey]);
+  return <section ref={root} data-device-pane={paneKey} data-active={active} className="simulator-panel group/simulator @container relative flex h-full min-w-0 flex-1 flex-col" data-platform={platform} aria-label={name}>
+    <header className="panel-toolbar flex h-9 shrink-0 items-center border-b px-2">
       <div className="flex w-full min-w-0 items-center gap-1" role="toolbar" aria-label={`${label} controls`}>
-        <DevicePicker id={id("devices")} label={`${label} device`} />
+        <span className="min-w-0 flex-1 text-xs text-muted-foreground">{label}</span>
         {deviceButtons.map(({ action, icon: Icon, label }) => <Button key={action} variant="ghost" size="icon" className="shrink-0 data-[unsupported=true]:text-muted-foreground data-[unsupported=true]:cursor-not-allowed data-[unsupported=true]:disabled:pointer-events-auto data-[unsupported=true]:hover:bg-transparent data-[unsupported=true]:hover:text-muted-foreground" data-button={action} title={label} aria-label={label} disabled><Icon /></Button>)}
         <Button variant="ghost" size="icon" className="shrink-0" data-element="screenshot" title="Screenshot to chat and clipboard" aria-label="Screenshot to chat and clipboard" disabled><CameraIcon /></Button>
         <ScreenSelectButton store={annotations} />
@@ -37,10 +39,10 @@ export const SimulatorView = memo(function SimulatorView({ platform, visible }: 
       </div>
       <div data-element="stopped" className="absolute inset-0 z-10 bg-background/70" hidden><Empty><EmptyHeader><EmptyMedia variant="icon"><PowerIcon /></EmptyMedia><EmptyTitle>Device stopped</EmptyTitle></EmptyHeader><EmptyContent><Button data-element="start-device" size="sm">Start device</Button></EmptyContent></Empty></div>
       <ScreenAnnotationOverlay store={annotations} />
-      <TestRecorderOverlay store={annotations} />
+      <TestRecorderOverlay store={annotations} deviceId={deviceId} platform={platform} />
     </section>
     <footer className={sidebar ? "absolute bottom-2 right-2 z-30 flex items-center text-[10px] text-muted-foreground" : "flex h-11 shrink-0 items-center gap-x-3 border-t px-2 text-[10px] text-muted-foreground"}>
-      <span data-element="notice" className="sr-only" hidden><span data-element="notice-message" /></span>
+      <span data-element="notice" className="max-w-48 truncate rounded bg-background/90 px-1 text-xs" role="status" hidden><span data-element="notice-message" /></span>
       <span data-element="screenshot-status" className="sr-only" hidden />
       <DeviceSettings platform={platform} />
     </footer>

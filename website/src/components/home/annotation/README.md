@@ -1,7 +1,7 @@
 # Native annotation hero
 
 The hero adapts the authored `md-annotate` and shared HorseTinder scenes from
-[`feat/feature-previews` at `5796aecb574fa2ab005854ec6a7ff1dc75cdd5d7`](https://github.com/callstackincubator/codex-mobile-dev-plugin/tree/5796aecb574fa2ab005854ec6a7ff1dc75cdd5d7/design/stageshow).
+[`feat/feature-previews` at `5796aecb574fa2ab005854ec6a7ff1dc75cdd5d7`](https://github.com/callstackincubator/mobile-dev/tree/5796aecb574fa2ab005854ec6a7ff1dc75cdd5d7/design/stageshow).
 Stageshow's MIT notice is preserved in `website/public/previews/LICENSE`.
 
 Astro renders the scene as HTML with inline SVG icons, directly in the page

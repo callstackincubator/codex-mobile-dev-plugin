@@ -1,7 +1,7 @@
 # Native feature previews
 
 Performance and Storage adapt the authored `md-recording` and `md-storage`
-scenes from [Stageshow at `5796aecb574fa2ab005854ec6a7ff1dc75cdd5d7`](https://github.com/callstackincubator/codex-mobile-dev-plugin/tree/5796aecb574fa2ab005854ec6a7ff1dc75cdd5d7/design/stageshow).
+scenes from [Stageshow at `5796aecb574fa2ab005854ec6a7ff1dc75cdd5d7`](https://github.com/callstackincubator/mobile-dev/tree/5796aecb574fa2ab005854ec6a7ff1dc75cdd5d7/design/stageshow).
 Its MIT notice is preserved in `website/public/previews/LICENSE`.
 
 Astro renders HTML and inline SVG, with no React runtime, video, iframe, poster,

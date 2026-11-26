@@ -11,7 +11,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { z } from "zod";
 import { MeasurementWindow, sampleTrace, scrubErrorEvent, scrubMetric, scrubSpan, sampleMetric, createErrorEventFilter, METRIC_SAMPLE_RATE, TELEMETRY_META_KEY } from "../../shared/src/telemetry.ts";
-import { captureServerError, installTracePropagation, instrumentMcpServer, IOSLogProcessingTelemetry, recordAndroidBackendStartup, recordAndroidBootWait, recordIosMirrorSharing, recordBrowserPanelContext, recordBrowserPanelSessions, recordPanelRuntime, recordResourceSaving } from "../src/telemetry.ts";
+import { captureServerError, installTracePropagation, instrumentMcpServer, IOSLogProcessingTelemetry, recordAndroidBackendStartup, recordAndroidBootWait, recordIosMirrorSharing, recordIosHitchOperation, recordBrowserPanelContext, recordBrowserPanelSessions, recordPanelRuntime, recordBaguetteDiscoveryTime, recordResourceSaving } from "../src/telemetry.ts";
 import { recordPluginUpdate } from "../../../apps/codex-plugin/server/plugin-updates.ts";
 import { deferEpisodeReport, ExpectedOperationError, FailureEpisodes } from "../../shared/src/error-reporting.ts";
 import { parseResourceInput } from "../src/resource-input.ts";
@@ -317,11 +317,15 @@ test("shared iOS capture metrics retain surface attribution and honor opt-out", 
     await Sentry.close();
   });
   recordIosMirrorSharing(1, 2, 9);
+  recordIosHitchOperation("finish", "success", 123);
   await Sentry.flush();
   const sent = JSON.stringify(envelopes);
   for (const fragment of ["ios.mirror.shared.captures", "ios.mirror.shared.subscribers", "ios.mirror.shared.queue_dropped", '"surface":{"value":"simulator"', '"device_platform":{"value":"ios"', '"device_kind":{"value":"physical"', '"component":{"value":"ios-mirror-service"']) contains(sent, fragment);
   for (const fragment of ["udid", "sessionId", "user.id", "telemetry_session"]) contains(sent, fragment, false);
+  for (const fragment of ["ios.hitches.operation.duration", '"surface":{"value":"recording"', '"operation":{"value":"finish"']) contains(sent, fragment);
+  for (const fragment of ["lateMs", "refreshIntervalMs", "swap-id"]) contains(sent, fragment, false);
   process.env.MOBILE_DEV_TELEMETRY = "off";
+  recordIosHitchOperation("connect", "failed", 456);
   recordIosMirrorSharing(1, 3, 10);
   await Sentry.flush();
   assert.equal(JSON.stringify(envelopes), sent);
@@ -364,6 +368,21 @@ test("agent-device tools continue traces and report failures without native tool
   const afterItems = envelopes.flatMap(envelope => envelope[1]);
   const afterErrors = afterItems.filter(item => item[0].type === "event");
   assert.equal(afterErrors.length, errors.length, "Expected unavailable devices must not produce Sentry issues");
+});
+
+test("Windows SDK and share paths are scrubbed while stack frames still match their source maps", () => {
+  const bundle = "file:///C:/Users/private%20user/plugin/dist/server.mjs";
+  const filtered = scrubErrorEvent({
+    message: "Failed to open D:\\Android Projects\\private project",
+    exception: { values: [{ value: "Missing \\\\private-host\\shared folder\\SDK", stacktrace: { frames: [
+      { filename: bundle, abs_path: "C:\\Users\\private user\\plugin\\dist\\server.mjs" },
+    ] } }] },
+    debug_meta: { images: [{ type: "sourcemap", code_file: bundle, debug_id: "example" }] },
+  });
+  assert.ok(filtered);
+  assert.doesNotMatch(JSON.stringify(filtered), /private|Android Projects/i);
+  assert.equal(filtered.exception?.values?.[0].stacktrace?.frames?.[0].abs_path, "app:///server.mjs");
+  assert.equal(filtered.debug_meta?.images?.[0].code_file, "app:///server.mjs");
 });
 
 test("error and streamed-span filters remove app payloads and local identifiers", () => {
@@ -1430,8 +1449,9 @@ test("browser session counts describe plugin resources and honor telemetry opt-o
   recordBrowserPanelSessions(0);
   recordBrowserPanelContext("stored", 2048);
   recordBrowserPanelContext("too_large");
-  recordPanelRuntime("downloaded", 1200, 7_000_000);
-  recordPanelRuntime("failed", 30, undefined, "network");
+  recordPanelRuntime("testing", "downloaded", 1200, 7_000_000);
+  recordPanelRuntime("panel", "failed", 30, undefined, "network");
+  recordBaguetteDiscoveryTime("otool", 2362);
   recordResourceSaving("ios", true, "success", 2500);
   recordResourceSaving("android", false, "failed", 100);
   await Sentry.flush();
@@ -1442,6 +1462,9 @@ test("browser session counts describe plugin resources and honor telemetry opt-o
   contains(sent, '"outcome":{"value":"too_large"');
   contains(sent, "panel_runtime.ready");
   contains(sent, "panel_runtime.download_bytes");
+  contains(sent, "baguette.runtime.command.duration");
+  contains(sent, '"operation":{"value":"otool"');
+  contains(sent, '"runtime":{"value":"testing"');
   contains(sent, "resource_saving.apply");
   contains(sent, "resource_saving.duration");
   contains(sent, '"reason":{"value":"network"');
@@ -1450,7 +1473,8 @@ test("browser session counts describe plugin resources and honor telemetry opt-o
   process.env.MOBILE_DEV_TELEMETRY = "off";
   recordBrowserPanelSessions(3);
   recordBrowserPanelContext("stored", 10);
-  recordPanelRuntime("cached", 5);
+  recordPanelRuntime("panel", "cached", 5);
+  recordBaguetteDiscoveryTime("swift-stdlib-tool", 3442);
   recordResourceSaving("ios", false, "success", 10);
   await Sentry.flush();
   assert.equal(JSON.stringify(envelopes), sent);

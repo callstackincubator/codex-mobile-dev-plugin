@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { BotIcon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleIcon, CircleXIcon, CopyIcon, FileCode2Icon, FilePlus2Icon, FlaskConicalIcon, FolderOpenIcon, GripVerticalIcon, HistoryIcon, LoaderCircleIcon, MoreHorizontalIcon, PlayIcon, SaveIcon, SquareIcon, Trash2Icon, UserIcon, XIcon } from "lucide-react";
+import { BotIcon, CheckIcon, ChevronDownIcon, ChevronRightIcon, CircleIcon, CircleXIcon, CopyIcon, FileCode2Icon, FilePlus2Icon, FlaskConicalIcon, FolderOpenIcon, GripVerticalIcon, HistoryIcon, LoaderCircleIcon, MoreHorizontalIcon, MousePointerClickIcon, PlayIcon, SaveIcon, SquareIcon, Trash2Icon, UserIcon, WandSparklesIcon, XIcon } from "lucide-react";
+import type { TestingRuntimeProgress } from "@mobile-dev/shared/testing-runtime.ts";
+import { TestingNote } from "./testing-note";
 import type { DeviceAppsStore } from "../device-apps.ts";
+import { platformLabel } from "../testing-panel.ts";
 import type { TestingPanel } from "../testing-panel.ts";
 import { OPEN_STEP, formatRunDuration, testRecorder } from "../test-recorder.ts";
 import type { DevicePlatform, TestRunView } from "../test-recorder.ts";
@@ -12,9 +15,12 @@ import { MenuRow, OFFER_LABEL, OfferIcon, StepCommandList } from "./step-command
 import { Branch } from "./cascading-menu.tsx";
 import { CODE_TOKEN_CLASS, changedLines, highlightCode } from "../code-highlight.ts";
 import { testSourceSuggestions } from "../test-source-suggestions.ts";
-import { changeStoredStepCommand, duplicateStoredStep, moveStoredStep, removeStoredStep, storedStepCommands, storedTestSteps, storedTestUntilSource } from "../stored-test-steps.ts";
+import { changeStoredStepCommand, duplicateStoredStep, moveStoredStep, removeStoredStep, storedStepCommands, storedTestSteps, storedTestUntilSource } from "@mobile-dev/shared/stored-test-steps.ts";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert.tsx";
+import { Badge } from "./ui/badge.tsx";
 import { Button } from "./ui/button.tsx";
+import { TestingSetup } from "./testing-setup.tsx";
+import { MatrixLanes } from "./testing-matrix.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover.tsx";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./ui/resizable.tsx";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/base-select.tsx";
@@ -27,19 +33,30 @@ function TestingProjectPicker({ panel }: { panel: TestingPanel }) {
   const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const [open, setOpen] = useState(false);
   const selected = state.projects.find(project => project.path === state.projectPath);
-  const label = state.projectPath
+  const noProject = panel.noProject;
+  const label = noProject ? "No project" : state.projectPath
     ? selected?.name ?? state.projectPath.split("/").filter(Boolean).at(-1) ?? state.projectPath
     : "Choose a project";
   const choose = (projectPath: string) => { setOpen(false); void panel.chooseProject(projectPath); };
   return <div className="flex min-w-0 items-center gap-1">
     <Popover open={open} onOpenChange={value => { setOpen(value); if (value) void panel.refreshProjects(); }}>
       <PopoverTrigger asChild>
-        <Button type="button" variant="outline" size="sm" className="min-w-0 max-w-72 justify-between gap-1.5 font-normal" aria-label="Testing project" title={state.projectPath || "Choose an e2e project"}>
+        <Button type="button" variant="outline" size="sm" className="min-w-0 max-w-72 justify-between gap-1.5 font-normal" aria-label="Testing project" title={noProject ? "Recording without a project. Tests stay in Mobile Dev." : state.projectPath || "Choose an e2e project"}>
           <span className="min-w-0 truncate">{label}</span>
           <ChevronDownIcon className="shrink-0 transition-transform" style={{ transform: open ? "rotate(180deg)" : undefined }} />
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="flex max-h-(--radix-popover-content-available-height) w-max min-w-[min(var(--radix-popover-trigger-width),var(--radix-popover-content-available-width))] max-w-(--radix-popover-content-available-width) flex-col gap-1 overflow-y-auto p-1 [&_button:not(:disabled)]:cursor-pointer" aria-label="Testing project">
+        <Button type="button" variant="ghost" data-testing-no-project aria-pressed={noProject}
+          className="h-auto min-h-7 min-w-0 flex-1 justify-start rounded-md px-1.5 py-1 text-left font-normal" onClick={() => { setOpen(false); void panel.useNoProject(); }}>
+          <span className="flex min-w-0 items-center gap-2">
+            <CheckIcon className={`size-3.5 shrink-0 ${noProject ? "opacity-100" : "opacity-0"}`} />
+            <span className="flex min-w-0 flex-col">
+              <span className="truncate">No project</span>
+              <span className="truncate text-xs text-muted-foreground">Tests stay in Mobile Dev</span>
+            </span>
+          </span>
+        </Button>
         {state.projects.map(project => <Button key={project.path} type="button" variant="ghost" data-testing-project-option={project.path} aria-pressed={project.path === state.projectPath}
           className="h-auto min-h-7 min-w-0 flex-1 justify-start rounded-md px-1.5 py-1 text-left font-normal" onClick={() => choose(project.path)}>
           <span className="flex min-w-0 items-center gap-2">
@@ -50,7 +67,6 @@ function TestingProjectPicker({ panel }: { panel: TestingPanel }) {
             </span>
           </span>
         </Button>)}
-        {state.projects.length === 0 && <p className="px-1.5 py-1 text-xs text-muted-foreground">No projects yet. Choose a folder holding an e2e.config.ts.</p>}
         <Button type="button" variant="ghost" data-testing-project-browse disabled={state.pickingProject} className="h-auto min-h-7 justify-start rounded-md px-1.5 py-1 text-left font-normal" onClick={() => { setOpen(false); void panel.pickProject(); }}>
           <FolderOpenIcon />Choose another folder…
         </Button>
@@ -152,7 +168,7 @@ function TestingDraftPicker({ panel }: { panel: TestingPanel }) {
   const [open, setOpen] = useState(false);
   const [unstoredOpen, setUnstoredOpen] = useState(true);
   const [storedOpen, setStoredOpen] = useState(false);
-  const agentRecording = state.agent?.active === true;
+  const agentRecording = state.agent?.active === true || state.agentRun;
   // The one on screen may not be in the list yet: the autosave is debounced, and the first keep of
   // a brand new flow lands a moment after the first step.
   if (state.drafts.length === 0 && !state.draftId && state.tests.length === 0) return null;
@@ -212,7 +228,7 @@ function TestingDraftPicker({ panel }: { panel: TestingPanel }) {
 
       <div className="-mx-1 border-t" />
 
-      <ListGroup label="In the project" count={state.tests.length} open={storedOpen}
+      <ListGroup label={state.runtimeMode === "bundled" ? "In Testing Studio" : "In the project"} count={state.tests.length} open={storedOpen}
         attributes={{ "data-testing-group": "stored" }} onToggle={() => setStoredOpen(value => !value)}>
         {state.tests.map(stored => {
           const selected = stored.relativePath === state.selectedTestPath;
@@ -231,12 +247,12 @@ function TestingDraftPicker({ panel }: { panel: TestingPanel }) {
             </Button>
             <ConfirmDelete attributes={{ "data-testing-test-delete": stored.relativePath }}
               busy={state.deletingTest === stored.relativePath}
-              title="Delete this test from the project" label={`Delete ${stored.name}`}
-              question={`Delete ${stored.relativePath} from the project? The file is removed and cannot be brought back from here.`}
+              title={state.runtimeMode === "bundled" ? "Delete this Testing Studio test" : "Delete this test from the project"} label={`Delete ${stored.name}`}
+              question={state.runtimeMode === "bundled" ? `Delete ${stored.relativePath} from Testing Studio? It cannot be brought back from here.` : `Delete ${stored.relativePath} from the project? The file is removed and cannot be brought back from here.`}
               onConfirm={() => void panel.deleteTest(stored.relativePath)} />
           </span>;
         })}
-        {state.tests.length === 0 && <p className="px-1.5 py-1 text-xs text-muted-foreground">No tests in this project's tests/ folder yet.</p>}
+        {state.tests.length === 0 && <p className="px-1.5 py-1 text-xs text-muted-foreground">{panel.noProject ? "No Testing Studio tests yet." : "No tests in this project's tests/ folder yet."}</p>}
       </ListGroup>
     </PopoverContent>
   </Popover>;
@@ -253,6 +269,12 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
   const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const devices = useSyncExternalStore(deviceApps.subscribe, deviceApps.getSnapshot);
   const device = devices.device;
+  // The Run button's "N devices" needs the device list before the setup popover is ever opened.
+  useEffect(() => { if (state.available && state.projectPath) void panel.loadMatrixDevices(); }, [panel, state.available, state.projectPath, state.runtimeMode]);
+  if (state.needsRuntime) return <section className="flex h-full flex-col gap-4 p-4" aria-label="Testing Studio">
+    <TestingProjectPicker panel={panel} />
+    <TestingRuntimeInstall key={state.projectPath} panel={panel} projectPath={state.projectPath} />
+  </section>;
   const booted = device?.state === "Booted" || device?.state === "connected";
   const target = state.targets.find(entry => entry.name === state.targetName) ?? state.targets[0];
   const mismatch = panel.targetMismatch;
@@ -260,14 +282,14 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
   const deviceId = device?.udid ?? "";
   const platform = device ? recordablePlatform(device) : "ios";
   // Why the recorder cannot start yet, in the order the user has to fix them.
-  const blocker = !state.projectPath ? "Choose a project to record against."
+  const blocker = !state.projectPath ? "Preparing Testing Studio…"
     : state.loadingProject ? ""
-      : state.targets.length === 0 ? "No targets found in this project's e2e config."
-        : !target?.bundleId ? `Target "${target?.name}" declares no bundleId, so there is no app to launch.`
-          : !booted ? "Boot an iOS simulator or Android emulator to record against it."
+      : state.targets.length === 0 ? (panel.noProject ? "Open the app you want to record in the mirror. Testing Studio records against the app in the foreground." : "No mobile app identifier was found. Open the app in the mirror, or use E2E setup to enter one.")
+        : !target?.bundleId ? `Target "${target?.name}" has no app identifier. Enter one in E2E setup.`
+          : !booted ? "Recording needs a booted simulator or emulator in the mirror. If one is already running, choose it from Add device."
             : !isRecordableDevice(device) ? "Recording works on an iOS simulator or an Android emulator, not a physical device."
               : mismatch;
-  return <section className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4 [&_button:not(:disabled)]:cursor-pointer" aria-label="Testing">
+  return <section className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4 [&_button:not(:disabled)]:cursor-pointer" aria-label="Testing Studio">
     <header className="flex flex-wrap items-center gap-2 border-b pb-3">
       <TestingProjectPicker panel={panel} />
       {state.targets.length > 1 && <Select items={state.targets.map(entry => ({ value: entry.name, label: entry.name }))} value={state.targetName} onValueChange={value => { if (value) panel.selectTarget(value); }}>
@@ -277,6 +299,7 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
         </SelectGroup></SelectContent>
       </Select>}
       <TestingDraftPicker panel={panel} />
+      {state.projectPath && <TestingSetup key={`setup-${state.projectPath}`} panel={panel} />}
       {/* Before the controls, so the `ml-auto` below has one thing to push away from and the
           status does not end up marooned past the right edge of the group. */}
       {state.loadingProject && <span className="flex items-center gap-1 text-xs text-muted-foreground" role="status"><LoaderCircleIcon className="animate-spin" />Reading config…</span>}
@@ -284,19 +307,76 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
     </header>
 
     {state.error && <Alert variant="destructive">
-      <AlertTitle>Testing</AlertTitle>
+      <AlertTitle>Testing Studio</AlertTitle>
       <AlertDescription>
         <span className="min-w-0 break-words">{state.error}</span>
         <Button type="button" variant="ghost" size="sm" className="self-start" onClick={() => panel.dismissError()}>Dismiss</Button>
       </AlertDescription>
     </Alert>}
 
-    {blocker && !state.agent?.active && <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">{blocker}</p>}
+    {state.projectWarning && state.runtimeMode !== "bundled" && <Alert><AlertTitle>Testing Studio</AlertTitle><AlertDescription><span>{state.projectWarning}</span></AlertDescription></Alert>}
+
+    {state.selectedTestPath && panel.storedRunHint && !state.agent?.active && <TestingNote tone="warning" data-testing-run-hint
+      action={panel.canAddForegroundApp ? <Button type="button" size="xs" variant="outline" data-testing-add-app onClick={() => void panel.repinStoredTest()}>
+        Add {platformLabel(panel.foregroundTarget!.platform)} app</Button> : undefined}>{panel.storedRunHint}</TestingNote>}
+
+    {blocker && !state.agent?.active && !(state.selectedTestPath && panel.storedRunHint) && <TestingNote tone={blocker === "Preparing Testing Studio…" ? "info" : "warning"} data-testing-blocker>{blocker}</TestingNote>}
 
     <AgentRecordingBanner panel={panel} />
 
+    <MatrixLanes panel={panel} deviceApps={deviceApps} />
+
     <TestingRecorder panel={panel} recordable={recordable} deviceId={deviceId} platform={platform} />
   </section>;
+}
+
+function TestingRuntimeInstall({ panel, projectPath }: { panel: TestingPanel; projectPath: string }) {
+  const [attempt, setAttempt] = useState(0);
+  const [progress, setProgress] = useState<TestingRuntimeProgress>();
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    let start: { retry: boolean } | undefined = { retry: attempt > 0 };
+    async function poll() {
+      if (document.hidden) {
+        document.addEventListener("visibilitychange", poll, { once: true });
+        return;
+      }
+      try {
+        const next = await panel.runtimeProgress(projectPath, start);
+        if (!active) return;
+        start = undefined;
+        setProgress(next);
+        if (next.phase === "failed") setError(next.message ?? "The download failed.");
+        else if (next.phase !== "ready") timer = setTimeout(poll, 500);
+      } catch (failure) {
+        if (active) setError(failure instanceof Error ? failure.message : String(failure));
+      }
+    }
+    void poll();
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", poll);
+    };
+  }, [panel, projectPath, attempt]);
+
+  if (error) return <Alert variant="destructive">
+    <AlertTitle>Testing Studio setup failed</AlertTitle>
+    <AlertDescription>{error}
+      <Button variant="outline" size="sm" onClick={() => { setError(""); setProgress(undefined); setAttempt(attempt + 1); }}>Retry download</Button>
+    </AlertDescription>
+  </Alert>;
+  const downloading = progress?.phase === "downloading";
+  const installing = progress?.phase === "installing";
+  const title = downloading ? "Downloading the Testing Studio runtime" : installing ? "Installing the Testing Studio runtime" : "Checking the Testing Studio runtime";
+  return <div className="flex flex-col gap-2 rounded-md border p-3 text-sm">
+    <span role="status" className="flex items-center gap-2 font-medium"><LoaderCircleIcon className="size-4 animate-spin" />{title}</span>
+    {downloading && <><progress aria-label="Testing Studio runtime download" className="h-1.5 w-full accent-primary" max={progress.total} value={progress.received} />
+      <span className="text-xs tabular-nums text-muted-foreground">{(progress.received / 1e6).toFixed(1)} of {(progress.total / 1e6).toFixed(1)} MB</span></>}
+    {(downloading || installing) && <p className="text-xs text-muted-foreground">This version downloads once. Testing Studio opens automatically when it’s ready.</p>}
+  </div>;
 }
 
 /**
@@ -312,6 +392,14 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
 function AgentRecordingBanner({ panel }: { panel: TestingPanel }) {
   const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const agent = state.agent;
+  // An agent's run: the lanes below are live and the user's controls wait for them.
+  if (state.agentRun) return <div data-testing-agent-run-banner className="flex flex-wrap items-center gap-2 rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-xs" role="status">
+    <BotIcon className="size-4 shrink-0 text-primary" aria-hidden />
+    <span className="min-w-0 flex-1 break-words"><span className="font-medium">Agent is running tests</span>{state.matrix ? ` — ${state.matrix.lanes.length} device${state.matrix.lanes.length === 1 ? "" : "s"}` : ""}</span>
+    <Button type="button" size="sm" variant="outline" data-testing-agent-run-cancel className="shrink-0"
+      title="Cancel every lane the agent has running."
+      onClick={() => void panel.cancelMatrix()}><SquareIcon />Cancel</Button>
+  </div>;
   if (!agent || agent.status === "idle") return null;
   if (agent.active) return <div data-testing-agent-banner className="flex flex-wrap items-center gap-2 rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-xs" role="status">
     <BotIcon className="size-4 shrink-0 text-primary" aria-hidden />
@@ -326,7 +414,7 @@ function AgentRecordingBanner({ panel }: { panel: TestingPanel }) {
   return <p data-testing-agent-handover className="rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground" role="status">
     {agent.status === "aborted" ? "The agent stopped recording" : "The agent finished recording"}
     {` ${agent.steps} step${agent.steps === 1 ? "" : "s"}`}{agent.note ? ` — ${agent.note}` : ""}.
-    {" "}Nothing has been saved or run: adjust the steps below, then press Save.
+    {agent.savedPath ? ` Saved in Testing Studio as ${agent.savedPath}.` : " Nothing has been saved or run: adjust the steps below, then press Save."}
   </p>;
 }
 
@@ -347,7 +435,7 @@ function TestingControls({ panel, recordable, deviceId, platform }: { panel: Tes
   const recording = state.recordingDeviceId === deviceId && deviceId !== "";
   // While an agent is recording, the device is its own: a launch would reset the app under the
   // flow, and Record would arm a second driver on one screen.
-  const agentRecording = panelState.agent?.active === true;
+  const agentRecording = panelState.agent?.active === true || panelState.agentRun;
   // `ml-auto` on the group, not on any button in it: the header is one flex row, so the free
   // space between what names the project and what acts on it belongs to the gap between them.
   // The group keeps its own gap and sizes, and on a header too narrow to hold both it wraps whole
@@ -372,9 +460,9 @@ function TestingControls({ panel, recordable, deviceId, platform }: { panel: Tes
           : <Button type="button" size="sm" variant="outline" data-testing-record disabled={!recordable}
             onClick={() => testRecorder.start(deviceId, platform)}><CircleIcon />Record</Button>}
     <Button type="button" size="sm" variant="outline" data-testing-run disabled={panelState.selectedTestPath ? !panel.canRunStored : !panel.canRun}
-      title="Save the test, then run it against this device. Recording stops: the runner needs the device to itself."
+      title={panelState.selectedTestPath && panel.storedRunHint ? panel.storedRunHint : panel.runsOnMatrix ? `Run the current preview on ${panel.matrixRunCount === 1 ? panel.matrixSelection[0]!.name : `${panel.matrixRunCount} devices, up to ${panelState.matrixLimit} at once,`} without saving it.` : "Run the current preview without saving it. Recording stops because the runner needs the device to itself."}
       onClick={() => void (panelState.selectedTestPath ? panel.runStoredTest() : panel.runTest())}>
-      {panelState.running ? <LoaderCircleIcon className="animate-spin" /> : <FlaskConicalIcon />}Run test
+      {panelState.running ? <LoaderCircleIcon className="animate-spin" /> : <FlaskConicalIcon />}{panel.runsOnMatrix ? (panel.matrixRunCount === 1 ? `Run on ${panel.matrixSelection[0]!.name}` : `Run on ${panel.matrixRunCount} devices`) : "Run test"}
     </Button>
     {state.resolving && <span className="flex items-center gap-1 text-xs text-muted-foreground" role="status"><LoaderCircleIcon className="animate-spin" />Reading the screen…</span>}
   </div>;
@@ -677,6 +765,73 @@ function SourceStepMenu({ source, step, index, mode, onEdit, editable }: {
 }
 
 /** A project file's awaited calls can be edited in a temporary working copy. */
+/**
+ * The apps a Testing Studio test runs against, one per platform, with a way to take the app in front: on
+ * the recorded platform it replaces that app, on the other it adds one so the test runs on both.
+ */
+/** One app a Testing Studio test runs: its platform as a tag, then its id, cut short with the whole id on hover. */
+function AppBadge({ platform, bundleId, title, ...attributes }: { platform: "ios" | "android"; bundleId: string; title: string } & Record<`data-${string}`, string | undefined>) {
+  return <span {...attributes} title={title} className="inline-flex h-6 min-w-0 max-w-64 items-center overflow-hidden rounded-md border text-[11px]">
+    <span className="flex h-full shrink-0 items-center border-r bg-muted px-1.5 font-medium text-muted-foreground">{platformLabel(platform)}</span>
+    <span className="truncate px-1.5 font-mono">{bundleId}</span>
+  </span>;
+}
+
+function PinnedApp({ panel }: { panel: TestingPanel }) {
+  const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
+  const pinned = panel.storedTarget;
+  const front = panel.foregroundTarget;
+  const apps = panel.storedApps;
+  const added = pinned ? (["ios", "android"] as const).filter(platform => platform !== pinned.platform && apps[platform]) : [];
+  const current = front ? apps[front.platform] : undefined;
+  // Adding the other platform's app is the run hint's action, beside the reason it is needed.
+  const canRepin = Boolean(front) && !state.running && current !== front!.bundleId && !panel.canAddForegroundApp;
+  const label = !pinned || !front ? "Pin current app"
+    : front.platform === pinned.platform ? "Use current app"
+    : current ? `Use current ${platformLabel(front.platform)} app` : `Add ${platformLabel(front.platform)} app`;
+  return <span data-testing-pinned-app className="flex min-w-0 flex-wrap items-center gap-1.5">
+    {pinned ? <AppBadge platform={pinned.platform} bundleId={pinned.bundleId} title={`Recorded on ${platformLabel(pinned.platform)} against ${pinned.bundleId}. Runs there always open it, whatever is in front.`} />
+      : <Badge variant="outline" className="h-auto py-0.5 font-normal text-muted-foreground" title="Not pinned yet. The first run pins the app in front.">No app pinned</Badge>}
+    {added.map(platform => <AppBadge key={platform} platform={platform} bundleId={apps[platform]!} data-testing-added-app={platform} title={`Added for ${platformLabel(platform)}, so this test also runs there.`} />)}
+    {canRepin && <Button type="button" size="xs" variant="ghost" data-testing-repin title={pinned && front!.platform !== pinned.platform ? `Run this test on ${platformLabel(front!.platform)} with ${front!.bundleId}, the app in front. The ${platformLabel(pinned.platform)} app stays.` : `Pin this test to ${front!.bundleId}, the app in front`} onClick={() => void panel.repinStoredTest()}>{label}</Button>}
+  </span>;
+}
+
+/** Why the run failed, as a chip under the verdict, so a long reason does not crowd the header. */
+function RunFailureReason({ run }: { run: { state: string; error?: string } | null | undefined }) {
+  if (run?.state !== "failed" || !run.error) return null;
+  return <Badge variant="outline" data-testing-run-error role="alert" title={run.error}
+    className="h-auto max-w-full self-start justify-start gap-1.5 whitespace-normal break-words border-destructive/30 bg-destructive/10 py-1 text-left font-normal text-destructive">
+    <CircleXIcon className="size-3 shrink-0" /><span className="min-w-0">{run.error}</span>
+  </Badge>;
+}
+
+/**
+ * After a Testing Studio test fails on the platform it was not recorded on: offers to pick the failed
+ * line's element on this platform, which keeps the recorded locator for the other one behind a
+ * `platform` branch. While picking, says what to do on the mirror.
+ */
+function ReRecordLine({ panel }: { panel: TestingPanel }) {
+  useSyncExternalStore(panel.subscribe, panel.getSnapshot);
+  const recorder = useSyncExternalStore(testRecorder.subscribe, testRecorder.getSnapshot);
+  const mirrored = panel.mirroredPlatform;
+  if (recorder.picking && mirrored) return <TestingNote data-testing-rerecord-picking
+    icon={recorder.preparing ? <LoaderCircleIcon className="mt-px size-3.5 shrink-0 animate-spin" /> : <MousePointerClickIcon className="mt-px size-3.5 shrink-0" />}
+    action={<Button type="button" size="xs" variant="ghost" onClick={() => panel.cancelReRecord()}>Cancel</Button>}>
+    {recorder.preparing ? `Reading the ${platformLabel(mirrored)} screen…` : <>Right-click the element on the {platformLabel(mirrored)} mirror, then choose <span className="font-medium text-foreground">Insert</span>.</>}
+  </TestingNote>;
+  const target = panel.reRecord;
+  if (!target) return null;
+  const { line } = target;
+  const label = platformLabel(target.platform);
+  // The same note whichever mirror is active: the button brings the failing platform's mirror forward.
+  return <TestingNote data-testing-rerecord icon={<WandSparklesIcon className="mt-px size-3.5 shrink-0" />}
+    action={<Button type="button" size="xs" variant="outline" data-testing-rerecord-line={line} onClick={() => void panel.reRecordStoredLine(line)}
+      title={`Pick the element on the ${label} mirror. Line ${line} keeps its current locator on the other platform.`}>Re-record on {label}</Button>}>
+    <span className="font-medium text-foreground">Line {line}</span> may need a different locator on {label}. Pick the element there, and the other platform keeps its own.
+  </TestingNote>;
+}
+
 function StoredTestPreview({ panel, source, path, loading }: { panel: TestingPanel; source: string; path: string; loading: boolean }) {
   const panelState = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const recorder = useSyncExternalStore(testRecorder.subscribe, testRecorder.getSnapshot);
@@ -692,6 +847,7 @@ function StoredTestPreview({ panel, source, path, loading }: { panel: TestingPan
   return <div className="flex min-h-0 flex-1 flex-col gap-2" data-testing-stored-preview>
     <div className="flex flex-wrap items-center gap-2 text-xs">
       <span className="min-w-0 flex-1 truncate text-muted-foreground">{path}</span>
+      {panelState.runtimeMode === "bundled" && <PinnedApp panel={panel} />}
       {panelState.selectedTestStaged && <>
         <span className="text-amber-600 dark:text-amber-400" role="status">Unsaved edits are temporary and may be lost until you Save.</span>
         <Button type="button" size="sm" variant="ghost" data-testing-stored-undo disabled={panelState.saving}
@@ -709,8 +865,10 @@ function StoredTestPreview({ panel, source, path, loading }: { panel: TestingPan
                 disabled={editing || panelState.running || panelState.saving} onClick={() => setEditing(true)}>Edit</Button>
               {recorder.run?.state === "running" && <span role="status" className="text-muted-foreground">Running…</span>}
               {recorder.run?.state === "passed" && <span role="status" className="text-emerald-600">Passed</span>}
-              {recorder.run?.state === "failed" && <span role="status" className="text-red-600">{recorder.run.error ?? "Failed"}</span>}
+              {recorder.run?.state === "failed" && <span role="status" className="text-red-600">Failed</span>}
             </p>
+            <RunFailureReason run={recorder.run} />
+            <ReRecordLine panel={panel} />
             {editing ? <PreviewEditor source={source} saving={panelState.saving}
               onCancel={() => setEditing(false)} onSave={value => { panel.editStoredTest(value); setEditing(false); void panel.saveStoredTest(); }} />
               : <TestPreview source={source} run={recorder.run}
@@ -741,7 +899,7 @@ function TestingRecorder({ panel, recordable, deviceId }: { panel: TestingPanel;
   const recording = state.recordingDeviceId === deviceId && deviceId !== "";
   // Not while the agent is still writing the flow: saving half of one is a file the user did not
   // ask for, and the agent is told to hand over rather than to save.
-  const saveable = Boolean(panelState.projectPath) && (state.steps.length > 0 || Boolean(state.sourceOverride)) && !panelState.saving && !panelState.agent?.active;
+  const saveable = Boolean(panelState.projectPath) && (state.steps.length > 0 || Boolean(state.sourceOverride)) && !panelState.saving && !panelState.agent?.active && !panelState.agentRun;
   const [editing, setEditing] = useState(false);
   const sourceSteps = state.sourceOverride === undefined ? undefined : storedTestSteps(state.sourceOverride);
   const [hoveredStep, setHoveredStep] = useState<string>();
@@ -794,7 +952,7 @@ function TestingRecorder({ panel, recordable, deviceId }: { panel: TestingPanel;
   if (panelState.selectedTestPath) return <StoredTestPreview key={panelState.selectedTestPath} panel={panel} source={panelState.selectedTestSource}
     path={panelState.selectedTestPath} loading={panelState.loadingTest} />;
   return <div className="flex min-h-0 flex-1 flex-col gap-3">
-    {!recordable && !recording && !panelState.agent?.active && <p className="text-xs text-muted-foreground">Recording needs a booted iOS simulator or Android emulator in the mirror.</p>}
+    {!recordable && !recording && !panelState.agent?.active && <p className="text-xs text-muted-foreground">Recording needs a booted iOS simulator or Android emulator in the mirror. If one is already running, choose it from Add device.</p>}
     {panelState.agent?.active && <p className="text-xs text-muted-foreground">
       The mirror is the agent's while it records, so clicking it does nothing. Press Stop to take it back.
     </p>}
@@ -827,14 +985,14 @@ function TestingRecorder({ panel, recordable, deviceId }: { panel: TestingPanel;
         <section data-testing-preview-pane className="flex h-full min-h-0 min-w-0 flex-col gap-1.5 overflow-hidden rounded-lg border p-3">
           <p className="flex flex-wrap items-center gap-2 text-xs font-medium">
             <span>Preview</span>
-            {!panelState.agent?.active && <Button type="button" size="sm" variant="ghost" className={editing ? "bg-accent text-accent-foreground" : undefined} data-testing-source-edit aria-pressed={editing}
+            {!panelState.agent?.active && !panelState.agentRun && <Button type="button" size="sm" variant="ghost" className={editing ? "bg-accent text-accent-foreground" : undefined} data-testing-source-edit aria-pressed={editing}
               disabled={editing || panelState.running || panelState.saving} onClick={() => setEditing(true)}>Edit</Button>}
             {state.run?.state === "running" && <span className="flex items-center gap-1 font-normal text-muted-foreground" role="status">
               <LoaderCircleIcon className="size-3 animate-spin" />Running
             </span>}
             {state.run?.state === "passed" && <span className="flex items-center gap-1 font-normal text-emerald-600 dark:text-emerald-400" role="status"><CheckIcon className="size-3" />Passed</span>}
             {state.run?.state === "failed" && <span className="flex min-w-0 items-center gap-1 break-words font-normal text-red-600 dark:text-red-400" role="status">
-              <CircleXIcon className="size-3 shrink-0" />{state.run.error ?? "Failed"}
+              <CircleXIcon className="size-3 shrink-0" />Failed
             </span>}
             {/* The runner's own number, beside its verdict and on a failure too: how long a run took
                 before it gave up is part of reading it. It is not the panel's `ui.testing.run`
@@ -850,7 +1008,7 @@ function TestingRecorder({ panel, recordable, deviceId }: { panel: TestingPanel;
             {state.run?.stale && <span data-testing-run-stale className="font-normal text-muted-foreground"
               title="The steps changed after this run, so the line marks no longer point at the same steps.">· before your edits</span>}
           </p>
-          {state.run?.output && <pre className="max-h-32 overflow-auto rounded-md border bg-muted/40 p-2 font-mono text-[10px] whitespace-pre-wrap">{state.run.output}</pre>}
+          <RunFailureReason run={state.run} />
           {editing ? <PreviewEditor source={testRecorder.source} saving={panelState.saving}
             onCancel={() => setEditing(false)} onSave={value => { testRecorder.editSource(value); setEditing(false); void panel.saveTest(); }} />
             : <TestPreview source={testRecorder.source} run={state.run} highlightedLines={sourceSteps ? undefined : highlightedLines}

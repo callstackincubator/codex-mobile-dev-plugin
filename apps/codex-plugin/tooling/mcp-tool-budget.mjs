@@ -20,7 +20,7 @@ let count = 0;
 const oversized = [];
 for (const [name, config] of Object.entries(manifest.mcpServers)) {
   const client = new Client({ name: "mobile-dev-catalog-budget", version: "1" });
-  const transport = new StdioClientTransport({ command: process.execPath, args: [config.args[1]], cwd: plugin, stderr: "pipe", env });
+  const transport = new StdioClientTransport({ command: process.execPath, args: config.args, cwd: plugin, stderr: "pipe", env });
   try {
     await client.connect(transport);
     const tools = [];

@@ -115,7 +115,7 @@ The social card is `website/public/og-image.jpg`, 1200×630, dark only. It shows
 
 Run `pnpm --dir website og` to regenerate the card and icons. To select local Google Chrome, use `PLAYWRIGHT_CHANNEL=chrome pnpm --dir website og`. The source is `website/og/og.html`; content, accent, and scene data come from the same modules as the website.
 
-The README banner uses copy on the left and the large dithered workspace-and-phone scene on the right, without an outer frame. It omits the miniature chat UI: the illustration provides the texture, and the headline carries the message at GitHub sizes. `pnpm --dir website og --banner` renders the dark JPEG at 1660×512. The root README uses this banner in every colour scheme. The production site and README banner live at `https://incubator.callstack.com/codex-mobile-dev-plugin/` through GitHub Pages.
+The README banner uses copy on the left and the large dithered workspace-and-phone scene on the right, without an outer frame. It omits the miniature chat UI: the illustration provides the texture, and the headline carries the message at GitHub sizes. `pnpm --dir website og --banner` renders the dark JPEG at 1660×512. The root README uses this banner in every colour scheme. The production site and README banner live at `https://incubator.callstack.com/mobile-dev/` through GitHub Pages.
 
 ## Website
 

@@ -6,10 +6,13 @@ import type { RecordingController } from "../recording-controller.ts";
 import type { RecordingRange } from "@mobile-dev/shared/recordings.ts";
 import { summarizeRecording } from "@mobile-dev/shared/recordings.ts";
 import { recordUiTiming } from "../telemetry.ts";
+import type { FpsFrameOverlay } from "../fps-frame-overlay.ts";
+import { createIosFrameOverlay, createAndroidFrameOverlay } from "../fps-frame-overlay.ts";
 import { createRecordingCpuSeries, createRecordingFpsSeries, findRecordingChangeRanges } from "../recording-series.ts";
 import type { RecordingPoint } from "../recording-series.ts";
 import { Button } from "./ui/button";
 import { InfoPopover as RecordingInfo } from "./card-parts";
+import { FpsInspector, FrameMarkers, useFpsInspection } from "./fps-frame-markers";
 import { RecordingChartShape, recordingChartPoints } from "./recording-chart-shape";
 import { useMediaQuery } from "./use-media-query";
 
@@ -28,7 +31,7 @@ function milliseconds(value: number | null) { return value === null ? "—" : `$
 function RecordingOverview({ duration, range, changes, onClear }: { duration: number; range?: RecordingRange; changes: RecordingRange[]; onClear: () => void }) {
   const position = (time: number) => Math.max(0, Math.min(100, time / duration * 100));
   return <section className="recording-overview" aria-label="Recording range overview">
-    <div className="recording-section-heading"><h3>{range ? "Selected range" : "Entire recording"}</h3><RecordingInfo label="recording range">Drag across any chart to select a range; click a chart to clear it. Purple marks show the most rapid changes. Missing readings remain gaps.</RecordingInfo>
+    <div className="recording-section-heading"><h3>{range ? "Selected range" : "Entire recording"}</h3><RecordingInfo label="recording range">Drag across any chart to select a range. Use Clear to show the entire recording. Purple marks show the most rapid changes. Missing readings remain gaps.</RecordingInfo>
       {range && <button type="button" className="recording-clear-range" onClick={onClear}>Clear</button>}
     </div>
     <div className="recording-overview-bar" role="img" aria-label={range ? `Selected range: ${seconds(range.start)}–${seconds(range.end)}` : `Entire recording: 0.0s–${seconds(duration)}`}>
@@ -39,12 +42,15 @@ function RecordingOverview({ duration, range, changes, onClear }: { duration: nu
   </section>;
 }
 
-function RecordingChart({ label, info, metricLabel, metric, data, duration, range, changes, color, unit, onDrag, onSelect }: {
+function RecordingChart({ label, info, metricLabel, metric, data, duration, range, changes, color, unit, overlay, onDrag, onSelect }: {
   label: string; info: string; metricLabel: string; metric: string; data: RecordingPoint[]; duration: number; range?: RecordingRange; changes: RecordingRange[]; color: string; unit: string;
-  onDrag: (range?: RecordingRange) => void; onSelect: (range?: RecordingRange) => void;
+  overlay?: FpsFrameOverlay; onDrag: (range?: RecordingRange) => void; onSelect: (range?: RecordingRange) => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const anchor = useRef<number | undefined>(undefined);
+  const press = useRef<{ x: number; marker?: string }>(undefined);
+  const { inspection, inspect } = useFpsInspection(overlay);
+  const inspectedSample = inspection.kind === "marker" ? overlay?.markers[inspection.index]?.sample : overlay?.samples[inspection.index];
   const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
   const [reveal, setReveal] = useState<"pending" | "finished" | "settled">(reducedMotion ? "settled" : "pending");
   const revealStartedAt = useRef<number | undefined>(undefined);
@@ -71,14 +77,15 @@ function RecordingChart({ label, info, metricLabel, metric, data, duration, rang
     const bounds = root.current!.getBoundingClientRect();
     const fraction = (event.clientX - bounds.left - 52) / Math.max(1, bounds.width - 64);
     const clamped = Math.max(0, Math.min(1, fraction));
-    const time = clamped * duration;
-    return Math.round(time * 10) / 10;
+    return clamped * duration;
   }
   function selection(event: PointerEvent<HTMLDivElement>) {
     if (anchor.current === undefined) return;
     const time = timeAt(event);
-    const start = Math.min(anchor.current, time);
-    const end = Math.max(anchor.current, time);
+    const first = Math.min(anchor.current, time);
+    const last = Math.max(anchor.current, time);
+    const start = Math.round(first * 10) / 10;
+    const end = Math.round(last * 10) / 10;
     if (end > start) return { start, end };
   }
   const values = data.flatMap(point => point.value === null ? [] : [point.value]);
@@ -95,34 +102,56 @@ function RecordingChart({ label, info, metricLabel, metric, data, duration, rang
     const formatted = number.toFixed(unit === "%" ? 1 : 0);
     return `${formatted} ${unit}`;
   }
+  function inspectClick(event: PointerEvent<HTMLDivElement>) {
+    if (overlay === undefined || press.current === undefined) return false;
+    if (Math.abs(event.clientX - press.current.x) > 3) return false;
+    if (press.current.marker !== undefined) {
+      inspect({ kind: "marker", index: Number(press.current.marker) });
+      return true;
+    }
+    const time = timeAt(event);
+    const index = overlay.samples.findIndex(sample => sample.start <= time && time < sample.end);
+    if (index < 0) return false;
+    inspect({ kind: "sample", index });
+    return true;
+  }
   return <section className="recording-track" aria-label={label} data-reveal={reveal}>
     <div className="recording-track-heading"><h3>{label}</h3><RecordingInfo label={label}>{info}</RecordingInfo><span className="recording-track-metric"><span aria-hidden="true">·</span><span>{metricLabel} <strong>{metric}</strong></span></span></div>
-    <div ref={root} className="recording-chart" onPointerDown={event => {
+    {overlay && overlay.samples.length > 0 && <div className="recording-fps-legend"><span>Device-wide FPS</span><span>{overlay.platform === "android" ? "Flagged display frame" : "Visible hitch"}</span></div>}
+    {(overlay === undefined || overlay.samples.length > 0) && <div ref={root} className="recording-chart" onPointerDown={event => {
       if (event.button !== 0) return;
       setReveal("settled");
       revealStartedAt.current = undefined;
       anchor.current = timeAt(event);
+      if (overlay && event.target instanceof Element) {
+        const marker = event.target.closest<SVGGElement>("[data-frame-index]");
+        press.current = { x: event.clientX, marker: marker?.dataset.frameIndex };
+      }
       event.currentTarget.setPointerCapture(event.pointerId);
     }} onPointerMove={event => { if (anchor.current !== undefined) onDrag(selection(event)); }} onPointerUp={event => {
       if (anchor.current === undefined) return;
       const next = selection(event);
       anchor.current = undefined;
       onDrag(undefined);
-      onSelect(next);
+      if (inspectClick(event) === false) onSelect(next);
+      press.current = undefined;
       event.currentTarget.releasePointerCapture(event.pointerId);
-    }} onPointerCancel={() => { anchor.current = undefined; onDrag(undefined); }}>
+    }} onPointerCancel={() => { anchor.current = undefined; press.current = undefined; onDrag(undefined); }}>
       <ResponsiveContainer width="100%" height={170}>
         <AreaChart data={data} margin={{ left: 0, right: 12, top: 12, bottom: 0 }}>
           <CartesianGrid stroke="var(--border)" />
           <XAxis dataKey="time" type="number" domain={[0, duration]} tickFormatter={seconds} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} />
           <YAxis width={52} domain={[low, high]} allowDecimals={unit === "%"} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} tickFormatter={value => unit === "%" ? `${value.toFixed(0)}%` : value.toFixed(0)} />
           <Tooltip formatter={formatReading} labelFormatter={value => `${value}s`} contentStyle={{ background: "var(--popover)", borderColor: "var(--border)", borderRadius: 8, color: "var(--foreground)" }} />
+          {inspectedSample && <ReferenceArea x1={inspectedSample.start} x2={inspectedSample.end} fill="var(--foreground)" fillOpacity={0.05} stroke="none" />}
           {changes.map(change => <ReferenceArea key={change.start} className="recording-change-highlight" x1={change.start} x2={change.end} fill="#9873e6" fillOpacity={0.16} strokeOpacity={0} />)}
           <Area type="linear" dataKey="value" name={label} stroke={color} fill={color} fillOpacity={0.07} strokeWidth={2} dot={false} shape={RecordingChartShape} animationInterpolateFn={recordingChartPoints} isAnimationActive={reveal === "pending" ? "auto" : false} animationBegin={REVEAL_DELAY} animationDuration={700} animationEasing="ease-out" onAnimationStart={startReveal} onAnimationEnd={finishReveal} connectNulls={false} />
           {range && <ReferenceArea className="recording-range-highlight" x1={range.start} x2={range.end} fill="#2583ff" fillOpacity={0.12} stroke="#2583ff" strokeOpacity={0.5} />}
+          {overlay && <FrameMarkers overlay={overlay} selected={inspection.kind === "marker" ? inspection.index : undefined} />}
         </AreaChart>
       </ResponsiveContainer>
-    </div>
+    </div>}
+    {overlay && <FpsInspector overlay={overlay} inspection={inspection} onInspect={inspect} />}
   </section>;
 }
 
@@ -148,13 +177,16 @@ export function RecordingCard({ controller, detailed = false }: { controller: Re
     const total = summarizeRecording(recording);
     const cpu = createRecordingCpuSeries(recording);
     const fps = createRecordingFpsSeries(recording);
+    const overlay = recording.target.platform === "android"
+      ? createAndroidFrameOverlay(recording.fps.samples, { start: 0, end: recording.durationSeconds })
+      : createIosFrameOverlay(recording.iosHitches, fps);
     const memory: RecordingPoint[] = [];
     for (const sample of recording.samples) {
       memory.push({ time: sample.time, value: sample.memoryBytes === null ? null : sample.memoryBytes / MIB });
     }
     const elapsed = performance.now() - startedAt;
     recordUiTiming("ui.recording.derive", elapsed);
-    return { total, cpu, memory, fps };
+    return { total, cpu, memory, fps, overlay };
   }, [recording]);
   const selected = useMemo(() => {
     if (recording === undefined || derived === undefined) return;
@@ -178,8 +210,13 @@ export function RecordingCard({ controller, detailed = false }: { controller: Re
   const selectedFrameStats = selected.frameStats;
   const hasDisplayData = hasFps || frameStats !== null;
   const displayScope = frameStats === null ? "Display FPS measures the whole device, including activity outside this app." : "Display FPS and frame statistics measure the whole device, including activity outside this app.";
+  let fpsInfo = displayScope;
+  if (derived.overlay?.platform === "android") fpsInfo += " Diamonds mark late, dropped or janky display frames. Select one to inspect its FrameTimeline classification.";
+  if (derived.overlay?.platform === "ios") fpsInfo += " Select a diamond to inspect a late frame containing this app’s content, or click a sample to see its hitch count. Drag to select a range.";
   const hasFrames = frameStats !== null && frameStats.frameCount > 0;
-  const hasReadings = hasCpu || hasMemory || hasFps || hasFrames;
+  const hitches = recording.iosHitches;
+  const hitchStats = selected.hitchStats;
+  const hasReadings = hasCpu || hasMemory || hasFps || hasFrames || hitches?.status === "finished";
   return <article className="recording-card" aria-label="Saved performance recording">
     <header className="recording-header">
       <div className="recording-heading"><h2>{recording.title}</h2><p title={recording.target.bundleId}>{recording.deviceName} · {recording.durationSeconds}s · {savedAt}</p></div>
@@ -190,10 +227,12 @@ export function RecordingCard({ controller, detailed = false }: { controller: Re
         {hasReadings === false && <p role="status">No performance readings recorded yet.</p>}
         {hasCpu && <RecordingChart key={`${recording.id}:cpu`} label="CPU" info="100% CPU is one core. Peak shows the highest CPU reading across the recording." metricLabel="Peak" metric={percent(derived.total.peakCpuPercent)} data={derived.cpu} duration={recording.durationSeconds} range={range} changes={changes.cpu} color="#2583ff" unit="%" onDrag={setDrag} onSelect={controller.select} />}
         {hasMemory && <RecordingChart key={`${recording.id}:memory`} label="Memory (MiB)" info={`${memoryMetric} in mebibytes. Change compares the first and last memory readings across the recording.`} metricLabel="Δ" metric={memoryChange(derived.total.memoryChangeBytes)} data={derived.memory} duration={recording.durationSeconds} range={range} changes={changes.memory} color="#f57b28" unit="MiB" onDrag={setDrag} onSelect={controller.select} />}
-        {hasFps && <RecordingChart key={`${recording.id}:fps`} label="Display FPS" info={displayScope} metricLabel="Average" metric={fpsReading(derived.total.averageFps)} data={derived.fps} duration={recording.durationSeconds} range={range} changes={changes.fps} color="#36a269" unit="fps" onDrag={setDrag} onSelect={controller.select} />}
+        {(hasFps || derived.overlay) && <RecordingChart key={`${recording.id}:fps`} label="Display FPS" info={fpsInfo} metricLabel="Average" metric={fpsReading(derived.total.averageFps)} data={derived.fps} duration={recording.durationSeconds} range={range} changes={changes.fps} color="#36a269" unit="fps" overlay={derived.overlay} onDrag={setDrag} onSelect={controller.select} />}
+        {hitches?.status === "finished" && hitches.end < recording.durationSeconds && <p className="recording-footnote">Frame timing captured through {seconds(hitches.end)}.</p>}
+        {hitches?.status === "unavailable" && <p className="recording-footnote">{hitches.error}</p>}
         {hasDisplayData && <p className="recording-footnote">{displayScope}</p>}
         {recording.status === "finishing" && <p className="recording-footnote" role="status">Finishing the recording…</p>}
-        {state.preview === "only" && <p className="recording-footnote">This app shows CPU, memory and FPS without thread or frame detail.{state.canOpen && " Open the recording in Mobile Dev for all of it."}</p>}
+        {state.preview === "only" && <p className="recording-footnote">{(derived.overlay || hitches) ? "Thread detail requires the full recording." : "This app shows CPU, memory and FPS without thread or frame detail."}{state.canOpen && " Open the recording in Mobile Dev for all of it."}</p>}
       </div>
       <aside className="recording-sidebar" aria-label="Recording summary and actions">
         <RecordingOverview duration={recording.durationSeconds} range={range} changes={[...changes.cpu, ...changes.memory, ...changes.fps]} onClear={() => { setDrag(undefined); controller.select(undefined); }} />
@@ -212,6 +251,10 @@ export function RecordingCard({ controller, detailed = false }: { controller: Re
             <p>Frame intervals · P50: {milliseconds(selectedFrameStats.p50FrameIntervalMs)} · P95: {milliseconds(selectedFrameStats.p95FrameIntervalMs)} · P99: {milliseconds(selectedFrameStats.p99FrameIntervalMs)}</p>
             <p>Jank rate uses classified presented display frames. Dropped frames are counted separately.</p>
           </details>}
+        </section>}
+        {hitchStats && <section className="recording-display-summary" aria-label="Hitch statistics">
+          <h3>Visible hitches</h3>
+          <dl className="recording-metrics"><div><dt>Hitch count</dt><dd>{hitchStats.count}</dd></div><div><dt>Time lost</dt><dd>{milliseconds(hitchStats.lateMs)}</dd></div></dl>
         </section>}
         <div className="recording-actions">
           <Button disabled={state.canMessage === false || state.busy || hasReadings === false} onClick={() => { void controller.send("ask"); }}><MessageCircleIcon />{range ? "Ask about this range" : "Ask about recording"}</Button>

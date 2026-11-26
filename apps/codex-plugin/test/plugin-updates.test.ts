@@ -42,7 +42,7 @@ type FixtureOptions = {
 function cliFixture(directory: string, calls: string[][], options: FixtureOptions = {}) {
   let github = options.github ?? true;
   let marketplace = github;
-  const source = options.source ?? "https://github.com/callstackincubator/codex-mobile-dev-plugin.git";
+  const source = options.source ?? "https://github.com/callstackincubator/mobile-dev.git";
   const run: RunCodex = async args => {
     calls.push(args);
     if (args[1] === "marketplace") {
@@ -248,7 +248,7 @@ test("migration removes only GitHub, preserves data, deduplicates clicks and per
 test("wrong marketplaces, failed deletion and unremoved GitHub installations never report success", async t => {
   for (const fixture of [
     { source: "https://github.com/other/repo" },
-    { source: "https://github.com/callstackincubator/codex-mobile-dev-plugin.git", repositoryId: 1 },
+    { source: "https://github.com/callstackincubator/mobile-dev.git", repositoryId: 1 },
     { source: "https://github.com/callstackincubator/mobile-dev-plugin.git", repositoryStatus: 503 },
     { removeFails: true }, { keepGithub: true },
   ]) {
@@ -352,6 +352,13 @@ test("update tools remain app-only and the GitHub upgrade tool is removed", asyn
 test("CLI resolution rejects processes other than the launching Codex executable", async () => {
   const resolution = resolveCodexCli(process.pid);
   await assert.rejects(resolution, /Could not locate the Codex executable/);
+});
+
+test("a failed CLI process lookup reports the same bounded update error", async () => {
+  // A file cannot serve as the working directory for the process lookup.
+  await assert.rejects(resolveCodexCli(process.pid, import.meta.filename), {
+    message: "Could not locate the Codex executable that launched Mobile Dev.", failure: "codex-not-found",
+  });
 });
 
 test("published versions are read directly without user authentication or installation state", async () => {

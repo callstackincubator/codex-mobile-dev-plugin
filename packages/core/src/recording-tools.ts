@@ -11,6 +11,7 @@ import { captureServerError } from "./telemetry.ts";
 import type { PerformanceRecordings } from "./performance-recordings.ts";
 import { displayFrameSchema } from "@mobile-dev/shared/display-fps.ts";
 import { readRecordingFrames } from "./recording-frames.ts";
+import { hitchStatsSchema } from "@mobile-dev/shared/ios-hitches.ts";
 import { nullableDisplayFrameStatsSchema } from "@mobile-dev/shared/frame-statistics.ts";
 import { COMPARISON_URI, comparisonIdsSchema, comparisonReferenceSchema, comparisonSchema, comparisonTitleSchema, summarizeComparison } from "@mobile-dev/shared/performance-comparison.ts";
 
@@ -21,7 +22,7 @@ const summarySchema = z.object({
   peakCpuPercent: z.number().nullable(), averageCpuPercent: z.number().nullable(),
   firstMemoryBytes: z.number().nullable(), lastMemoryBytes: z.number().nullable(), memoryChangeBytes: z.number().nullable(),
   averageFps: z.number().nullable(), minimumFps: z.number().nullable(), peakFps: z.number().nullable(), fpsSampleCount: z.number(),
-  frameStats: nullableDisplayFrameStatsSchema,
+  frameStats: nullableDisplayFrameStatsSchema, hitchStats: hitchStatsSchema.nullable(),
   sampleCount: z.number(), threads: z.array(z.object({ id: z.string(), name: z.string(), averageCpuPercent: z.number(), peakCpuPercent: z.number() })),
 });
 const outputSchema = { recording: recordingSchema, summary: summarySchema, range: recordingRangeSchema.optional() };
@@ -33,7 +34,8 @@ type RecordingSummary = ReturnType<typeof summarizeRecording>;
 export const RESULT_BYTES = 45_000;
 
 /** The result with `extra` in its structured content when the whole result still fits every host. */
-function withinResultBytes(result: CallToolResult & { structuredContent: Record<string, unknown> }, extra: Record<string, unknown>): CallToolResult {
+type SizedResult = CallToolResult & { structuredContent: Record<string, unknown> };
+function withinResultBytes(result: SizedResult, extra: Record<string, unknown>): SizedResult {
   const extended = { ...result, structuredContent: { ...result.structuredContent, ...extra } };
   return Buffer.byteLength(JSON.stringify(extended)) <= RESULT_BYTES ? extended : result;
 }
@@ -54,6 +56,7 @@ function describeMeasurements(summary: RecordingSummary) {
   }
   if (summary.averageFps !== null) parts.push(`Display FPS average ${summary.averageFps.toFixed(1)}${summary.minimumFps === null ? "" : `, minimum ${summary.minimumFps.toFixed(1)}`}`);
   if (summary.frameStats?.jankRatePercent != null) parts.push(`jank rate ${percent(summary.frameStats.jankRatePercent)}`);
+  if (summary.hitchStats) parts.push(`${summary.hitchStats.count} visible hitches, ${summary.hitchStats.lateMs.toFixed(2)} ms late`);
   const threads = summary.threads.slice(0, 3).map(thread => `${thread.name || `thread ${thread.id}`} ${percent(thread.averageCpuPercent)}`);
   if (threads.length > 0) parts.push(`busiest threads ${threads.join(", ")}`);
   return parts.length > 0 ? parts.join("; ") : "no samples yet";
@@ -103,7 +106,7 @@ export function registerRecordingTools(server: McpServer, recordings: Performanc
   validateDevice: (target: CpuTarget) => Promise<string>): ShowRecording {
   registerAppTool(server, "mobile_record_performance", {
     title: "Record CPU, memory, and FPS for a timed run",
-    description: "Always record native process/thread CPU, memory, and device-wide Display FPS together, even when the user asks about only one metric. Returns immediately with recording.id and status connecting; wait for status recording before asking the user to perform the interaction. Recording stops automatically after durationSeconds of sampling, detaches both collectors, and saves original samples locally after a brief finishing phase for delayed FPS readings. Uses the same target and device/development prerequisites as mobile_cpu_session; stop any existing CPU monitor for this app and FPS monitor for this device first. FPS requires Android 12+ or physical iOS 17.4+; unsupported or failed FPS is omitted from the chart while CPU and memory still save. Device-wide FPS cannot attribute a slowdown to one app. Use mobile_read_performance_recording to check readiness and completion, then mobile_render_performance_recording to show the interactive chart in chat. 100% CPU is one core. Android memory is RSS; iOS memory is physical footprint.",
+    description: "Always record native process/thread CPU, memory, and device-wide Display FPS together, even when the user asks about only one metric. Returns immediately with recording.id and status connecting; wait for status recording before asking the user to perform the interaction. Recording stops automatically after durationSeconds of sampling, detaches the collectors, and saves original samples locally after delayed FPS readback and trace export. On a physical iPhone, Xcode Frame Lifetimes also captures visible hitches involving the selected app. Uses the same target and device/development prerequisites as mobile_cpu_session; stop any existing CPU monitor for this app and FPS monitor for this device first. FPS requires Android 12+ or physical iOS 17.4+; unsupported or failed FPS is omitted from the chart while CPU and memory still save. Device-wide FPS cannot attribute a slowdown to one app. Use mobile_read_performance_recording to check readiness and completion, then mobile_render_performance_recording to show the interactive chart in chat. 100% CPU is one core. Android memory is RSS; iOS memory is physical footprint.",
     inputSchema: { target: cpuTargetSchema, title: z.string().min(1).max(160), durationSeconds: z.number().int().min(1).max(300).default(30) },
     outputSchema, annotations: { ...read, readOnlyHint: false }, _meta: { ui: { visibility } },
   }, safe(async ({ target, title, durationSeconds }: { target: CpuTarget; title: string; durationSeconds: number }) => {
@@ -122,7 +125,7 @@ export function registerRecordingTools(server: McpServer, recordings: Performanc
   });
   registerAppTool(server, "mobile_read_performance_recording", {
     title: "Read a saved performance recording or range",
-    description: "Read original CPU, memory, FPS and thread samples, status, and summary for a recording ID. Android summary.frameStats includes jankRatePercent over classified presented display frames, classification coverage, separate dropped-frame count/rate, and frame-interval P50/P95/P99 in ms. Unknown jank classifications are excluded from the jank denominator; null means unavailable. Stats cover the entire requested range, not a frame page. Optional range uses recording-relative seconds; CPU/FPS/thread averages weight interval overlap. Android intervals retain exact frameTimeline data; mobile_read_performance_frames provides bounded frame pages. Show mobile_render_performance_recording when reporting jank so the user sees the chart. Device-wide frames cannot attribute a slowdown to one app. Works after plugin restarts.",
+    description: "Read original CPU, memory, FPS and thread samples, status, and summary for a recording ID. Physical iOS summary.hitchStats includes visible hitch count and milliseconds lost in the range. recording.iosHitches contains app-associated presentation times, lateMs and refreshIntervalMs. Android summary.frameStats includes jankRatePercent over classified presented display frames, classification coverage, separate dropped-frame count/rate, and frame-interval P50/P95/P99 in ms. Unknown jank classifications are excluded from the jank denominator; null means unavailable. Stats cover the entire requested range, not a frame page. Optional range uses recording-relative seconds; CPU/FPS/thread averages weight interval overlap. Android intervals retain exact frameTimeline data; mobile_read_performance_frames provides bounded frame pages. Show mobile_render_performance_recording when reporting jank so the user sees the chart. Device-wide frames cannot attribute a slowdown to one app. Works after plugin restarts.",
     inputSchema, outputSchema, annotations: read, _meta: { ui: { visibility } },
   }, readRecording);
   const readFrames = safe(async ({ recordingId, range, after, limit }: z.infer<z.ZodObject<typeof framePageInput>>) => {
@@ -151,11 +154,30 @@ export function registerRecordingTools(server: McpServer, recordings: Performanc
       ...(range ? { range } : {}), summary: busiest(summary),
     };
     const result = { content: [{ type: "text" as const, text: describeRecording(recording, summary, range) }], structuredContent };
-    return withinResultBytes(result, { preview: recordingPreview(recording) });
+    const preview = recordingPreview(recording);
+    const response = withinResultBytes(result, { preview });
+    if (response === result) return response;
+    if (recording.iosHitches) {
+      const withHitches = { ...preview, iosHitches: recording.iosHitches };
+      return withinResultBytes(response, { preview: withHitches });
+    }
+    if (recording.target.platform === "android") {
+      let frameCount = 0;
+      let captured = false;
+      for (const sample of recording.fps.samples) {
+        if (sample.frameTimeline === undefined) continue;
+        captured = true;
+        frameCount += sample.frameTimeline.frames.length;
+        // Even a frame with one-digit values takes over 60 JSON bytes.
+        if (frameCount * 60 > RESULT_BYTES) return response;
+      }
+      if (captured) return withinResultBytes(response, { preview: { ...preview, fps: recording.fps } });
+    }
+    return response;
   });
   registerAppTool(server, "mobile_render_performance_recording", {
     title: "Show an interactive performance chart in chat",
-    description: "Show a saved CPU/memory/FPS recording as an inline interactive chart with shared drag selection, thread breakdown and Ask. Android frame data adds jank rate, classification coverage, dropped frames and frame-interval P50/P95/P99, updating with the selected range. Call this when reporting scrolling FPS/jank or comparing implementations so the user sees the chart alongside the analysis. The full timeline stays visible; automatic change highlights do not select or limit a range. Omit range unless the user requested a selection. Pass recording.id from mobile_record_performance or mobile_list_performance_recordings. Active runs update until finished. Data tools return measurements without rendering a chart. Returns the recording ID and summary numbers; the chart reads the samples itself, so use mobile_read_performance_recording for sample-level detail.",
+    description: "Show a saved CPU/memory/FPS recording as an inline interactive chart with shared drag selection, thread breakdown and Ask. Completed physical iOS recordings overlay hitch markers on Display FPS, with per-sample hitch counts and range totals. Android FrameTimeline marks late, dropped and janky device-wide display frames. Range statistics include jank rate, classification coverage, dropped frames and frame-interval P50/P95/P99. Call this when reporting scrolling FPS/jank or comparing implementations so the user sees the chart alongside the analysis. The full timeline stays visible; automatic change highlights do not select or limit a range. Omit range unless the user requested a selection. Pass recording.id from mobile_record_performance or mobile_list_performance_recordings. Active runs update until finished. Data tools return measurements without rendering a chart. Returns the recording ID and summary numbers; the chart reads the samples itself, so use mobile_read_performance_recording for sample-level detail.",
     inputSchema, outputSchema: referenceOutputSchema, annotations: read, _meta: { ui: { resourceUri: RECORDING_URI, visibility } },
   }, showRecording);
   const comparisonTitle = comparisonTitleSchema.default("Performance comparison");
@@ -211,8 +233,8 @@ export function registerRecordingTools(server: McpServer, recordings: Performanc
     inputSchema: { limit: z.number().int().min(1).max(50).default(20) }, annotations: read, _meta: { ui: { visibility } },
   }, safe(async ({ limit }: { limit: number }) => {
     const recordingsList = await recordings.list(limit);
-    const items = recordingsList.map(({ samples, fps, ...metadata }) => ({
-      ...metadata, sampleCount: samples.length, fps: { status: fps.status, error: fps.error, sampleCount: fps.samples.length },
+    const items = recordingsList.map(({ samples, fps, iosHitches, ...metadata }) => ({
+      ...metadata, ...(iosHitches && { iosHitches: { status: iosHitches.status } }), sampleCount: samples.length, fps: { status: fps.status, error: fps.error, sampleCount: fps.samples.length },
     }));
     const text = JSON.stringify({ recordings: items });
     return { content: [{ type: "text", text }], structuredContent: { recordings: items } };

@@ -55,13 +55,17 @@ Physical iOS CPU monitoring briefly pauses the app when attaching and detaching.
 
 Saved recordings appear as interactive cards where the host supports MCP Apps. Drag any chart to select the same interval across CPU, memory, and FPS. Clear the selection to restore the full run.
 
+On a physical iPhone with Xcode on the Mac, a completed recording shows visible hitches as diamonds on the **Display FPS** graph. Click an FPS sample to see its hitch count. Select a diamond to see when the frame appeared, the refresh rate at that moment, and how late it arrived. Select a range to see its hitch count and time lost. The marked frames include the selected app’s content. An idle screen adds no missed frames by itself.
+
 Choose **Ask about this range** to send the original recording reference and exact interval to the agent. **Open in Mobile Dev** opens the saved run and selection in the Performance panel without starting a new collector. These chat actions depend on the host's message capabilities.
 
 The agent reads the original samples to answer questions. Use [Profiles](/docs/profiles) when you have a CPU or React profiling export and need to explore its call tree or component work.
 
 ## Android frame pacing and jank
 
-Android recordings with FrameTimeline support include detailed display frames, jank rate, frame-interval percentiles, dropped frames, and classification coverage.
+On Android 12+ with FrameTimeline support, the live and saved **Display FPS** graphs mark late, dropped and janky display frames with diamonds. Select a diamond to see when it occurred and which reasons SurfaceFlinger reported. Use **Inspect** to see how many flagged frames fell in an FPS sample. An idle second can show zero FPS and zero flagged frames.
+
+Saved recordings also include jank rate, frame-interval percentiles, dropped-frame counts and classification coverage for the selected range.
 
 These describe device-wide compositor frames, not Android Vitals app metrics. A low jank rate with incomplete classification coverage does not establish that a run was smooth. Display readback is delayed, so a completed recording can briefly finish collecting late frame data before saving.
 
