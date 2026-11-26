@@ -278,7 +278,11 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
   const booted = device?.state === "Booted" || device?.state === "connected";
   const target = state.targets.find(entry => entry.name === state.targetName) ?? state.targets[0];
   const mismatch = panel.targetMismatch;
-  const recordable = isRecordableDevice(device) && !mismatch;
+  // Record needs a target as well as a mirror. In No project mode the foreground app can arrive
+  // after the device stream; without a target the recorder has no tree source and an empty fallback
+  // looks like an app with no accessible elements.
+  const recordable = Boolean(state.projectPath && !state.loadingProject && target?.bundleId
+    && booted && isRecordableDevice(device) && !mismatch);
   const deviceId = device?.udid ?? "";
   const platform = device ? recordablePlatform(device) : "ios";
   // Why the recorder cannot start yet, in the order the user has to fix them.
@@ -326,7 +330,7 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
 
     <MatrixLanes panel={panel} deviceApps={deviceApps} />
 
-    <TestingRecorder panel={panel} recordable={recordable} deviceId={deviceId} platform={platform} />
+    <TestingRecorder panel={panel} deviceId={deviceId} />
   </section>;
 }
 
@@ -893,7 +897,7 @@ function StoredTestPreview({ panel, source, path, loading }: { panel: TestingPan
  * the mirror canvas by the simulator panel, which holds the device connection; this is the readout
  * and the controls.
  */
-function TestingRecorder({ panel, recordable, deviceId }: { panel: TestingPanel; recordable: boolean; deviceId: string; platform: DevicePlatform }) {
+function TestingRecorder({ panel, deviceId }: { panel: TestingPanel; deviceId: string }) {
   const state = useSyncExternalStore(testRecorder.subscribe, testRecorder.getSnapshot);
   const panelState = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
   const recording = state.recordingDeviceId === deviceId && deviceId !== "";
@@ -952,7 +956,6 @@ function TestingRecorder({ panel, recordable, deviceId }: { panel: TestingPanel;
   if (panelState.selectedTestPath) return <StoredTestPreview key={panelState.selectedTestPath} panel={panel} source={panelState.selectedTestSource}
     path={panelState.selectedTestPath} loading={panelState.loadingTest} />;
   return <div className="flex min-h-0 flex-1 flex-col gap-3">
-    {!recordable && !recording && !panelState.agent?.active && <p className="text-xs text-muted-foreground">Recording needs a booted iOS simulator or Android emulator in the mirror. If one is already running, choose it from Add device.</p>}
     {panelState.agent?.active && <p className="text-xs text-muted-foreground">
       The mirror is the agent's while it records, so clicking it does nothing. Press Stop to take it back.
     </p>}

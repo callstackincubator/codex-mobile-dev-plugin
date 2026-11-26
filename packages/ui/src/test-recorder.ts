@@ -299,9 +299,10 @@ export class TestRecorder {
     this.invalidate();
   }
 
-  /** What a panel's `readComponents` forwards to. Without a source there is nothing to record from. */
+  /** What a panel's `readComponents` forwards to. Missing setup is not an empty app tree. */
   readTree(deviceId: string, platform: DevicePlatform): Promise<{ tree: ScreenComponent[]; screen?: ScreenSize }> {
-    return this.treeSource ? this.treeSource.read(deviceId, platform) : Promise.resolve({ tree: [] });
+    return this.treeSource ? this.treeSource.read(deviceId, platform)
+      : Promise.reject(new Error("Testing Studio has no app target to read. Wait for the foreground app to appear in Testing Studio, then record again."));
   }
 
   releaseTree() { this.treeSource?.release(); }

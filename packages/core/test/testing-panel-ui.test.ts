@@ -846,6 +846,25 @@ test("with no project open the picker says so and setup offers no project files"
   onTeardown(async () => { await act(async () => { root.unmount(); }); });
 });
 
+test("Record waits for the foreground app target in No project mode", async t => {
+  const { module: { TestingView }, dom, onTeardown } = await renderEnvironment<any>(t, {
+    exports: 'export { TestingView } from "./packages/ui/src/components/testing-view.tsx";', slug: "testing-no-project-record-target",
+  });
+  const { act, createElement } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+  const root = createRoot(dom.window.document.getElementById("root")!);
+  const deviceApps = { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT };
+  const panel = panelStub({ projectPath: "/studio", studioPath: "/studio", runtimeMode: "bundled", targets: [], targetName: "", targetSource: "none" });
+  await act(async () => { root.render(createElement(TestingView, { panel, deviceApps })); });
+  assert.equal((dom.window.document.querySelector("[data-testing-record]") as HTMLButtonElement).disabled, true);
+  assert.match(dom.window.document.querySelector("[data-testing-blocker]")?.textContent ?? "", /Open the app you want to record/);
+  const ready = panelStub({ projectPath: "/studio", studioPath: "/studio", runtimeMode: "bundled",
+    targets: [{ name: "ios", platform: "ios", bundleId: "com.app" }], targetName: "ios", targetSource: "foreground" });
+  await act(async () => { root.render(createElement(TestingView, { panel: ready, deviceApps })); });
+  assert.equal((dom.window.document.querySelector("[data-testing-record]") as HTMLButtonElement).disabled, false);
+  onTeardown(async () => { await act(async () => { root.unmount(); }); });
+});
+
 test("a stored Testing Studio test shows its pinned app and offers to re-pin it to the app in front", async t => {
   const { module: { TestingView }, dom, onTeardown } = await renderEnvironment<any>(t, {
     exports: 'export { TestingView } from "./packages/ui/src/components/testing-view.tsx";', slug: "testing-pinned-app",

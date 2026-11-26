@@ -812,6 +812,11 @@ test("recording an Android emulator reads the tree with its serial and platform"
   recorder.stop();
 });
 
+test("a missing app target is reported separately from an empty accessibility tree", async () => {
+  const recorder = new TestRecorder();
+  await assert.rejects(recorder.readTree("sim", "ios"), /no app target to read/);
+});
+
 test("only the mirror of the platform being recorded or picked draws the recorder's overlay", () => {
   assert.equal(recorderShowsOn("android", "android"), true);
   assert.equal(recorderShowsOn("android", "ios"), false, "a re-record on Android must not paint the iOS mirror");
