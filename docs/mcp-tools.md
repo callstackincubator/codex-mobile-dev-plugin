@@ -122,10 +122,29 @@ not visible to the model. The project is the one `mobile_pick_tracesift_project`
 Progress is a busy state; the build log's tail returns when it ends, and a failure
 returns the CLI's own last `tracesift:` line.
 
-The two pickers exist because the TraceSift tool runs in a panel frame, where a
-dropped file carries no path and the analyzer reads profiles off disk. Both are
-app-only: the model never calls them. The chosen profile path reaches
-`mobile_analyze_profile` from the panel, and the chosen project folder is the
-source tree an investigation lands in — a profile names frames, not files, so
-Investigate stays disabled until one is chosen, and the folder is named in the
-hand-off the panel sends to the chat.
+The file and project pickers exist because the TraceSift tool runs in a panel
+frame, where a dropped file carries no path and the analyzer reads profiles off
+disk. Both are app-only: the model never calls them. The chosen profile path
+reaches `mobile_analyze_profile` from the panel. The project picker belongs to
+the optional profiling-build flow; an existing-profile analysis and its
+**Investigate** action do not require a panel-selected project. The agent uses
+the project selected in the active chat to investigate the hand-off.
+
+The TraceSift panel has **Record** and **Upload** modes. **Record** discovers a
+running React Native app and captures its Hermes CPU profile through
+`mobile_tracesift_list_react_native_targets`,
+`mobile_tracesift_record_react_native`, and `mobile_tracesift_stop_recording`.
+Debug builds need Metro; release and profiling builds use the installed
+`@callstack/tracesift-rn-profiler` package. The optional **Run with TraceSift**
+flow installs that package if needed, then builds, installs, and launches a
+profiling app on a chosen device. A model-initiated recording requires the
+project directory selected in the current chat. The panel's remembered project
+does not substitute for that chat context.
+
+The finished profile is copied into
+`~/Library/Application Support/mobile-dev/tracesift`. **Upload** can analyze
+one of those saved profiles again through `mobile_tracesift_recorded_profiles`,
+or remove it and its project-name metadata through
+`mobile_tracesift_delete_recorded_profile`. These tools operate only on files
+in the managed recordings folder; deleting a saved profile does not delete a
+TraceSift analysis or an original profile uploaded from elsewhere.
