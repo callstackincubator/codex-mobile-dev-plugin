@@ -42,12 +42,20 @@ export type BrowserPanelOptions = {
    * server whose panel does not render inline (see createPanel's `inline`).
    */
   always?: boolean;
+  /** Called with the panel page URL when the server starts or opens the panel. */
+  onPage?: (url: string) => void | Promise<void>;
+  /** Customizes the instructions returned when a tool opens the panel page. */
+  instructions?: (url: string) => string;
 };
 
 /** Hosts without MCP Apps, or every host with `always`, can show the shared panel on a session-owned loopback page. */
-export function browserPanel({ template = PAGE, always = false }: BrowserPanelOptions = {}): ServerFeature {
+export function browserPanel({ template = PAGE, always = false, onPage, instructions: formatInstructions }: BrowserPanelOptions = {}): ServerFeature {
   return (server, { connections, onPanelOpen }) => {
     let page: Promise<PanelPage> | undefined;
+    if (onPage !== undefined && connections !== undefined) {
+      page = startPanelPage(connections, "other", template);
+      void page.then(opened => onPage(opened.url("mobile_open_simulator", {}))).catch(() => {});
+    }
     onPanelOpen(async ({ tool, target }) => {
       const capabilities = server.server.getClientCapabilities();
       if (connections === undefined || (always === false && getUiCapability(capabilities))) return;
@@ -56,7 +64,8 @@ export function browserPanel({ template = PAGE, always = false }: BrowserPanelOp
       page ??= startPanelPage(connections, host, template);
       const opened = await page;
       const url = opened.url(tool, target);
-      const instructions = openingInstructions(url, opened.connected());
+      await onPage?.(url);
+      const instructions = formatInstructions?.(url) ?? openingInstructions(url, opened.connected());
       return { url, instructions };
     });
     // A browser has no model context of its own, so the agent asks the server for it.
