@@ -142,9 +142,9 @@ async function detectManager(present: (path: string) => Promise<boolean>): Promi
   return "npm";
 }
 
-function profilerInstallArgs(manager: PackageManager) {
+function profilerInstallArgs(manager: PackageManager, source = "@callstack/tracesift-rn-profiler") {
   const flag = manager === "yarn" || manager === "bun" ? "--dev" : "--save-dev";
-  return [manager === "npm" ? "install" : "add", flag, "@callstack/tracesift-rn-profiler"];
+  return [manager === "npm" ? "install" : "add", flag, source];
 }
 
 export class TraceSiftClient {
@@ -750,10 +750,10 @@ export class TraceSiftClient {
    * reason the Chrome path forces it: the trace must land as a file `analyze`
    * can take by path even while a TraceSift service is running.
    */
-  async startReactNativeRecording(options: { metro?: string; targetId?: string } = {}, signal?: AbortSignal) {
+  async startReactNativeRecording(options: { metro?: string; targetId?: string; projectPath?: string } = {}, signal?: AbortSignal) {
     // A release build has no Metro to serve a source map, so the CLI reads the
     // Gradle one relative to its working directory: the app's project, not ours.
-    const cwd = await this.readProject().catch(() => undefined);
+    const cwd = options.projectPath ? await this.projectRoot(options.projectPath) : await this.readProject().catch(() => undefined);
     try {
       await this.runCommand(["record", "start", "--platform", "rn", "--sink", "local",
         ...(options.metro ? ["--metro", options.metro] : []),
@@ -803,9 +803,19 @@ export class TraceSiftClient {
   }
 
   /** Run the package manager's own add command in the project: the one the panel displays. */
-  async installProfiler(projectPath: string, signal?: AbortSignal) {
+  async installProfiler(projectPath: string, signal?: AbortSignal, packagePath?: string) {
     const { manager } = await this.profilerSetup(projectPath);
-    await this.runSetupCommand(manager, profilerInstallArgs(manager), "Installing the profiler package", signal, process.env, await this.projectRoot(projectPath));
+    let source: string | undefined;
+    if (packagePath) {
+      const directory = await stat(packagePath).catch(() => undefined);
+      if (!directory?.isDirectory()) throw new TraceSiftError("The local profiler package folder does not exist.", "request");
+      source = await realpath(packagePath);
+      let manifest: { name?: unknown };
+      try { manifest = JSON.parse(await readFileAsync(join(source, "package.json"), "utf8")) as { name?: unknown }; }
+      catch { throw new TraceSiftError("The local profiler package has no valid package.json.", "request"); }
+      if (manifest.name !== "@callstack/tracesift-rn-profiler") throw new TraceSiftError("The local folder is not @callstack/tracesift-rn-profiler.", "request");
+    }
+    await this.runSetupCommand(manager, profilerInstallArgs(manager, source), "Installing the profiler package", signal, process.env, await this.projectRoot(projectPath));
   }
 
   /** What `tracesift profile devices` can build for, parsed from its one-row-per-device output. */

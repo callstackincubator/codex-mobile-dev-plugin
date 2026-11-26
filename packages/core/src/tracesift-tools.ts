@@ -262,28 +262,28 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
 
   registerAppTool(server, "mobile_tracesift_record_react_native", {
     title: "Start recording a running React Native app",
-    description: "Begin a Hermes CPU profile of a React Native app that is already running in a simulator, emulator or device. Nothing is launched and no window opens, so you can drive the recording yourself: start it, exercise the app or ask the user to, then stop it with mobile_tracesift_stop_recording to get the trace. Takes whichever route the build offers: a debug build over the Metro inspector, or a release build through the @callstack/tracesift-rn-profiler package it carries. Picks the app on its own unless targetId names one, and refuses while React Native DevTools is attached or another recording is going.",
-    inputSchema: { metro: traceSiftMetroUrlSchema.optional(), targetId: z.string().min(1).max(512).optional() },
+    description: "Begin a Hermes CPU profile of a running React Native app. Start it, exercise the app, then stop it with mobile_tracesift_stop_recording. Debug builds use Metro; release builds use @callstack/tracesift-rn-profiler and need projectPath so the CLI can find the build's source map. Picks the recommended app unless targetId names one. Refuses while React Native DevTools or another recording is attached.",
+    inputSchema: { metro: traceSiftMetroUrlSchema.optional(), targetId: z.string().min(1).max(512).optional(), projectPath: z.string().min(1).max(4096).optional() },
     outputSchema: { recording: z.literal(true) }, annotations: localService,
     _meta: { ui: { visibility } },
-  }, async ({ metro, targetId }, context) => {
+  }, async ({ metro, targetId, projectPath }, context) => {
     const startedAt = performance.now();
     try {
-      await client.startReactNativeRecording({ metro, targetId }, context.signal);
+      await client.startReactNativeRecording({ metro, targetId, projectPath }, context.signal);
       recordTraceSiftOperation("record", "success", performance.now() - startedAt);
       return { content: [{ type: "text", text: "Recording. Use the app, then stop the recording." }], structuredContent: { recording: true as const } };
     } catch (error) { return failure(error, "record", startedAt, context.signal); }
   });
 
-  // Producing a profiling build. App-only: it builds, installs and launches an
-  // app on a device, which a person chooses and a model should not decide.
+  // Producing a profiling build. The agent uses the same steps as the panel:
+  // inspect the project, install if needed, list devices, build, then poll.
   registerAppTool(server, "mobile_tracesift_profiler_setup", {
     title: "Check whether a project carries the TraceSift profiler",
     description: "Report whether the chosen React Native project already has @callstack/tracesift-rn-profiler installed (the check `tracesift profile build` makes), which platforms it has, and the exact install command for its package manager. Reads the project folder only.",
     inputSchema: { projectPath: z.string().min(1).max(4096) },
     outputSchema: { installed: z.boolean(), manager: z.enum(["npm", "yarn", "pnpm", "bun"]), command: z.string(), platforms: z.array(z.enum(["ios", "android"])) },
     annotations: read,
-    _meta: { ui: { visibility: ["app"] } },
+    _meta: { ui: { visibility } },
   }, async ({ projectPath }, context) => {
     const startedAt = performance.now();
     try {
@@ -295,15 +295,15 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
 
   registerAppTool(server, "mobile_tracesift_install_profiler", {
     title: "Install the TraceSift profiler package in a project",
-    description: "Add @callstack/tracesift-rn-profiler as a dev dependency of the chosen project with its own package manager, the command mobile_tracesift_profiler_setup reports. App-only: called after the user presses the run button beside that command. Modifies the project's package.json and lockfile and contacts the package registry.",
-    inputSchema: { projectPath: z.string().min(1).max(4096) },
+    description: "Add @callstack/tracesift-rn-profiler as a dev dependency of the chosen project with its own package manager. While the package is unpublished, pass packagePath pointing to the local perf-ai/packages/rn-profiler folder. Modifies the project's package.json and lockfile; registry installation may contact npm.",
+    inputSchema: { projectPath: z.string().min(1).max(4096), packagePath: z.string().min(1).max(4096).optional() },
     outputSchema: { installed: z.literal(true) },
     annotations: setupMutation,
-    _meta: { ui: { visibility: ["app"] } },
-  }, async ({ projectPath }, context) => {
+    _meta: { ui: { visibility } },
+  }, async ({ projectPath, packagePath }, context) => {
     const startedAt = performance.now();
     try {
-      await client.installProfiler(projectPath, context.signal);
+      await client.installProfiler(projectPath, context.signal, packagePath);
       recordTraceSiftOperation("profile", "success", performance.now() - startedAt);
       return { content: [{ type: "text", text: "The profiler package is installed." }], structuredContent: { installed: true as const } };
     } catch (error) { return failure(error, "profile", startedAt, context.signal); }
@@ -315,7 +315,7 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
     inputSchema: {},
     outputSchema: { devices: z.array(z.object({ kind: z.enum(["device", "simulator", "android"]), id: z.string(), name: z.string(), note: z.string() })) },
     annotations: read,
-    _meta: { ui: { visibility: ["app"] } },
+    _meta: { ui: { visibility } },
   }, async (_input, context) => {
     const startedAt = performance.now();
     try {
@@ -327,11 +327,11 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
 
   registerAppTool(server, "mobile_tracesift_profile_build", {
     title: "Build and launch a profiling build",
-    description: "Start a profiling build, install and launch in the background. Poll mobile_tracesift_profile_build_status for completion. App-only: called after the user chooses a project and target.",
+    description: "Start a profiling build, install and launch in the background. First check profiler setup and list devices; pass the selected device id from mobile_tracesift_profile_devices. Poll mobile_tracesift_profile_build_status for completion. This may modify native build outputs and install and launch an app on the device.",
     inputSchema: { projectPath: z.string().min(1).max(4096), platform: z.enum(["ios", "android"]), device: z.string().min(1).max(256).optional() },
     outputSchema: { runId: z.string().uuid(), status: z.literal("running") },
     annotations: setupMutation,
-    _meta: { ui: { visibility: ["app"] } },
+    _meta: { ui: { visibility } },
   }, async ({ projectPath, platform, device }, context) => {
     const startedAt = performance.now();
     try {
@@ -363,7 +363,7 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
     inputSchema: { runId: z.string().uuid().optional() },
     outputSchema: { runId: z.string().uuid().optional(), status: z.enum(["idle", "running", "completed", "failed"]), log: z.string().optional(), error: z.string().optional() },
     annotations: read,
-    _meta: { ui: { visibility: ["app"] } },
+    _meta: { ui: { visibility } },
   }, async ({ runId }) => {
     const current = build && (!runId || runId === build.id) ? build : undefined;
     const status = current?.status ?? "idle";

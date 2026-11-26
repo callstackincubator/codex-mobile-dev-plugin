@@ -467,6 +467,13 @@ test("a React Native recording runs in the saved project, so a release build fin
   await client.startReactNativeRecording();
   assert.equal((await readFile(cwdPath, "utf8")).trim(), project);
 
+  const explicitProject = await realpath(await mkdtemp(join(tmpdir(), "mobile-dev-rn-explicit-")));
+  t.after(() => rm(explicitProject, { recursive: true, force: true }));
+  await writeFile(join(explicitProject, "package.json"), "{}");
+  await rm(cwdPath);
+  await client.startReactNativeRecording({ projectPath: explicitProject });
+  assert.equal((await readFile(cwdPath, "utf8")).trim(), explicitProject);
+
   // A saved project that has since been deleted falls back rather than failing the spawn.
   await rm(project, { recursive: true, force: true });
   await rm(cwdPath);
@@ -568,6 +575,10 @@ test("a project is set up when the profiler package is in its node_modules, and 
   assert.deepEqual(await client.profilerSetup(root), {
     installed: false, manager: "yarn", command: "yarn add --dev @callstack/tracesift-rn-profiler", platforms: ["ios"],
   });
+  await assert.rejects(client.installProfiler(root, undefined, join(root, "missing-profiler")), /folder does not exist/);
+  const wrongPackage = join(root, "wrong-profiler");
+  await mkdir(wrongPackage); await writeFile(join(wrongPackage, "package.json"), '{"name":"another-package"}');
+  await assert.rejects(client.installProfiler(root, undefined, wrongPackage), /not @callstack\/tracesift-rn-profiler/);
   await mkdir(join(root, "node_modules", "@callstack", "tracesift-rn-profiler"), { recursive: true });
   assert.equal((await client.profilerSetup(root)).installed, true);
 });

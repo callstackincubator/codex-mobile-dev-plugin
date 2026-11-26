@@ -63,6 +63,16 @@ test("a profiling build starts promptly and reports its eventual launch", async 
     { runId, status: "completed", log: "installed and launched" });
 });
 
+test("profiler installation forwards a local package path", async t => {
+  const calls: unknown[] = [];
+  const { mcp, close } = await connect({ async installProfiler(...args: unknown[]) { calls.push(args); } });
+  t.after(close);
+  const result = await mcp.callTool({ name: "mobile_tracesift_install_profiler", arguments: { projectPath: "/app", packagePath: "/perf-ai/packages/rn-profiler" } });
+  assert.equal(result.isError, undefined);
+  assert.equal((calls[0] as unknown[])[0], "/app");
+  assert.equal((calls[0] as unknown[])[2], "/perf-ai/packages/rn-profiler");
+});
+
 test("an iOS profiling build reports insufficient disk before starting", async t => {
   const { statfs } = await import("node:fs/promises");
   const disk = await statfs("/tmp");
@@ -272,7 +282,9 @@ test("React Native recording is model-callable where launching a browser is not"
     return (tool._meta as { ui?: { visibility?: string[] } } | undefined)?.ui?.visibility;
   };
   for (const name of ["mobile_tracesift_list_react_native_targets", "mobile_tracesift_record_react_native",
-    "mobile_tracesift_stop_recording", "mobile_tracesift_capture_state"]) {
+    "mobile_tracesift_stop_recording", "mobile_tracesift_capture_state", "mobile_tracesift_profiler_setup",
+    "mobile_tracesift_install_profiler", "mobile_tracesift_profile_devices", "mobile_tracesift_profile_build",
+    "mobile_tracesift_profile_build_status"]) {
     assert.deepEqual(visibility(name), ["app", "model"], name);
   }
   for (const name of ["mobile_tracesift_launch_browser", "mobile_tracesift_start_recording", "mobile_tracesift_close_browser"]) {
@@ -288,7 +300,7 @@ test("listing React Native targets names the default app, and recording one pass
       return { apiVersion: 1 as const, platform: "rn" as const, metro: metro ?? "http://127.0.0.1:8081",
         targets: [{ id: "device-1", title: "AwesomeApp", deviceName: "iPhone 17 Pro", supportsMultipleDebuggers: true, recommended: true }] };
     },
-    async startReactNativeRecording(options: { metro?: string; targetId?: string }) { calls.push({ start: options }); },
+    async startReactNativeRecording(options: { metro?: string; targetId?: string; projectPath?: string }) { calls.push({ start: options }); },
   });
   t.after(close);
 
@@ -296,10 +308,10 @@ test("listing React Native targets names the default app, and recording one pass
   assert.equal(listed.isError, undefined);
   assert.match((listed.content as { text: string }[])[0]!.text, /AwesomeApp \(default\) \[device-1\]/);
 
-  const started = await mcp.callTool({ name: "mobile_tracesift_record_react_native", arguments: { targetId: "device-1" } });
+  const started = await mcp.callTool({ name: "mobile_tracesift_record_react_native", arguments: { targetId: "device-1", projectPath: "/app" } });
   assert.equal(started.isError, undefined);
   assert.deepEqual(started.structuredContent, { recording: true });
-  assert.deepEqual(calls, [{ targets: undefined }, { start: { metro: undefined, targetId: "device-1" } }]);
+  assert.deepEqual(calls, [{ targets: undefined }, { start: { metro: undefined, targetId: "device-1", projectPath: "/app" } }]);
 });
 
 test("neither route answering says so rather than returning an empty list without comment", async t => {

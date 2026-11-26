@@ -166,10 +166,19 @@ path to `mobile_analyze_profile` with `profileType: "cpu"`.
 Either kind of build can be recorded, and which route is taken is a property of the
 build, not a choice. A debug build is read over the Metro inspector, so Metro must
 be running. A release or profiling build has no inspector target and is read instead
-through the `@callstack/tracesift-rn-profiler` package it carries; if the user wants
-to profile a release build and has not made one, `tracesift profile build` from the
-app root builds, installs and arms it. Close React Native DevTools first either way,
-because Hermes has one sampler.
+through the `@callstack/tracesift-rn-profiler` package it carries. To prepare one,
+call `mobile_tracesift_profiler_setup` with the app root. If missing, call
+`mobile_tracesift_install_profiler`; until publication, pass the existing local
+`perf-ai/packages/rn-profiler` directory as `packagePath`. List targets with
+`mobile_tracesift_profile_devices`, use the user's choice or active panel device,
+then call `mobile_tracesift_profile_build` with that device's exact id and platform.
+Poll `mobile_tracesift_profile_build_status` with its runId until it completes or
+fails. The build installs and launches the app. Then list reachable React Native
+targets, record an interaction, stop, and analyze the returned profile. Resolve
+ambiguous devices or apps before building or recording. Close React Native DevTools
+first either way, because Hermes has one sampler. Pass the app root as
+`projectPath` to `mobile_tracesift_record_react_native` for release builds so
+TraceSift can find the build's source map.
 
 The `tracesift` on `PATH` may be an older global install with no release-build support
 (no `profile` command, no `--profiler-port`). When a tool reports the CLI is too old,

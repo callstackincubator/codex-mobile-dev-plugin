@@ -157,19 +157,35 @@ for the trace path, and pass that path to `mobile_analyze_profile` with
 apps are connected. Record a slice of the interaction the user is asking about, not
 an idle app.
 
-Metro must be running and the app must be a debug build; release and profilable
-builds are not supported yet. Close React Native DevTools first, because Hermes
-has a single sampler and refuses a second one. Frame names come from the bundle as
-it is served, so expect minified or bundled names rather than source positions, and
-task boundaries in the resulting cards are inferred rather than measured. Report the
-CLI's own message when a recording is refused; it names what to change. A TraceSift
-older than 0.6.0 cannot do this and says so.
+Debug builds use Metro's inspector, so Metro must be running for that route.
+Release and profiling builds use the `@callstack/tracesift-rn-profiler` package
+and do not need Metro. To prepare one from the app root, call
+`mobile_tracesift_profiler_setup` with its project path. If the package is missing,
+call `mobile_tracesift_install_profiler`. Until it is published, pass the local
+`perf-ai/packages/rn-profiler` directory as `packagePath`; verify that directory
+exists. Then call `mobile_tracesift_profile_devices`, choose a compatible listed
+device using the user's choice or the active panel device, and pass its exact `id`
+and platform to `mobile_tracesift_profile_build`. Poll
+`mobile_tracesift_profile_build_status` with its `runId` until completed or failed.
+After completion, list React Native targets, pass the app root as `projectPath`
+to `mobile_tracesift_record_react_native`, record the relevant interaction,
+stop, and analyze the returned path. A build installs and launches the app, so
+tell the user when the device's app will be replaced. If several devices or apps
+are plausible, resolve the target before building or recording.
+
+Close React Native DevTools first, because Hermes has a single sampler. Frame
+names can be minified or bundled and task boundaries are inferred. Report the
+CLI's own message when a recording is refused. If the CLI is too old, use a
+newer local TraceSift build through `TRACE_SIFT_COMMAND` and restart Mobile Dev.
 
 The browser-recording tools are the panel's, not yours: a browser you launched would
 record a page nobody had signed into. This is also not `mobile_record_performance`,
 which samples native CPU, memory and FPS rather than JavaScript call stacks.
 
-Build and launch the user's app with that app project's own tools. These tools do not build apps or install Xcode runtimes. Do not run type checks, lint, visual checks, or React Doctor unless the user asks. Before starting an app dev server, check for an existing server from that project.
+For ordinary app development, build and launch with the app project's own tools.
+The TraceSift profiling build tools do not install Xcode runtimes. Do not run type
+checks, lint, visual checks, or React Doctor unless the user asks. Before starting
+an app dev server, check for an existing server from that project.
 
 ## Android
 
