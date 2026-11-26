@@ -258,7 +258,7 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
 
   registerAppTool(server, "mobile_tracesift_list_react_native_targets", {
     title: "List the React Native apps TraceSift could record",
-    description: "Return the React Native apps that can be recorded, each with the id that names it and which one would be recorded by default. Use before recording to confirm an app is reachable, or to pick between several. Starts nothing. Finds a debug build through Metro's inspector, which needs Metro running, and a release or profiling build through the @callstack/tracesift-rn-profiler package it carries, which needs no Metro.",
+    description: "Return the React Native apps that can be recorded, each with the id that names it and which one would be recorded by default. Use before recording to confirm an app is reachable, or to pick between several. Starts nothing. Finds a debug build through Metro's inspector, which needs Metro running, and a release or profiling build through the @callstack/tracesift-profiler package it carries, which needs no Metro.",
     inputSchema: { metro: traceSiftMetroUrlSchema.optional() },
     outputSchema: traceSiftRnTargetsSchema.shape, annotations: read,
     _meta: { ui: { visibility } },
@@ -276,7 +276,7 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
 
   registerAppTool(server, "mobile_tracesift_record_react_native", {
     title: "Start recording a running React Native app",
-    description: "Begin a Hermes CPU profile of a running React Native app. For agent calls, require a project directory selected in this chat and pass it as projectPath; if none is selected, tell the user: Please select a project in this chat first. Start it, exercise the app, then stop it with mobile_tracesift_stop_recording. Debug builds use Metro; release builds use @callstack/tracesift-rn-profiler and need projectPath so the CLI can find the build's source map. Picks the recommended app unless targetId names one. Refuses while React Native DevTools or another recording is attached.",
+    description: "Begin a Hermes CPU profile of a running React Native app. For agent calls, require a project directory selected in this chat and pass it as projectPath; if none is selected, tell the user: Please select a project in this chat first. Start it, exercise the app, then stop it with mobile_tracesift_stop_recording. Debug builds use Metro; release builds use @callstack/tracesift-profiler and need projectPath so the CLI can find the build's source map. Picks the recommended app unless targetId names one. Refuses while React Native DevTools or another recording is attached.",
     inputSchema: { metro: traceSiftMetroUrlSchema.optional(), targetId: z.string().min(1).max(512).optional(), projectPath: z.string().min(1).max(4096).optional() },
     outputSchema: { recording: z.literal(true) }, annotations: localService,
     _meta: { ui: { visibility } },
@@ -293,7 +293,7 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
   // inspect the project, install if needed, list devices, build, then poll.
   registerAppTool(server, "mobile_tracesift_profiler_setup", {
     title: "Check whether a project carries the TraceSift profiler",
-    description: "Report whether the chosen React Native project already has @callstack/tracesift-rn-profiler installed (the check `tracesift profile build` makes), which platforms it has, and the exact install command for its package manager. Reads the project folder only.",
+    description: "Report whether the chosen React Native project already has @callstack/tracesift-profiler installed (the check `tracesift profile build` makes), which platforms it has, and the exact install command for its package manager. Reads the project folder only.",
     inputSchema: { projectPath: z.string().min(1).max(4096) },
     outputSchema: { installed: z.boolean(), manager: z.enum(["npm", "yarn", "pnpm", "bun"]), command: z.string(), platforms: z.array(z.enum(["ios", "android"])) },
     annotations: read,
@@ -309,7 +309,7 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
 
   registerAppTool(server, "mobile_tracesift_install_profiler", {
     title: "Install the TraceSift profiler package in a project",
-    description: "Add @callstack/tracesift-rn-profiler as a dev dependency of the chosen project with its own package manager. While the package is unpublished, pass packagePath pointing to the local perf-ai/packages/rn-profiler folder. Modifies the project's package.json and lockfile; registry installation may contact npm.",
+    description: "Add @callstack/tracesift-profiler@0.6.0 as a dev dependency of the chosen project with its own package manager. The optional packagePath accepts a local @callstack/tracesift-profiler package folder. Modifies the project's package.json and lockfile; registry installation may contact npm.",
     inputSchema: { projectPath: z.string().min(1).max(4096), packagePath: z.string().min(1).max(4096).optional() },
     outputSchema: { installed: z.literal(true) },
     annotations: setupMutation,

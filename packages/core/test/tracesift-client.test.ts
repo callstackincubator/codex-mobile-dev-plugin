@@ -578,13 +578,13 @@ test("a project is set up when the profiler package is in its node_modules, and 
   const { mkdir } = await import("node:fs/promises");
   await mkdir(join(root, "ios")); await writeFile(join(root, "ios", "Podfile"), "");
   assert.deepEqual(await client.profilerSetup(root), {
-    installed: false, manager: "yarn", command: "yarn add --dev @callstack/tracesift-rn-profiler", platforms: ["ios"],
+    installed: false, manager: "yarn", command: "yarn add --dev @callstack/tracesift-profiler@0.6.0", platforms: ["ios"],
   });
   await assert.rejects(client.installProfiler(root, undefined, join(root, "missing-profiler")), /folder does not exist/);
   const wrongPackage = join(root, "wrong-profiler");
   await mkdir(wrongPackage); await writeFile(join(wrongPackage, "package.json"), '{"name":"another-package"}');
-  await assert.rejects(client.installProfiler(root, undefined, wrongPackage), /not @callstack\/tracesift-rn-profiler/);
-  await mkdir(join(root, "node_modules", "@callstack", "tracesift-rn-profiler"), { recursive: true });
+  await assert.rejects(client.installProfiler(root, undefined, wrongPackage), /not @callstack\/tracesift-profiler/);
+  await mkdir(join(root, "node_modules", "@callstack", "tracesift-profiler"), { recursive: true });
   assert.equal((await client.profilerSetup(root)).installed, true);
 });
 
@@ -616,7 +616,7 @@ test("an iOS profiling build links a manually installed profiler with the projec
   const root = await mkdtemp(join(tmpdir(), "mobile-dev-bundled-pods-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, "ios"));
-  await mkdir(join(root, "node_modules", "@callstack", "tracesift-rn-profiler"), { recursive: true });
+  await mkdir(join(root, "node_modules", "@callstack", "tracesift-profiler"), { recursive: true });
   await writeFile(join(root, "package.json"), "{}");
   await writeFile(join(root, "Gemfile"), "gem 'cocoapods'");
   await writeFile(join(root, "ios", "Podfile.lock"), "PODS:\n");

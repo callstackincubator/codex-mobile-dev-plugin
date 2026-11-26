@@ -147,7 +147,10 @@ async function detectManager(present: (path: string) => Promise<boolean>): Promi
   return "npm";
 }
 
-function profilerInstallArgs(manager: PackageManager, source = "@callstack/tracesift-rn-profiler") {
+const PROFILER_PACKAGE = "@callstack/tracesift-profiler";
+const PROFILER_INSTALL_SPEC = `${PROFILER_PACKAGE}@0.6.0`;
+
+function profilerInstallArgs(manager: PackageManager, source = PROFILER_INSTALL_SPEC) {
   const flag = manager === "yarn" || manager === "bun" ? "--dev" : "--save-dev";
   return [manager === "npm" ? "install" : "add", flag, source];
 }
@@ -812,7 +815,7 @@ export class TraceSiftClient {
     const present = (path: string) => stat(join(root, path)).then(() => true, () => false);
     const manager = await detectManager(present);
     return {
-      installed: await present(join("node_modules", "@callstack", "tracesift-rn-profiler")),
+      installed: await present(join("node_modules", "@callstack", "tracesift-profiler")),
       manager, command: `${manager} ${profilerInstallArgs(manager).join(" ")}`,
       platforms: [...(await present(join("ios", "Podfile")) ? ["ios" as const] : []), ...(await present(join("android", "gradlew")) ? ["android" as const] : [])],
     };
@@ -839,7 +842,7 @@ export class TraceSiftClient {
       let manifest: { name?: unknown };
       try { manifest = JSON.parse(await readFileAsync(join(source, "package.json"), "utf8")) as { name?: unknown }; }
       catch { throw new TraceSiftError("The local profiler package has no valid package.json.", "request"); }
-      if (manifest.name !== "@callstack/tracesift-rn-profiler") throw new TraceSiftError("The local folder is not @callstack/tracesift-rn-profiler.", "request");
+      if (manifest.name !== PROFILER_PACKAGE) throw new TraceSiftError(`The local folder is not ${PROFILER_PACKAGE}.`, "request");
     }
     await this.runSetupCommand(manager, profilerInstallArgs(manager, source), "Installing the profiler package", signal, process.env, await this.projectRoot(projectPath));
   }
@@ -871,7 +874,7 @@ export class TraceSiftClient {
       // Desktop hosts often launch without the login shell's CocoaPods/Ruby paths.
       const iosPath = options.platform === "ios" ? [dirname(process.execPath), join(homedir(), ".rbenv/shims"), join(homedir(), ".rbenv/bin"), "/opt/homebrew/bin", "/usr/local/bin", process.env.PATH ?? ""].join(delimiter) : process.env.PATH;
       if (options.platform === "ios") {
-        const profiler = await stat(join(cwd, "node_modules", "@callstack", "tracesift-rn-profiler")).catch(() => undefined);
+        const profiler = await stat(join(cwd, "node_modules", "@callstack", "tracesift-profiler")).catch(() => undefined);
         const lock = await readFileAsync(join(cwd, "ios", "Podfile.lock"), "utf8").catch(() => "");
         const gemfile = await stat(join(cwd, "Gemfile")).catch(() => undefined);
         // The CLI uses plain `pod`, which can be absent under a project's pinned

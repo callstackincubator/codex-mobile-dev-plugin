@@ -9,7 +9,7 @@ Use **TraceSift** in Mobile Dev to record a running React Native app or analyze 
 
 TraceSift profile analysis requires a macOS or Linux host. Install and configure TraceSift locally. Mobile Dev finds it on `PATH` or through `TRACE_SIFT_COMMAND`. If setup is missing, follow the installation or `tracesift init` guidance returned by the tool.
 
-Recording a React Native app requires a reachable Hermes profiler. Debug builds use Metro's inspector, so Metro must be running; release and profiling builds use `@callstack/tracesift-rn-profiler` without Metro. Close React Native DevTools before recording because Hermes allows one sampler at a time. Mobile Dev's [CPU, memory, and Display FPS recordings](/docs/performance) are a separate kind of measurement.
+Recording a React Native app requires a reachable Hermes profiler. Debug builds use Metro's inspector, so Metro must be running; release and profiling builds use `@callstack/tracesift-profiler` without Metro. Close React Native DevTools before recording because Hermes allows one sampler at a time. Mobile Dev's [CPU, memory, and Display FPS recordings](/docs/performance) are a separate kind of measurement.
 
 ## Record a React Native profile
 

@@ -111,7 +111,7 @@ installed executable may not enter the already-running Codex process's `PATH`.
 
 "Run with TraceSift" builds a profiling build from the panel through four app-only
 tools: `mobile_tracesift_profiler_setup` (read-only: whether
-`@callstack/tracesift-rn-profiler` is in the project's `node_modules`, the same check
+`@callstack/tracesift-profiler` is in the project's `node_modules`, the same check
 `tracesift profile build` makes, plus the install command for the lockfile's package
 manager), `mobile_tracesift_install_profiler` (that one add command, run in the project
 folder), `mobile_tracesift_profile_devices` (`tracesift profile devices`) and
@@ -135,7 +135,7 @@ running React Native app and captures its Hermes CPU profile through
 `mobile_tracesift_list_react_native_targets`,
 `mobile_tracesift_record_react_native`, and `mobile_tracesift_stop_recording`.
 Debug builds need Metro; release and profiling builds use the installed
-`@callstack/tracesift-rn-profiler` package. The optional **Run with TraceSift**
+`@callstack/tracesift-profiler` package. The optional **Run with TraceSift**
 flow installs that package if needed, then builds, installs, and launches a
 profiling app on a chosen device. A model-initiated recording requires the
 project directory selected in the current chat. The panel's remembered project

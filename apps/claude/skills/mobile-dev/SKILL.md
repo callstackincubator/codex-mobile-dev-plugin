@@ -177,10 +177,10 @@ path to `mobile_analyze_profile` with `profileType: "cpu"`.
 Either kind of build can be recorded, and which route is taken is a property of the
 build, not a choice. A debug build is read over the Metro inspector, so Metro must
 be running. A release or profiling build has no inspector target and is read instead
-through the `@callstack/tracesift-rn-profiler` package it carries. To prepare one,
+through the `@callstack/tracesift-profiler` package it carries. To prepare one,
 call `mobile_tracesift_profiler_setup` with the app root. If missing, call
-`mobile_tracesift_install_profiler`; until publication, pass the existing local
-`perf-ai/packages/rn-profiler` directory as `packagePath`. List targets with
+`mobile_tracesift_install_profiler` to install the published 0.6.0 package. List
+targets with
 `mobile_tracesift_profile_devices`, use the user's choice or active panel device,
 then call `mobile_tracesift_profile_build` with that device's exact id and platform.
 Poll `mobile_tracesift_profile_build_status` with its runId until it completes or

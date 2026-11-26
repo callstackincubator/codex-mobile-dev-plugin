@@ -165,12 +165,11 @@ apps are connected. Record a slice of the interaction the user is asking about, 
 an idle app.
 
 Debug builds use Metro's inspector, so Metro must be running for that route.
-Release and profiling builds use the `@callstack/tracesift-rn-profiler` package
+Release and profiling builds use the `@callstack/tracesift-profiler` package
 and do not need Metro. To prepare one from the app root, call
 `mobile_tracesift_profiler_setup` with its project path. If the package is missing,
-call `mobile_tracesift_install_profiler`. Until it is published, pass the local
-`perf-ai/packages/rn-profiler` directory as `packagePath`; verify that directory
-exists. Then call `mobile_tracesift_profile_devices`, choose a compatible listed
+call `mobile_tracesift_install_profiler` to install version 0.6.0 from npm.
+Then call `mobile_tracesift_profile_devices`, choose a compatible listed
 device using the user's choice or the active panel device, and pass its exact `id`
 and platform to `mobile_tracesift_profile_build`. Poll
 `mobile_tracesift_profile_build_status` with its `runId` until completed or failed.

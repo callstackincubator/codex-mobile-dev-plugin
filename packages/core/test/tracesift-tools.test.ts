@@ -67,10 +67,10 @@ test("profiler installation forwards a local package path", async t => {
   const calls: unknown[] = [];
   const { mcp, close } = await connect({ async installProfiler(...args: unknown[]) { calls.push(args); } });
   t.after(close);
-  const result = await mcp.callTool({ name: "mobile_tracesift_install_profiler", arguments: { projectPath: "/app", packagePath: "/perf-ai/packages/rn-profiler" } });
+  const result = await mcp.callTool({ name: "mobile_tracesift_install_profiler", arguments: { projectPath: "/app", packagePath: "/local/tracesift-profiler" } });
   assert.equal(result.isError, undefined);
   assert.equal((calls[0] as unknown[])[0], "/app");
-  assert.equal((calls[0] as unknown[])[2], "/perf-ai/packages/rn-profiler");
+  assert.equal((calls[0] as unknown[])[2], "/local/tracesift-profiler");
 });
 
 test("an iOS profiling build reports insufficient disk before starting", async t => {
