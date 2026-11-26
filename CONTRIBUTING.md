@@ -469,7 +469,9 @@ npm run cursor:config
    global file rather than a project's `.cursor/mcp.json`: the snippet uses absolute
    paths to this checkout and the Node executable running the generator.
 2. Reload Cursor, check that `mobile-dev` is enabled in the MCP section of Cursor Settings, and
-   ask **“Open Mobile Dev”** in a new agent chat.
+   ask **“Open Mobile Dev”** in a new agent chat. Cursor's Agent window cannot grow the in-chat
+   iframe; **Open in browser** on the panel toolbar loads the same panel on a loopback page
+   the host can show in its own window.
 
 After UI or server edits, run `npm run build` and reload Cursor. Regenerate the
 config if the checkout or Node path changes.

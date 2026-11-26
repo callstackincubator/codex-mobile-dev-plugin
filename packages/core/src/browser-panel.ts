@@ -2,17 +2,19 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { getUiCapability } from "@modelcontextprotocol/ext-apps/server";
+import { getUiCapability, registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { ImageContent, TextContent } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import type { PanelTarget } from "@mobile-dev/shared/panel-target.ts";
+import { deviceIdSchema, panelTargetSchema, type PanelTarget } from "@mobile-dev/shared/panel-target.ts";
 import { telemetryHost, type TelemetryHost } from "@mobile-dev/shared/telemetry.ts";
 import type { ServerFeature } from "./server-feature.ts";
 import type { SharedTransport } from "./shared-transport.ts";
 import { captureServerError, recordBrowserPanelContext, recordBrowserPanelSessions } from "./telemetry.ts";
 
 const PAGE = new URL("./browser-panel.html", import.meta.url);
+const openingToolName = z.enum(["mobile_open_simulator", "mobile_open_workspace", "mobile_open_app_intel"]);
+const NO_BROWSER = "This host cannot open Mobile Dev in a browser.";
 export const BROWSER_SESSION_IDLE_MS = 5 * 60_000;
 // Screenshots the user adds to chat travel as base64 images.
 export const BROWSER_CONTEXT_MAX_BYTES = 16 * 1024 * 1024;
@@ -48,16 +50,47 @@ export type BrowserPanelOptions = {
 export function browserPanel({ template = PAGE, always = false }: BrowserPanelOptions = {}): ServerFeature {
   return (server, { connections, onPanelOpen }) => {
     let page: Promise<PanelPage> | undefined;
-    onPanelOpen(async ({ tool, target }) => {
-      const capabilities = server.server.getClientCapabilities();
-      if (connections === undefined || (always === false && getUiCapability(capabilities))) return;
+    function ensurePage() {
+      if (connections === undefined) throw new Error(NO_BROWSER);
       const clientInfo = server.server.getClientVersion();
       const host = telemetryHost(clientInfo?.name);
       page ??= startPanelPage(connections, host, template);
-      const opened = await page;
+      return page;
+    }
+    onPanelOpen(async ({ tool, target }) => {
+      const capabilities = server.server.getClientCapabilities();
+      if (connections === undefined || (always === false && getUiCapability(capabilities))) return;
+      const opened = await ensurePage();
       const url = opened.url(tool, target);
       const instructions = openingInstructions(url, opened.connected());
       return { url, instructions };
+    });
+    registerAppTool(server, "mobile_open_browser_panel", {
+      title: "Open Mobile Dev in a browser",
+      description: "Start the loopback panel page and return its URL so the in-chat panel can open it in a window. App-only: the in-chat Open in browser control calls this; the model never does.",
+      inputSchema: {
+        tool: openingToolName,
+        platform: z.enum(["ios", "android"]).optional(),
+        kind: z.enum(["simulator", "emulator", "physical"]).optional(),
+        deviceId: deviceIdSchema.optional(),
+        workspaceTool: z.enum(["logs", "performance", "storage", "app-intel", "tracesift", "testing"]).optional(),
+        appIntelScreen: z.string().min(1).max(512).optional(),
+      },
+      outputSchema: { url: z.string() },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+      _meta: { ui: { visibility: ["app"] } },
+    }, async (input) => {
+      try {
+        const { tool, ...rest } = input;
+        const target = panelTargetSchema.parse(rest);
+        const opened = await ensurePage();
+        const url = opened.url(tool, target);
+        return { content: [{ type: "text", text: url }], structuredContent: { url } };
+      } catch (error) {
+        const text = error instanceof Error ? error.message : NO_BROWSER;
+        if (text !== NO_BROWSER) captureServerError(error, "browser_panel.open");
+        return { isError: true, content: [{ type: "text", text }] };
+      }
     });
     // A browser has no model context of its own, so the agent asks the server for it.
     server.registerTool("mobile_read_panel_context", {

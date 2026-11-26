@@ -15,4 +15,9 @@ export type WorkspaceOptions = {
   extension?: (app: App) => WorkspaceExtension;
   /** Show Expand / Back to chat. Hosts with their own fullscreen controls (Codex) turn it off; advertised display modes cannot tell. */
   displayModeControl?: boolean;
+  /**
+   * Show Open in browser, which loads the loopback page in a host window. Codex
+   * turns it off: its host blocks localhost, and it already has fullscreen.
+   */
+  openInBrowserControl?: boolean;
 };

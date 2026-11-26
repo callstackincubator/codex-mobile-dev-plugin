@@ -38,7 +38,7 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
   const devices = new DeviceWorkspace(app, panels);
   function renderWorkspace() {
     const workspace = <ErrorBoundary fallback={<p role="alert">Mobile Dev could not render. Reopen the panel to try again.</p>}>
-      <Workspace panels={panels} recordingController={recordingController} banner={extension?.banner} displayModeControl={options.displayModeControl === false ? undefined : <DisplayModeButton app={app} />} contextControl={<ContextAttachments context={panels.context} />} devices={devices} automaticTool={automaticTool} automaticToolRevision={automaticToolRevision} />
+      <Workspace panels={panels} recordingController={recordingController} banner={extension?.banner} displayModeControl={options.displayModeControl === false ? undefined : <DisplayModeButton app={app} />} openInBrowserControl={options.openInBrowserControl} app={app} contextControl={<ContextAttachments context={panels.context} />} devices={devices} automaticTool={automaticTool} automaticToolRevision={automaticToolRevision} />
     </ErrorBoundary>;
     reactRoot.render(workspace);
   }
@@ -145,6 +145,7 @@ export function startWorkspaceApp(options: WorkspaceOptions = {}) {
       if (disposingUI) return;
       attributeHost(app);
       hostContext();
+      renderWorkspace();
       const capabilities = app.getHostCapabilities();
       const available = !!capabilities?.serverTools && !!capabilities?.serverResources;
       panels.setAvailable(available);
