@@ -1,0 +1,11 @@
+{
+  "mobile-dev-node-check": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "/bin/sh ./scripts/launch-node.sh --check",
+        "timeout": 10
+      }
+    ]
+  }
+}

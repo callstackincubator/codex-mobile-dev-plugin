@@ -75,6 +75,8 @@ test("the testing skill ships from every plugin that has the panel", async () =>
   assert.ok(sharedSkills.includes("packages/skills/mobile-dev-testing"), "Codex and Cursor");
   const claude = JSON.parse(await readFile(new URL("../../../apps/claude/plugin-host.json", import.meta.url), "utf8"));
   assert.ok(claude.skills.includes("../../packages/skills/mobile-dev-testing"), "Claude Code");
+  const antigravity = JSON.parse(await readFile(new URL("../../../apps/antigravity/plugin-host.json", import.meta.url), "utf8"));
+  assert.ok(antigravity.skills.includes("../../packages/skills/mobile-dev-testing"), "Antigravity");
 });
 
 test("the testing skill teaches Testing Studio mode: record saves, run, add the missing app, repair by locator only", async () => {
