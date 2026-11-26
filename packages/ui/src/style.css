@@ -338,6 +338,14 @@ html[data-theme="dark"] .tracesift-upload { --tracesift-blue-ink: var(--tracesif
 .tracesift-upload .tracesift-record-section-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 12px 14px; border: 0; background: color-mix(in srgb, var(--tracesift-blue) 6%, transparent); color: var(--foreground); font: inherit; text-align: left; cursor: pointer; }
 .tracesift-upload .tracesift-saved-profiles { display: grid; gap: 6px; }
 .tracesift-upload .tracesift-saved-profiles label { font-size: 12px; font-weight: 600; }
+.tracesift-upload .tracesift-saved-trigger { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--muted-foreground); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.tracesift-upload .tracesift-saved-trigger:disabled { opacity: .5; cursor: default; }
+.tracesift-upload .tracesift-saved-trigger svg { width: 14px; height: 14px; }
+.tracesift-saved-menu { width: var(--radix-popover-trigger-width); max-height: 300px; overflow-y: auto; padding: 4px; }
+.tracesift-saved-row { display: flex; align-items: center; gap: 4px; }
+.tracesift-saved-open { display: flex; min-width: 0; flex: 1; flex-direction: column; align-items: flex-start; gap: 2px; padding: 6px; border: 0; border-radius: 5px; background: transparent; color: var(--foreground); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.tracesift-saved-open:hover, .tracesift-saved-open:focus-visible { background: var(--accent); }
+.tracesift-saved-open small { color: var(--muted-foreground); }
 .tracesift-upload .tracesift-record-section-toggle:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
 .tracesift-upload .tracesift-record-section-toggle > svg { width: 15px; height: 15px; flex: none; color: var(--muted-foreground); }
 .tracesift-upload .tracesift-record-section-body { display: grid; gap: 12px; padding: 14px; border-top: 1px solid var(--border); }

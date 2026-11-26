@@ -231,6 +231,7 @@ test("published TraceSift annotations distinguish saved references, service star
     mobile_tracesift_start_recording: [false, false],
     mobile_tracesift_stop_recording: [false, true],
     mobile_tracesift_recorded_profiles: [true, false],
+    mobile_tracesift_delete_recorded_profile: [false, true],
     mobile_tracesift_close_browser: [false, true],
     mobile_tracesift_list_react_native_targets: [true, false],
     mobile_tracesift_record_react_native: [false, false],

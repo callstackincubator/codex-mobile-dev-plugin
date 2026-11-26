@@ -38,7 +38,8 @@ type RunState = {
 };
 
 type State = {
-  recordedProfiles: { path: string; name: string; recordedAt: string; sizeBytes: number }[];
+  recordedProfiles: { path: string; name: string; recordedAt: string; sizeBytes: number; projectName?: string }[];
+  deletingProfile?: string;
   analysis?: TraceSiftAnalysis;
   canInvestigate: boolean;
   /** Explore, the project and hand-offs need the host to let cards call the server. */
@@ -627,6 +628,21 @@ export class TraceSiftController {
       if (!this.disposed) this.update({ recordedProfiles: profiles });
     } catch {
       // File picking and recording remain available if the local list cannot be read.
+    }
+  };
+
+  deleteRecordedProfile = async (path: string) => {
+    if (this.disposed || this.state.deletingProfile) return;
+    this.update({ deletingProfile: path, error: "" });
+    try {
+      const result = await this.app.callServerTool({ name: "mobile_tracesift_delete_recorded_profile", arguments: { path } });
+      if (result.isError || result.structuredContent?.deleted !== true) throw new Error("Saved profile could not be deleted.");
+      if (!this.disposed) this.update({ recordedProfiles: this.state.recordedProfiles.filter(profile => profile.path !== path) });
+    } catch (error) {
+      captureUiError(error, "tracesift.delete_recording");
+      if (!this.disposed) this.update({ error: error instanceof Error ? error.message : "Saved profile could not be deleted." });
+    } finally {
+      if (!this.disposed) this.update({ deletingProfile: undefined });
     }
   };
 

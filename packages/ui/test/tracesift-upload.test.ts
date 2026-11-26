@@ -34,7 +34,8 @@ test("TraceSift keeps one workspace while readiness changes its inspector", asyn
     getHostCapabilities: () => ({ serverTools: {} }),
     getHostContext: () => ({ theme: "dark", availableDisplayModes: ["inline", "fullscreen"] }),
     async callServerTool(input: { name: string }) {
-      if (input.name === "mobile_tracesift_recorded_profiles") return { content: [], structuredContent: { profiles: [{ path: "/saved/profile.json.gz", name: "profile.json.gz", recordedAt: "2026-11-25T08:00:00.000Z", sizeBytes: 100 }] } };
+      if (input.name === "mobile_tracesift_recorded_profiles") return { content: [], structuredContent: { profiles: [{ path: "/saved/profile.json.gz", name: "profile.json.gz", recordedAt: "2026-11-25T08:00:00.000Z", sizeBytes: 100, projectName: "expoapp57" }] } };
+      if (input.name === "mobile_tracesift_delete_recorded_profile") return { content: [], structuredContent: { deleted: true } };
       if (input.name === "mobile_get_tracesift_project") return { content: [], structuredContent: { path: "/project/expoapp57" } };
       if (input.name === "mobile_tracesift_profiler_setup") return { content: [], structuredContent: { installed: profilerInstalled, command: "npm install @callstack/tracesift-rn-profiler", platforms: ["ios"] } };
       if (input.name === "mobile_tracesift_install_profiler") { profilerInstalled = true; return { content: [], structuredContent: {} }; }
@@ -99,8 +100,16 @@ test("TraceSift keeps one workspace while readiness changes its inspector", asyn
   mounted.flushSync(() => tabs()[1]!.click());
   assert.match(workspace.textContent ?? "", /Recorded profiles/);
   assert.match(workspace.querySelector("#tracesift-saved-profile")?.textContent ?? "", /Choose a saved profile/);
-  assert.equal(workspace.querySelector("#tracesift-saved-profile")?.getAttribute("data-slot"), "select-trigger");
+  assert.equal(workspace.querySelector("#tracesift-saved-profile")?.tagName, "BUTTON");
   assert.equal(mounted.panel.controller.getSnapshot().recordedProfiles[0]?.name, "profile.json.gz");
+  assert.equal(mounted.panel.controller.getSnapshot().recordedProfiles[0]?.projectName, "expoapp57");
+  mounted.flushSync(() => (workspace!.querySelector("#tracesift-saved-profile") as HTMLButtonElement).click());
+  assert.match(dom.window.document.body.textContent ?? "", /expoapp57 · profile.json.gz/);
+  const deleteButton = dom.window.document.querySelector<HTMLButtonElement>('button[aria-label="Delete profile.json.gz"]');
+  assert.ok(deleteButton);
+  mounted.flushSync(() => deleteButton.click());
+  await settle();
+  assert.equal(mounted.panel.controller.getSnapshot().recordedProfiles.length, 0);
   mounted.panel.controller.accept({ content: [], structuredContent: {
     apiVersion: 1, analysisId: "saved", profileType: "cpu", title: "Saved CPU",
     summary: { totalMs: 0, callCountIsExact: true }, cards: [],

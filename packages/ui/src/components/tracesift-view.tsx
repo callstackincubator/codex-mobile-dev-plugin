@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore, type DragEvent } from "react";
-import { CheckCircle2Icon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronUpIcon, CircleDotIcon, FileJson2Icon, FolderOpenIcon, HardDriveIcon, LoaderCircleIcon, MonitorSmartphoneIcon, PlayIcon, RocketIcon, SmartphoneIcon, UploadIcon } from "lucide-react";
+import { CheckCircle2Icon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronUpIcon, CircleDotIcon, FileJson2Icon, FolderOpenIcon, HardDriveIcon, LoaderCircleIcon, MonitorSmartphoneIcon, PlayIcon, RocketIcon, SmartphoneIcon, Trash2Icon, UploadIcon } from "lucide-react";
 import type { TraceSiftPanel } from "../tracesift-panel.ts";
 import type { TraceSiftController, TraceSiftRunTarget } from "../tracesift-controller.ts";
 import type { TraceSiftProfileType, TraceSiftRnTarget } from "@mobile-dev/shared/tracesift.ts";
@@ -7,7 +7,6 @@ import { TraceSiftCards } from "./tracesift-cards.tsx";
 import { Button } from "./ui/button.tsx";
 import { Tabs, TabsList, TabsTrigger } from "./ui/base-tabs.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover.tsx";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "./ui/base-select.tsx";
 
 const options: { value: Extract<TraceSiftProfileType, "cpu" | "react">; title: string; detail: string; accepts: string; drop: string }[] = [
   { value: "cpu", title: "JavaScript CPU", detail: "Find slow functions and heavy execution paths", accepts: ".json", drop: "Chrome Performance .json" },
@@ -281,6 +280,7 @@ function TraceSiftUpload({ controller, available, mode, setMode, profileType, se
   const [detailsHidden, setDetailsHidden] = useState(readDetailsHidden);
   const [buildExpanded, setBuildExpanded] = useState(true);
   const [runningExpanded, setRunningExpanded] = useState(true);
+  const [profilesOpen, setProfilesOpen] = useState(false);
   useEffect(() => {
     if (state.run.notice) { setBuildExpanded(false); setRunningExpanded(true); }
   }, [state.run.notice]);
@@ -373,18 +373,23 @@ function TraceSiftUpload({ controller, available, mode, setMode, profileType, se
             : <UploadPane controller={controller} profileType={profileType} busy={!ready} />}
           {profileType === "cpu" && state.recordedProfiles.length > 0 && <div className="tracesift-saved-profiles">
             <label htmlFor="tracesift-saved-profile">Recorded profiles</label>
-            <Select items={state.recordedProfiles.map(profile => ({ value: profile.path, label: `${profile.name} · ${new Date(profile.recordedAt).toLocaleString()}` }))}
-              value={null} disabled={!ready || Boolean(analyzing)} onValueChange={value => {
-                const profile = state.recordedProfiles.find(item => item.path === value);
-                if (profile) void controller.analyze(profile.path, "cpu");
-              }}>
-              <SelectTrigger id="tracesift-saved-profile" className="w-full min-w-0"><SelectValue placeholder="Choose a saved profile…" /></SelectTrigger>
-              <SelectContent align="start" alignItemWithTrigger={false} className="max-w-(--available-width)">
-                <SelectGroup>{state.recordedProfiles.map(profile => <SelectItem key={profile.path} value={profile.path}>
-                  <span className="min-w-0 truncate">{profile.name} · {new Date(profile.recordedAt).toLocaleString()}</span>
-                </SelectItem>)}</SelectGroup>
-              </SelectContent>
-            </Select>
+            <Popover open={profilesOpen} onOpenChange={setProfilesOpen}>
+              <PopoverTrigger asChild><button id="tracesift-saved-profile" type="button" className="tracesift-saved-trigger" disabled={!ready || Boolean(analyzing)} aria-label="Choose a saved profile">
+                Choose a saved profile… <ChevronDownIcon />
+              </button></PopoverTrigger>
+              <PopoverContent align="start" className="tracesift-saved-menu">
+                {state.recordedProfiles.map(profile => <div key={profile.path} className="tracesift-saved-row">
+                  <button type="button" className="tracesift-saved-open" onClick={() => { setProfilesOpen(false); void controller.analyze(profile.path, "cpu"); }}>
+                    <span className="truncate">{profile.projectName && <strong>{profile.projectName} · </strong>}{profile.name}</span>
+                    <small>{new Date(profile.recordedAt).toLocaleString()}</small>
+                  </button>
+                  <Button type="button" size="icon-xs" variant="ghost" aria-label={`Delete ${profile.name}`} title={`Delete ${profile.name}`}
+                    disabled={Boolean(state.deletingProfile)} onClick={() => void controller.deleteRecordedProfile(profile.path)}>
+                    {state.deletingProfile === profile.path ? <LoaderCircleIcon className="animate-spin" /> : <Trash2Icon />}
+                  </Button>
+                </div>)}
+              </PopoverContent>
+            </Popover>
           </div>}
         </> : <>
           {/* Recording yields JS CPU samples only: a React profile comes out of

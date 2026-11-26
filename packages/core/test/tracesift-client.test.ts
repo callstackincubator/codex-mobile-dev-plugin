@@ -303,6 +303,7 @@ test("a recording launches a browser, traces what is on screen, and reports the 
   const launched = await client.launchBrowser("https://example.com");
   assert.deepEqual(launched.browser, { url: "https://example.com/" });
 
+  await client.writeProject(fake.home);
   await client.startRecording();
   assert.equal((await client.captureState()).recording, true);
 
@@ -310,6 +311,10 @@ test("a recording launches a browser, traces what is on screen, and reports the 
   assert.match(capture.path, /mobile-dev\/tracesift\/profile-.*\.json\.gz$/);
   assert.equal(await readFile(capture.path, "utf8"), "trace");
   assert.deepEqual((await client.listRecordedProfiles()).map(profile => profile.path), [capture.path]);
+  assert.equal((await client.listRecordedProfiles())[0]?.projectName, fake.home.split("/").at(-1));
+  await assert.rejects(client.deleteRecordedProfile(join(fake.home, "other.json")), /saved profiles folder/);
+  await client.deleteRecordedProfile(capture.path);
+  assert.deepEqual(await client.listRecordedProfiles(), []);
   assert.equal(capture.sizeBytes, 612345);
   assert.equal(capture.eventCount, 35924);
   // Stopping leaves the browser open, so another recording can follow.

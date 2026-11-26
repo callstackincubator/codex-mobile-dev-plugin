@@ -146,6 +146,12 @@ The analysis opens an inline list of the same measured cards TraceSift produces,
 
 #### Recording a React Native profile yourself
 
+Only start a TraceSift recording when this chat has a selected project directory.
+If the chat has no project directory, reply: "Please select a project in this chat first."
+Do not use a project remembered by the TraceSift panel or the plugin from another
+chat as a substitute. Pass the chat's project directory as `projectPath` to
+`mobile_tracesift_record_react_native`.
+
 When there is no profile to hand, you can record one. A React Native app running
 in a simulator, emulator or device exposes its Hermes profiler through the Metro
 dev server, so nothing is launched and no window opens: call

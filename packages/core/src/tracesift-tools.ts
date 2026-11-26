@@ -215,7 +215,7 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
     title: "List locally recorded TraceSift profiles",
     description: "List saved profiles from the local mobile-dev/tracesift folder for reopening in the panel.",
     inputSchema: {},
-    outputSchema: { profiles: z.array(z.object({ path: z.string(), name: z.string(), recordedAt: z.string(), sizeBytes: z.number() })) },
+    outputSchema: { profiles: z.array(z.object({ path: z.string(), name: z.string(), recordedAt: z.string(), sizeBytes: z.number(), projectName: z.string().optional() })) },
     annotations: read,
     _meta: { ui: { visibility: ["app"] } },
   }, async (_input, context) => {
@@ -224,6 +224,20 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
       const profiles = await client.listRecordedProfiles();
       recordTraceSiftOperation("record", "success", performance.now() - startedAt);
       return { content: [{ type: "text", text: `${profiles.length} recorded profiles available.` }], structuredContent: { profiles } };
+    } catch (error) { return failure(error, "record", startedAt, context.signal); }
+  });
+
+  registerAppTool(server, "mobile_tracesift_delete_recorded_profile", {
+    title: "Delete a saved TraceSift profile",
+    description: "Delete one profile saved by Mobile Dev from the local TraceSift recordings folder. App-only: called from the upload panel's delete button.",
+    inputSchema: { path: z.string() }, outputSchema: { deleted: z.literal(true) }, annotations: persist,
+    _meta: { ui: { visibility: ["app"] } },
+  }, async ({ path }, context) => {
+    const startedAt = performance.now();
+    try {
+      await client.deleteRecordedProfile(path);
+      recordTraceSiftOperation("record", "success", performance.now() - startedAt);
+      return { content: [{ type: "text", text: "Saved profile deleted." }], structuredContent: { deleted: true as const } };
     } catch (error) { return failure(error, "record", startedAt, context.signal); }
   });
 
@@ -262,7 +276,7 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
 
   registerAppTool(server, "mobile_tracesift_record_react_native", {
     title: "Start recording a running React Native app",
-    description: "Begin a Hermes CPU profile of a running React Native app. Start it, exercise the app, then stop it with mobile_tracesift_stop_recording. Debug builds use Metro; release builds use @callstack/tracesift-rn-profiler and need projectPath so the CLI can find the build's source map. Picks the recommended app unless targetId names one. Refuses while React Native DevTools or another recording is attached.",
+    description: "Begin a Hermes CPU profile of a running React Native app. For agent calls, require a project directory selected in this chat and pass it as projectPath; if none is selected, tell the user: Please select a project in this chat first. Start it, exercise the app, then stop it with mobile_tracesift_stop_recording. Debug builds use Metro; release builds use @callstack/tracesift-rn-profiler and need projectPath so the CLI can find the build's source map. Picks the recommended app unless targetId names one. Refuses while React Native DevTools or another recording is attached.",
     inputSchema: { metro: traceSiftMetroUrlSchema.optional(), targetId: z.string().min(1).max(512).optional(), projectPath: z.string().min(1).max(4096).optional() },
     outputSchema: { recording: z.literal(true) }, annotations: localService,
     _meta: { ui: { visibility } },

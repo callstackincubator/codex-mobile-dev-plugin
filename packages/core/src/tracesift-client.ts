@@ -153,6 +153,7 @@ export class TraceSiftClient {
   private readonly home: string;
   private readonly command: string;
   private readonly recordingsDirectory: string;
+  private recordingProject?: string;
   constructor(command = process.env.TRACE_SIFT_COMMAND ?? "tracesift", home?: string, recordingsDirectory = join(homedir(), "Library/Application Support/mobile-dev/tracesift")) {
     this.command = command;
     this.home = home ?? process.env.TRACE_SIFT_HOME ?? join(homedir(), ".tracesift");
@@ -165,12 +166,24 @@ export class TraceSiftClient {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") return [];
       throw error;
     });
-    const profiles = await Promise.all(entries.filter(entry => entry.isFile() && /\.json(?:\.gz)?$/.test(entry.name)).map(async entry => {
+    const profiles = await Promise.all(entries.filter(entry => entry.isFile() && /^profile-.*\.json(?:\.gz)?$/.test(entry.name)).map(async entry => {
       const path = join(this.recordingsDirectory, entry.name);
       const info = await stat(path);
-      return { path, name: entry.name, recordedAt: info.mtime.toISOString(), sizeBytes: info.size };
+      const metadata = await readFileAsync(`${path}.metadata`, "utf8").then(value => {
+        try { return JSON.parse(value) as unknown; } catch { return undefined; }
+      }, () => undefined);
+      const projectName = typeof metadata === "object" && metadata !== null && "projectName" in metadata && typeof metadata.projectName === "string" ? metadata.projectName : undefined;
+      return { path, name: entry.name, recordedAt: info.mtime.toISOString(), sizeBytes: info.size, ...(projectName ? { projectName } : {}) };
     }));
     return profiles.sort((a, b) => b.recordedAt.localeCompare(a.recordedAt)).slice(0, 100);
+  }
+
+  async deleteRecordedProfile(path: string) {
+    if (dirname(path) !== this.recordingsDirectory || !/^profile-.*\.json(?:\.gz)?$/.test(basename(path))) {
+      throw new TraceSiftError("That recording is not in the saved profiles folder.", "request");
+    }
+    await rm(path);
+    await rm(`${path}.metadata`, { force: true });
   }
 
   private async keepRecording(path: string) {
@@ -179,6 +192,9 @@ export class TraceSiftClient {
     const destination = join(this.recordingsDirectory, `profile-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 8)}${extension}`);
     await copyFile(path, destination);
     await chmod(destination, 0o600);
+    const project = this.recordingProject ?? await this.readProject().catch(() => undefined);
+    if (project) await this.writePrivateJson(`${destination}.metadata`, { projectName: basename(project) });
+    this.recordingProject = undefined;
     return destination;
   }
 
@@ -645,6 +661,7 @@ export class TraceSiftClient {
       missing: "TraceSift is not installed or could not run `tracesift record`.",
       failed: code => `TraceSift could not start recording (exit code ${code}).`,
     });
+    this.recordingProject = await this.readProject().catch(() => undefined);
   }
 
   /** End the recording and wait for Chrome to flush it; the browser stays open. */
@@ -764,6 +781,7 @@ export class TraceSiftClient {
         missing: "TraceSift is not installed or could not run `tracesift record`.",
         failed: code => `TraceSift could not start recording (exit code ${code}).`,
       });
+      this.recordingProject = cwd;
     } catch (error) {
       if (signal?.aborted || (error instanceof TraceSiftError && error.kind === "version")) throw error;
       const hint = await this.staleCliHint();
