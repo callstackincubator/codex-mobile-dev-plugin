@@ -15,18 +15,15 @@ export const panelTargetSchema = z.object({ platform, kind, deviceId: deviceIdSc
   }
 });
 
-/**
- * Whether the Testing Studio panel can record against a device: a booted iOS simulator or a booted
- * Android emulator. Anything physical is out, because agent-device's session on a physical
- * device is not the one the mirror holds.
- */
 /** The platform the recorder attaches with. A simulator listing that omits `platform` is iOS. */
 export function recordablePlatform(device: SimulatorDevice): "ios" | "android" {
   return device.platform === "android" ? "android" : "ios";
 }
 
 export function isRecordableDevice(device?: SimulatorDevice): boolean {
-  if (!device || device.state !== "Booted" || device.kind === "physical") return false;
+  if (!device) return false;
+  if (device.kind === "physical") return device.platform === "ios" && device.state === "connected" && device.pairingState === "paired";
+  if (device.state !== "Booted") return false;
   return device.platform === "android" ? device.kind === "emulator" : device.platform === "ios" || device.platform === undefined;
 }
 

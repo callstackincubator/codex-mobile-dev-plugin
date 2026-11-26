@@ -20,8 +20,8 @@ import { captureServerError } from "./telemetry.ts";
  * `@e2e-dev/mobile` build. Role vocabulary and name sources then agree by construction, because
  * there is only one of each.
  *
- * Baguette still owns the mirror. Only the recorder's *read* path moves, and the two hold the
- * same simulator at once: a snapshot taken while the mirror streams leaves the stream running and
+ * Baguette or the native iOS mirror still owns the video. The recorder and mirror hold the
+ * same selected device at once: a snapshot taken while the mirror streams leaves the stream running and
  * returns in about a tenth of a second.
  */
 
@@ -50,7 +50,7 @@ interface EngineProjection {
 
 /** What one device's recording session needs to attach to the app the user is already tapping. */
 export interface TestingDeviceTarget {
-  /** An iOS simulator UDID or an Android emulator's adb serial. */
+  /** An iOS simulator or hardware UDID, or an Android emulator's adb serial. */
   deviceId: string;
   platform: "ios" | "android";
   /** The e2e project whose `@e2e-dev/mobile` projects the snapshot; its build, not ours. */
@@ -240,6 +240,7 @@ export class TestingDevices {
   private readonly projections = new Map<string, Promise<EngineProjection>>();
   /** The device an attached session is on, so a second read reuses it instead of reopening. */
   private attached?: string;
+  private lastRefs: Record<string, string> = {};
   /** Serialises reads: agent-device answers one command per session at a time. */
   private queue: Promise<unknown> = Promise.resolve();
 
@@ -273,6 +274,7 @@ export class TestingDevices {
    * every simulator anyone has been working on.
    */
   private async attach(client: AgentDeviceClient, target: TestingDeviceTarget): Promise<void> {
+    if (this.attached !== undefined && this.attached !== this.key(target)) await this.releaseOnce();
     await client.apps.open({
       ...this.selector(target), session: SESSION,
       app: target.bundleId, relaunch: false, noRecord: true, timeoutMs: 120_000,
@@ -318,7 +320,20 @@ export class TestingDevices {
       snapshot = await this.snapshot(client, target);
     }
     if (!Array.isArray(snapshot.nodes)) throw new Error("The device snapshot returned no nodes.");
-    return projectedComponents(projection, snapshot.nodes);
+    const projected = projectedComponents(projection, snapshot.nodes);
+    this.lastRefs = projected.refs;
+    return projected;
+  }
+
+  async fillNode(target: TestingDeviceTarget, nodeId: string, text: string): Promise<void> {
+    const fill = async () => {
+      const ref = this.attached === this.key(target) ? this.lastRefs[nodeId] : undefined;
+      if (!ref) throw new ExpectedOperationError("invalid_input", "The selected text field is no longer on the current screen. Read the screen and record the step again.");
+      await this.performOnce(target, { kind: "type", ref, text });
+    };
+    const run = this.queue.then(fill, fill);
+    this.queue = run.catch(() => undefined);
+    await run;
   }
 
   /**
@@ -328,7 +343,7 @@ export class TestingDevices {
    * better half of the trade anyway — agent-device places the action on the element's own ref, so
    * the tap lands where the runner's locator action will land rather than on a coordinate someone
    * computed from a rectangle. The mirror shows every change regardless, because the video stream
-   * and the snapshot hold the same simulator at once.
+   * and the snapshot hold the same device at once.
    *
    * Every action asks agent-device to **settle** afterwards. The step the agent records next is
    * resolved against the screen this one produced, and a screen mid-transition answers with refs
@@ -381,13 +396,19 @@ export class TestingDevices {
    * devices, so a recorder on some other device keeps its session.
    */
   async releaseOn(deviceIds: readonly string[]): Promise<void> {
-    const held = this.attached?.split("\u0000")[1];
-    if (held !== undefined && deviceIds.includes(held)) await this.release();
+    const close = async () => {
+      const held = this.attached?.split("\u0000")[1];
+      if (held !== undefined && deviceIds.includes(held)) await this.releaseOnce();
+    };
+    const run = this.queue.then(close, close);
+    this.queue = run.catch(() => undefined);
+    await run;
   }
 
   private async releaseOnce(): Promise<void> {
     if (this.attached === undefined || this.client === undefined) return;
     this.attached = undefined;
+    this.lastRefs = {};
     try {
       await (await this.client).sessions.close({ session: SESSION });
     } catch (error) {

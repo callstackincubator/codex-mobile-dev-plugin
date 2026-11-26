@@ -47,6 +47,16 @@ test("a tap row records the step and takes it on the device", async () => {
   assert.deepEqual(done, [{ kind: "tap", point: { x: 50, y: 820 } }]);
 });
 
+test("physical iOS text entry uses the runner field ref without a mirror tap", async () => {
+  const recorder = new TestRecorder();
+  const done: unknown[] = [];
+  const field: ScreenComponent = { ...tab("Search", 300), role: "textbox", value: "Paris" };
+  recorder.attach(UDID, "ios", { ...reader([field], { count: 0 }), fillOnly: true, perform: action => { done.push(action); } });
+  recorder.start(UDID, "ios");
+  await pick(recorder, { x: 50, y: 320 }, "fill", "Berlin");
+  assert.deepEqual(done, [{ kind: "type", text: "Berlin", nodeId: "Search" }]);
+});
+
 test("picking an element offers its locator to insert, hands it back on Insert, and records nothing", async () => {
   const reads = { count: 0 };
   const recorder = new TestRecorder();

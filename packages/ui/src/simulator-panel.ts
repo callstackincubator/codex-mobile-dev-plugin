@@ -276,12 +276,13 @@ export function createSimulatorPanel(
    * the inspection path the annotation overlay uses, but the e2e runner's own element tree, so a
    * recorded selector resolves to the same element when the test runs. The Testing Studio panel installs
    * that source — it knows the project and the target — and this supplies the device and the
-   * screen. Only iOS simulators and Android emulators are wired up; a physical device has no tree here at all.
+   * screen. On physical iOS the runner tree is scaled into the mirror's pixel space.
    */
   const recorderReader = {
+    get fillOnly() { return selected?.kind === "physical" && selected.platform === "ios"; },
     readComponents: async () => {
       if (!selected) return [];
-      const { tree, screen } = await testRecorder.readTree(selected.udid, recordablePlatform(selected));
+      const { tree, screen } = await testRecorder.readTree(selected.udid, recordablePlatform(selected), selected.kind === "physical" ? "physical" : undefined);
       // `screen` is the space the runner measured in; `points` is the space the mirror maps
       // pointer events into. They agree on an iOS simulator and do not on Android, where scrcpy
       // caps the stream's longest edge while the tree stays in device pixels.
@@ -294,7 +295,7 @@ export function createSimulatorPanel(
     // the screen the test will be on.
     perform: (action:
       | { kind: "tap"; point: { x: number; y: number } }
-      | { kind: "type"; text: string }
+      | { kind: "type"; text: string; nodeId?: string }
       | { kind: "swipe"; from: { x: number; y: number }; to: { x: number; y: number } }) => {
       if (action.kind === "tap") send({ type: "tap", x: action.point.x, y: action.point.y, ...points });
       // The stream carries a swipe of its own, so a recorded `swipe` is taken as the gesture it
@@ -308,6 +309,10 @@ export function createSimulatorPanel(
       // there is no input message that clears a field. So a `fill` recorded into a field that
       // already has text leaves the app showing something the test will not produce — the step is
       // still right, the screen behind it is not. Non-ASCII is refused by the input schema.
+      else if (selected?.kind === "physical") {
+        if (!action.nodeId) notice("The text field could not be identified. Read the screen and record the step again.");
+        else void testRecorder.fillTree(selected.udid, action.nodeId, action.text).catch(error => notice(error instanceof Error ? error.message : String(error)));
+      }
       else if (action.text) send({ type: "type", text: action.text });
     },
   };

@@ -131,7 +131,7 @@ test("a row that needs a value asks for it instead of emitting an empty string",
   await act(async () => { await Promise.resolve(); });
   assert.match(testRecorder.source, /await screen\.getByPlaceholder\("Search transactions"\)\.fill\("Berlin"\);/);
   // Typing is taken as well as recorded: the field is tapped to focus it, then the text is sent.
-  assert.deepEqual(done, [{ kind: "tap", point: { x: 200, y: 422 } }, { kind: "type", text: "Berlin" }]);
+  assert.deepEqual(done, [{ kind: "tap", point: { x: 200, y: 422 } }, { kind: "type", text: "Berlin", nodeId: "field" }]);
 
   testRecorder.clearSteps();
   testRecorder.detach("udid", "ios");

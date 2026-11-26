@@ -8,6 +8,7 @@ import type { ServeEmu } from "./serve-emu.ts";
 import type { Simctl } from "./simctl.ts";
 import type { Lane, LaneExecutor, MatrixPlatform } from "./testing-matrix.ts";
 import type { TestRunProgress, TestRunResult } from "./testing-run.ts";
+import { listIosDevices } from "./ios-devices.ts";
 
 /** Home screens and system UI, which are never the app to record. */
 export const LAUNCHER_APP = /^com\.apple\.springboard$|^com\.android\.systemui$|launcher/i;
@@ -17,6 +18,11 @@ export interface MatrixAppIds { ios?: string; android?: string }
 
 /** What preparing a device needs from the machine; faked in tests. */
 export interface DeviceOps {
+  physicalIos?: {
+    ready(deviceId: string): Promise<void>;
+    hasApp(deviceId: string, appId: string): Promise<boolean>;
+    launch(deviceId: string, appId: string): Promise<void>;
+  };
   isBooted(platform: MatrixPlatform, deviceId: string): Promise<boolean>;
   /** Boots the device and waits for it to be usable. Returns the id to run on (an Android AVD becomes a serial). */
   boot(platform: MatrixPlatform, deviceId: string, signal: AbortSignal): Promise<string>;
@@ -54,6 +60,15 @@ export function createLaneExecutor(deps: LaneExecutorDeps): LaneExecutor {
       const appId = deps.apps[lane.platform];
       if (!appId) throw new ExpectedOperationError("invalid_input", `No ${lane.platform === "ios" ? "iOS bundle id" : "Android package"} was given for this run, so ${lane.deviceName} cannot run it.`);
       let deviceId = lane.deviceId;
+      if (lane.kind === "physical") {
+        if (lane.platform !== "ios" || !deps.ops.physicalIos) throw new ExpectedOperationError("unsupported_platform", "Physical device runs currently support connected iOS devices only.");
+        await deps.ops.physicalIos.ready(deviceId);
+        signal.throwIfAborted();
+        if (!await deps.ops.physicalIos.hasApp(deviceId, appId)) throw new ExpectedOperationError("app_unavailable", `App not installed: ${appId} is not on ${lane.deviceName}. Build for a physical iPhone and install it on this device, then run again.`);
+        signal.throwIfAborted();
+        if (!deps.projectMode) await deps.ops.physicalIos.launch(deviceId, appId);
+        return deviceId;
+      }
       if (!await deps.ops.isBooted(lane.platform, deviceId)) {
         setState("booting");
         deviceId = await deps.ops.boot(lane.platform, deviceId, signal);
@@ -110,8 +125,24 @@ export function systemDeviceOps(deps: { simulators: Simctl; android: ServeEmu; d
   const commands = deps.commands ?? systemCommands;
   const simctl = (args: string[], timeout = 30_000) => commands.run("xcrun", ["simctl", ...args], { timeout });
   const adb = async (serial: string, args: string[], timeout = 30_000) => commands.run(await commands.adb(), ["-s", serial, ...args], { timeout });
-  const ios = (id: string) => { udidSchema.parse(id); return id; };
+  const ios = (id: string) => {
+    if (!udidSchema.safeParse(id).success) throw new ExpectedOperationError("invalid_input", "Use an iOS simulator UDID here. For a connected iPhone or iPad, select kind physical from device discovery.");
+    return id;
+  };
   return {
+    physicalIos: {
+      async ready(deviceId) {
+        const device = (await listIosDevices()).find(entry => entry.udid === deviceId);
+        if (!device) throw new ExpectedOperationError("device_unavailable", "The iPhone or iPad is no longer in device discovery. Reconnect it and refresh Devices.");
+        if (device.state !== "connected" || device.pairingState !== "paired") throw new ExpectedOperationError("device_unavailable", `${device.name} is not connected and paired. Reconnect and trust this Mac, then refresh Devices.`);
+      },
+      async hasApp(deviceId, appId) {
+        const output = await commands.run("/usr/bin/xcrun", ["devicectl", "device", "info", "apps", "--device", deviceId, "--quiet", "--timeout", "10", "--omit-deprecated-fields-in-json", "--json-output", "-"], { timeout: 15_000 });
+        const parsed = JSON.parse(output) as { result?: { apps?: { bundleIdentifier?: string }[] } };
+        return parsed.result?.apps?.some(app => app.bundleIdentifier === appId) ?? false;
+      },
+      async launch(deviceId, appId) { await commands.run("/usr/bin/xcrun", ["devicectl", "device", "process", "launch", "--device", deviceId, appId], { timeout: 30_000 }); },
+    },
     async isBooted(platform, deviceId) {
       if (platform === "ios") return (await deps.simulators.device(ios(deviceId))).state === "Booted";
       return (await deps.android.device(deviceId)).state === "Booted";

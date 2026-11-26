@@ -76,6 +76,26 @@ test("with no device that has the app the lane fails with App not installed", as
   assert.match(matrix.lanes[0]!.error ?? "", /App not installed/);
 });
 
+test("a connected physical iPhone runs without booting or copying a simulator app", async () => {
+  const { ops, log } = machine({ phone: { booted: false, apps: [] } });
+  ops.physicalIos = {
+    ready: async id => { log.push(`ready ${id}`); },
+    hasApp: async () => true,
+    launch: async id => { log.push(`physical launch ${id}`); },
+  };
+  const { matrix } = await run([{ deviceId: "phone", platform: "ios", kind: "physical" }], ops);
+  assert.equal(matrix.lanes[0]?.state, "passed");
+  assert.deepEqual(log, ["ready phone", "physical launch phone"]);
+});
+
+test("a physical iPhone without the app fails with hardware install guidance", async () => {
+  const { ops, log } = machine({ phone: { booted: false, apps: [] }, sim: { booted: true, apps: ["com.app"] } });
+  ops.physicalIos = { ready: async () => undefined, hasApp: async () => false, launch: async () => undefined };
+  const { matrix } = await run([{ deviceId: "phone", platform: "ios", kind: "physical" }, { deviceId: "sim", platform: "ios" }], ops);
+  assert.match(matrix.lanes[0]?.error ?? "", /Build for a physical iPhone/);
+  assert.equal(log.some(entry => entry.includes("phone")), false, "simulator copy and boot commands never receive the phone UDID");
+});
+
 test("a platform with no app id fails fast, and a source on another platform is never used", async () => {
   const { ops, log } = machine({ A: { booted: true, apps: ["com.app"] }, "emulator-1": { booted: true, apps: [] } });
   const { matrix } = await run([{ deviceId: "A", platform: "ios" }, { deviceId: "emulator-1", platform: "android" }], ops, { ios: "com.app" } as never);
@@ -124,6 +144,29 @@ test("system ops copy a split APK with install-multiple and an iOS app with get_
   calls.length = 0;
   await ops.copyApp("ios", "11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222", "com.app", controller.signal);
   assert.deepEqual(calls.at(-1), ["xcrun", "simctl", "install", "22222222-2222-4222-8222-222222222222", "/sim/App.app"]);
+});
+
+test("physical app lookup and launch use devicectl, never simctl", async () => {
+  const calls: string[][] = [];
+  const commands = {
+    adb: async () => "adb", aapt2: async () => null, readBinary: async () => Buffer.alloc(0),
+    run: async (file: string, args: string[]) => {
+      calls.push([file, ...args]);
+      return args.includes("apps") ? JSON.stringify({ result: { apps: [{ bundleIdentifier: "com.app" }] } }) : "";
+    },
+  };
+  const ops = systemDeviceOps({ simulators: {} as never, android: {} as never, drivers: (() => ({})) as never, commands });
+  assert.equal(await ops.physicalIos!.hasApp("phone", "com.app"), true);
+  await ops.physicalIos!.launch("phone", "com.app");
+  assert.equal(calls.length, 2);
+  assert.ok(calls.every(args => args[0] === "/usr/bin/xcrun" && args[1] === "devicectl" && args.includes("phone")));
+});
+
+test("a hardware UDID without physical kind is refused before simulator operations", async () => {
+  let simulatorCalls = 0;
+  const ops = systemDeviceOps({ simulators: { device: async () => { simulatorCalls++; return { state: "Booted" }; } } as never, android: {} as never, drivers: (() => ({})) as never });
+  await assert.rejects(ops.isBooted("ios", "00008150-0000111122223333"), /kind physical/);
+  assert.equal(simulatorCalls, 0);
 });
 
 test("the system ops list only the booted devices of a platform and read the foreground app through the given reader", async () => {

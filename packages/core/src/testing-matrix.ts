@@ -27,7 +27,7 @@ export function clampLimit(limit: number | undefined): number {
   return Math.min(MAX_MATRIX_LIMIT, Math.max(1, Math.floor(limit)));
 }
 
-export interface MatrixDevice { deviceId: string; platform: MatrixPlatform; name?: string }
+export interface MatrixDevice { deviceId: string; platform: MatrixPlatform; kind?: "simulator" | "emulator" | "physical"; name?: string }
 
 export interface Lane {
   runId: string;
@@ -35,6 +35,7 @@ export interface Lane {
   deviceId: string;
   deviceName: string;
   platform: MatrixPlatform;
+  kind?: MatrixDevice["kind"];
   state: LaneState;
   /** The device the run actually used, once it is known. */
   resolvedDeviceId?: string;
@@ -93,7 +94,7 @@ export class MatrixRegistry {
       matrixId: randomUUID(), testPath, startedAt: Date.now(), limit: clampLimit(limit),
       lanes: devices.map(device => ({
         runId: randomUUID(), deviceId: device.deviceId, deviceName: device.name ?? device.deviceId,
-        platform: device.platform, state: "queued" as LaneState, progress: [],
+        platform: device.platform, ...(device.kind ? { kind: device.kind } : {}), state: "queued" as LaneState, progress: [],
       })),
     };
     const aborts = new Map(run.lanes.map(lane => [lane.runId, new AbortController()]));

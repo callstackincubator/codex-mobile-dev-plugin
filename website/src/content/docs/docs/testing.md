@@ -1,11 +1,11 @@
 ---
 title: Testing Studio
-description: Record, edit, and run deterministic e2e tests from an iOS simulator or Android emulator beside your conversation, on one device or several at once.
+description: Record, edit, and run deterministic e2e tests from an iOS simulator, connected iPhone or iPad, or Android emulator beside your conversation.
 ---
 
 Open **Testing Studio** to turn interactions with a running app into an editable e2e test. The mirror, generated TypeScript, and ordered step list share one workspace, so you can drive the app and review the test at the same time.
 
-Testing Studio supports iOS simulators and Android emulators. Physical devices and Maestro output are not supported.
+Testing Studio supports iOS simulators, connected and paired iPhones and iPads, and Android emulators. Physical Android devices and Maestro output are not supported.
 
 ## No project, or your own project
 
@@ -26,12 +26,12 @@ The **E2E setup** popover lists the project, mobile apps, devices and agent mode
 
 ## Prepare a device
 
-1. Boot an iOS simulator or Android emulator and select it in Mobile Dev.
+1. Boot an iOS simulator or Android emulator, or connect and pair an iPhone or iPad, then select it in Mobile Dev.
 2. Open **Testing Studio**. Choose a project folder from the picker, or stay on **No project**.
 3. In a project, choose a target whose platform matches the mirrored device.
 4. Select **Launch app**.
 
-**Launch app** opens an app that is already installed; it doesn't build one. If the app is missing, Testing Studio says so and names the build to run, for example `npx expo run:android` for an Expo app.
+**Launch app** opens an app that is already installed; it doesn't build one. If the app is missing, build and install it for the selected device. For an Expo app, use `npx expo run:android` for an emulator or `npx expo run:ios --device` for a connected iPhone or iPad. A simulator build cannot be copied to physical hardware.
 
 ## Record a test
 
@@ -69,13 +69,13 @@ Saved tests are listed under **In the project** or **In Testing Studio**. Open o
 
 ## Run on several devices
 
-Open **E2E setup → Devices** to pick where a test runs. The list shows every iOS simulator and Android emulator, whether it is booted, and whether it has the app.
+Open **E2E setup → Devices** to pick where a test runs. The list shows iOS simulators, connected or remembered iPhones and iPads, and Android emulators. Physical iOS rows show connection and app installation status; disconnected or unpaired hardware cannot be selected.
 
 - Tick two or more devices and **Run test** becomes **Run on N devices**. Each device runs the same test in its own lane, with its own steps, verdict and **Cancel**.
 - Tick one device that isn't the mirrored one and the test runs there (**Run on iPhone Air**).
 - **Run up to N at once** sets how many devices work at the same time, from 1 to 8. The rest wait in a queue.
-- A device that is off is booted first.
-- A device without the app gets it copied from another booted device of the same platform that has it, even one you didn't tick.
+- A simulator or emulator that is off is booted first.
+- A simulator or emulator without the app gets it copied from another booted device of the same platform that has it, even one you didn't tick. Install the physical iOS build on a phone or tablet before running; Testing Studio does not copy simulator apps to it.
 - iOS and Android devices can run in the same batch. In a project, each device runs the config's target for its platform.
 
 Click a lane to see that device's steps on the preview. A failure on one device doesn't stop the others. Each `agent.*` step calls the model once per device.

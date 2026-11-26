@@ -16,15 +16,16 @@ import { Label } from "./ui/label.tsx";
 function DeviceRow({ device, checked, busy, appMissing, onToggle }: { device: MatrixDeviceOption; checked: boolean; busy: boolean; appMissing: boolean; onToggle: (value: boolean) => void }) {
   const id = `matrix-${device.deviceId}`;
   return <li className="flex items-center gap-2 py-1.5" data-matrix-device={device.deviceId}>
-    <input id={id} type="checkbox" className="size-3.5 shrink-0 accent-primary" checked={checked} disabled={busy || (appMissing && !checked)} onChange={event => onToggle(event.target.checked)} />
+    <input id={id} type="checkbox" className="size-3.5 shrink-0 accent-primary" checked={checked} disabled={busy || (device.kind === "physical" && !device.booted && !checked) || (appMissing && !checked)} onChange={event => onToggle(event.target.checked)} />
     <Label htmlFor={id} className="flex min-w-0 flex-1 items-baseline gap-1.5 text-sm font-normal">
       <span className="truncate">{device.name}</span>
+      {device.kind === "physical" && <Badge variant="outline">Device</Badge>}
       {device.runtime && <span className="shrink-0 text-xs text-muted-foreground">{device.runtime}</span>}
     </Label>
     <span className="flex shrink-0 items-center gap-1">
       {busy && <Badge variant="outline">Busy</Badge>}
-      <Badge variant="ghost" className={device.booted ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-muted text-muted-foreground"}>{device.booted ? "Booted" : "Off"}</Badge>
-      {device.booted && device.installed !== undefined && <Badge variant="ghost" title={device.installed ? "The app is on this device." : "Not installed. It will be copied from another booted device that has it that has it."}
+      <Badge variant="ghost" className={device.booted ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-muted text-muted-foreground"}>{device.kind === "physical" ? device.connectionState : device.booted ? "Booted" : "Off"}</Badge>
+      {device.booted && device.installed !== undefined && <Badge variant="ghost" title={device.installed ? "The app is on this device." : device.kind === "physical" ? "Build for a physical iPhone and install the app on this device." : "Not installed. It will be copied from another booted device that has it."}
         className={device.installed ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-amber-500/10 text-amber-600 dark:text-amber-400"}>{device.installed ? "Installed" : "App missing"}</Badge>}
     </span>
   </li>;
@@ -55,7 +56,7 @@ export function MatrixDevices({ panel }: { panel: TestingPanel }) {
       {!apps[devices[0]!.platform] && <div className="pt-1"><TestingNote tone="warning">No {label} app id for this test, so these devices cannot run it.</TestingNote></div>}
     </div>)}
     {only && <TestingNote tone="warning" data-matrix-platform-only>This test was recorded on {platformLabel(only)} and doesn't have an {platformLabel(only === "ios" ? "android" : "ios")} target. To add one, open the app on an {platformLabel(only === "ios" ? "android" : "ios")} device in the mirror and choose Add {platformLabel(only === "ios" ? "android" : "ios")} app.</TestingNote>}
-    {state.matrixDevices.length === 0 && <p className="text-xs text-muted-foreground">{state.matrixLoading ? "Looking for simulators and emulators…" : "No simulators or emulators found."}</p>}
+    {state.matrixDevices.length === 0 && <p className="text-xs text-muted-foreground">{state.matrixLoading ? "Looking for devices…" : "No devices found."}</p>}
     <div className="flex items-end justify-between gap-3">
       <div className="flex items-center gap-2"><Label htmlFor="testing-matrix-limit" className="text-xs text-muted-foreground">Run up to</Label>
         <Input id="testing-matrix-limit" type="number" min={1} max={MAX_MATRIX_LIMIT} className="h-8 w-16 text-xs" value={state.matrixLimit}
@@ -63,7 +64,7 @@ export function MatrixDevices({ panel }: { panel: TestingPanel }) {
         <span className="text-xs text-muted-foreground">at once</span></div>
       <Button type="button" size="xs" variant="ghost" disabled={state.matrixLoading} onClick={() => void panel.loadMatrixDevices()}>{state.matrixLoading ? <LoaderCircleIcon className="animate-spin" /> : <RefreshCwIcon />}Refresh</Button>
     </div>
-    <TestingNote>{count > state.matrixLimit ? `${count - state.matrixLimit} will queue until a slot frees. ` : ""}{state.runtimeMode === "project" ? "Devices that are off are booted, and a missing app is copied from another booted device that has it. Each device runs the config's target for its platform." : "Devices that are off are booted, and a missing app is copied from another booted device that has it."} Agent steps call the model once per device.</TestingNote>
+    <TestingNote>{count > state.matrixLimit ? `${count - state.matrixLimit} will queue until a slot frees. ` : ""}Simulators and emulators are booted when needed. A connected iPhone or iPad needs the app installed on the device before a run. Each device runs its platform's app; agent steps call the model once per device.</TestingNote>
   </div>;
 }
 
@@ -82,6 +83,7 @@ function LaneRow({ panel, lane, selected, mirrored, totalSteps }: { panel: Testi
       title="Show this device's steps and mirror it." onClick={() => panel.openLane(lane.runId)}>
       <SmartphoneIcon className={`size-3.5 shrink-0 ${mirrored ? "text-primary" : "text-muted-foreground"}`} />
       <span className="min-w-0 flex-1 truncate text-sm">{lane.deviceName}</span>
+      {lane.kind === "physical" && <Badge variant="outline">Device</Badge>}
       <Badge variant="ghost" className={LANE_TONE[lane.state]}>{active && lane.state !== "queued" && <LoaderCircleIcon className="animate-spin" />}{laneLabel(lane, totalSteps)}</Badge>
       <span className="w-12 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{duration === undefined ? "" : formatRunDuration(duration)}</span>
     </button>

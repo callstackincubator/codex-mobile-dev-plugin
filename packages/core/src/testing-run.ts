@@ -308,7 +308,7 @@ export interface TestRunRequest {
 }
 
 /**
- * The app a bundled run drives. `device` pins the run to one simulator UDID or emulator serial, which is
+ * The app a bundled run drives. `device` pins the run to one iOS UDID or Android emulator serial, which is
  * what lets a test matrix run the same test on several devices at once; without it the runner takes
  * whichever booted device it finds, as a single run always has.
  */

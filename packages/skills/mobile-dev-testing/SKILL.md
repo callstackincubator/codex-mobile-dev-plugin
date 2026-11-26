@@ -32,7 +32,7 @@ Past that,
 `mobile_testing_agent_begin` picks what is unambiguous and tells you in `picked`, so relay that to the
 user in a line:
 
-- **Device**: the one the mirror shows, else the only booted simulator or emulator.
+- **Device**: the one the mirror shows, including a connected and paired iPhone or iPad, else the only booted simulator or emulator.
 - **App**: in **No project (Testing Studio) mode**, the app in the foreground (home screens and launchers
   do not count); finishing saves the test pinned to it. In a **project**, the config target the
   foreground app matches, else the project's only target for that platform.
@@ -165,13 +165,13 @@ user the path. Nothing in the test file names a platform until you branch a line
 
 ### Run
 
-- One device, or a quick check: `mobile_testing_run_test({ relativePath })`. It waits for the end.
+- One simulator or emulator, or a quick check: `mobile_testing_run_test({ relativePath })`. It waits for the end. For a physical iPhone or iPad, use `mobile_testing_run_matrix` with one device so the run is pinned to its hardware UDID.
 - Several devices, iOS and Android side by side: `mobile_testing_run_matrix({ relativePath, devices })`
-  with a `{ deviceId, platform }` per device, from the device lists. It returns a `matrixId`
+  with a `{ deviceId, platform, kind }` per device, from the device lists. Use `kind: "physical"` for a connected, paired iPhone or iPad and its hardware UDID. It returns a `matrixId`
   at once; read `mobile_testing_run_progress({ matrixId })` until `running` is false. `apps`
   defaults to the apps the test is pinned to.
-- **Devices that are off are booted by the matrix**, and an app missing from a device is copied
-  from another device in the run that has it. Do not boot or install first.
+- **Simulators and emulators that are off are booted by the matrix**, and a missing app is copied
+  from another booted simulator or emulator that has it. A physical iOS device must already be connected, paired, and have a build for hardware installed.
 - The runs show in the Testing Studio tab as live lanes, and the tab is locked while they go.
 
 ### A platform has no app yet

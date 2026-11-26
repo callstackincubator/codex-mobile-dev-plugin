@@ -24,6 +24,7 @@ import { LAUNCHER_APP, createLaneExecutor } from "./testing-prepare.ts";
 import type { DeviceOps } from "./testing-prepare.ts";
 import { deviceIdSchema } from "@mobile-dev/shared/panel-target.ts";
 import { simulatorBundleForPid } from "./device-apps/apps.ts";
+import { listIosDevices } from "./ios-devices.ts";
 import type { BundledModelProvider } from "./testing-run.ts";
 import { answerTestingSetup, applyTestingSetup, cancelTestingSetup, inspectTestingSetup, planTestingSetup, readTestingLoginStatus, readTestingModelPreference, saveTestingModelPreference, SETUP_PROVIDERS, startTestingLogin, testingSetupProgress } from "./testing-setup.ts";
 import type { SetupOptions } from "./testing-setup.ts";
@@ -31,6 +32,12 @@ import type { SetupOptions } from "./testing-setup.ts";
 const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
 const destructive = { readOnlyHint: false, destructiveHint: true, openWorldHint: false };
+async function connectedPhysicalIos(deviceId: string) {
+  const device = (await listIosDevices()).find(entry => entry.udid === deviceId);
+  if (!device || device.state !== "connected" || device.pairingState !== "paired")
+    throw new ExpectedOperationError("device_unavailable", "The selected iPhone or iPad is not connected and paired. Reconnect and trust this Mac, then refresh Devices.");
+  return device;
+}
 /** The Testing Studio panel drives these itself; the model has its own e2e MCP server for test work. */
 const appVisibility = { ui: { visibility: ["app"] as ("app" | "model")[] } };
 /**
@@ -399,19 +406,53 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
       "Read the element tree the e2e runner queries, for the app the device is already showing. The recorder names selectors from this so role vocabulary and name sources match what the test will run against.",
     inputSchema: {
       deviceId: deviceIdSchema,
-      platform: z.enum(["ios", "android"]).describe("The mirrored device's platform: an iOS simulator's deviceId is its UDID, an Android emulator's its adb serial."),
+      platform: z.enum(["ios", "android"]).describe("The mirrored device's platform: iOS uses a simulator or hardware UDID, Android an emulator serial."),
+      kind: z.enum(["simulator", "emulator", "physical"]).optional(),
       projectPath,
       bundleId: z.string().min(1).max(512).describe("The target's bundle id, from the project's e2e config."),
     },
     annotations: read,
     _meta: appVisibility,
-  }, safe(async ({ deviceId, platform, projectPath: selected, bundleId }: { deviceId: string; platform: "ios" | "android"; projectPath: string; bundleId: string }) => {
+  }, safe(async ({ deviceId, platform, kind, projectPath: selected, bundleId }: { deviceId: string; platform: "ios" | "android"; kind?: "simulator" | "emulator" | "physical"; projectPath: string; bundleId: string }) => {
+    if (kind === "physical") { if (platform !== "ios") throw new ExpectedOperationError("unsupported_platform", "Physical Android recording is not available yet."); await connectedPhysicalIos(deviceId); }
     const project = await inspectProject(selected, { platform, bundleId });
     // The refs go no further than the server: the panel records selectors and drives the mirror,
     // so an agent-device handle per element would be a few kilobytes a read that nothing reads.
     const runtimeRoot = project.runtimeMode === "bundled" ? await bundledE2eRoot() : project.runtime.root;
     const { tree, screen } = await devices.read({ deviceId, platform, projectPath: selected, runtimeRoot, bundleId });
     return dataResult({ tree, ...(screen ? { screen } : {}) });
+  }));
+
+  registerAppTool(server, "mobile_testing_physical_app", {
+    title: "Check app on physical iOS device", description: "Check whether a selected app is installed on a connected iPhone or iPad.",
+    inputSchema: { platform: z.literal("ios"), deviceId: deviceIdSchema, bundleId: z.string().min(1).max(512) }, annotations: read, _meta: appVisibility,
+  }, safe(async ({ deviceId, bundleId }: { deviceId: string; bundleId: string }) => {
+    await connectedPhysicalIos(deviceId);
+    if (!matrix.ops?.physicalIos) throw new ExpectedOperationError("unsupported_platform", "Physical iOS app discovery is unavailable.");
+    return dataResult({ installed: await matrix.ops.physicalIos.hasApp(deviceId, bundleId) });
+  }));
+
+  registerAppTool(server, "mobile_testing_physical_launch", {
+    title: "Open app on physical iOS device", description: "Launch an installed app on a connected iPhone or iPad.",
+    inputSchema: { deviceId: deviceIdSchema, bundleId: z.string().min(1).max(512) }, annotations: write, _meta: appVisibility,
+  }, safe(async ({ deviceId, bundleId }: { deviceId: string; bundleId: string }) => {
+    await connectedPhysicalIos(deviceId);
+    if (!matrix.ops?.physicalIos) throw new ExpectedOperationError("unsupported_platform", "Physical iOS app launch is unavailable.");
+    if (!await matrix.ops.physicalIos.hasApp(deviceId, bundleId)) throw new ExpectedOperationError("app_unavailable", `App not installed: ${bundleId}. Build for a physical iPhone and install it on this device.`);
+    await matrix.ops.physicalIos.launch(deviceId, bundleId);
+    return dataResult({ opened: true });
+  }));
+
+  registerAppTool(server, "mobile_testing_fill", {
+    title: "Enter recorded text on a physical iOS device", description: "Apply the recorded field fill through the runner's device session.",
+    inputSchema: { deviceId: deviceIdSchema, projectPath, bundleId: z.string().min(1).max(512), nodeId: z.string().min(1).max(128), text: z.string().max(10_000) },
+    annotations: write, _meta: appVisibility,
+  }, safe(async ({ deviceId, projectPath: selected, bundleId, nodeId, text }: { deviceId: string; projectPath: string; bundleId: string; nodeId: string; text: string }) => {
+    await connectedPhysicalIos(deviceId);
+    const project = await inspectProject(selected, { platform: "ios", bundleId });
+    const runtimeRoot = project.runtimeMode === "bundled" ? await bundledE2eRoot() : project.runtime.root;
+    await devices.fillNode({ deviceId, platform: "ios", projectPath: selected, runtimeRoot, bundleId }, nodeId, text);
+    return dataResult({ ok: true });
   }));
 
   registerAppTool(server, "mobile_testing_set_target", {
@@ -544,13 +585,14 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
   registerAppTool(server, "mobile_testing_run_matrix", {
     title: "Run a recorded test on several devices",
     description:
-      "Run one saved test on several devices at once, one independent lane per device (iOS and Android can be mixed), and return a matrixId immediately; read progress with mobile_testing_run_progress. At most `limit` lanes run at once (default 3, max 8); the rest are queued. Devices that are off are booted. In bundled mode a device missing the app gets it installed by copying it from another booted device that has it (one in the run first); otherwise that lane fails with \"App not installed\"; `apps` defaults to the apps the test is pinned to, and a platform with no app is refused, naming the fix. In a project with its own e2e config each lane runs the config's target for the device's platform (or `targets`) on that device, a device missing the app gets it copied the same way, and the target's engine must be a direct mobile(...) call. A failure on one device does not stop the others, and its lane carries `failure` (line, error, screen). projectPath defaults to the Testing Studio tab's project.",
+      "Run one saved test on several devices at once, one independent lane per device (iOS and Android can be mixed), and return a matrixId immediately; read progress with mobile_testing_run_progress. At most `limit` lanes run at once (default 3, max 8); the rest are queued. Simulators and emulators that are off are booted; a missing app may be copied from another booted virtual device. For a connected, paired iPhone or iPad pass kind physical and its hardware UDID from mobile_list_ios_devices; the app must already be installed for physical hardware. `apps` defaults to the apps the test is pinned to. In project mode each lane runs the config's target for its platform, whose engine must be a direct mobile(...) call. A failure on one device does not stop the others. projectPath defaults to the Testing Studio tab's project.",
     inputSchema: {
       projectPath: projectPath.optional(),
       relativePath: z.string().min(1).max(512).describe("The test to run, relative to the project."),
       devices: z.array(z.object({
-        deviceId: deviceIdSchema.describe("An iOS simulator UDID, an Android serial, or an avd: id from the device lists."),
+        deviceId: deviceIdSchema.describe("An iOS simulator UDID, physical iOS hardware UDID, Android serial, or avd: id from device discovery."),
         platform: z.enum(["ios", "android"]),
+        kind: z.enum(["simulator", "emulator", "physical"]).optional(),
         name: z.string().min(1).max(128).optional().describe("A label for the lane."),
       })).min(1).max(16),
       apps: z.object({ ios: z.string().min(1).max(512).optional(), android: z.string().min(1).max(512).optional() }).optional()
@@ -572,6 +614,12 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     const unique = new Set(input.devices.map(device => device.deviceId));
     if (unique.size !== input.devices.length) throw new ExpectedOperationError("invalid_input", "Each device can appear only once in a matrix.");
     if (!matrix.ops) throw new ExpectedOperationError("unsupported_platform", "This server cannot prepare devices for a matrix run.");
+    for (const device of input.devices) {
+      if (device.kind === "physical") {
+        if (device.platform !== "ios") throw new ExpectedOperationError("unsupported_platform", "Physical Android test runs are not available yet.");
+        await connectedPhysicalIos(device.deviceId);
+      }
+    }
     const first = input.devices[0]!;
     const { request, project } = await prepareRequest({ ...input, platform: first.platform, ...(input.apps[first.platform] ? { bundleId: input.apps[first.platform]! } : {}) });
     if (project.runtimeMode === "project") {

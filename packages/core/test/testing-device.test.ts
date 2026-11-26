@@ -141,6 +141,20 @@ test("releasing closes the session, so the next e2e run is not refused the devic
   assert.equal(calls.filter(entry => entry.call === "open").length, 2);
 });
 
+test("a physical iOS field is filled by the runner ref and the session is released", async () => {
+  const calls: Record<string, unknown>[] = [];
+  const devices = new TestingDevices(fakeAgentDevice(calls, () => ({ nodes: [{ kind: "text-field", ref: "e4", node: { role: "textbox", name: "Search", rect } }] })) as never);
+  (devices as unknown as { projections: Map<string, unknown> }).projections.set("/project", Promise.resolve(projection));
+  const phone = { ...target, deviceId: "00008150-0000111122223333" };
+  const read = await devices.read(phone);
+  await devices.fillNode(phone, read.tree[0]!.nodeId!, "Berlin");
+  await devices.release();
+  assert.equal(calls.find(entry => entry.call === "open")?.udid, phone.deviceId);
+  assert.equal(calls.find(entry => entry.call === "fill")?.ref, "@e4");
+  assert.equal(calls.find(entry => entry.call === "fill")?.text, "Berlin");
+  assert.equal(calls.filter(entry => entry.call === "close").length, 1);
+});
+
 test("a failed read still leaves the device releasable", async () => {
   const calls: Record<string, unknown>[] = [];
   const devices = new TestingDevices(fakeAgentDevice(calls, () => { throw new Error("the runner fell over"); }) as never);
@@ -274,6 +288,7 @@ test("the same id on another platform is not a cached attach", async () => {
   await devices.read({ ...target, platform: "android" });
 
   assert.equal(calls.filter(entry => entry.call === "open").length, 2);
+  assert.equal(calls.filter(entry => entry.call === "close").length, 1, "the previous device session is released before reconnecting");
 });
 
 test("changing project or bundle on one device is not a cached attach", async () => {
@@ -311,4 +326,18 @@ test("release finishes before a later read can attach a new session", async () =
   finishClose();
   await Promise.all([releasing, reading]);
   assert.deepEqual(calls.map(entry => entry.call), ["open", "close", "open"]);
+});
+
+test("releaseOn waits for an in-flight physical screen read before handing the device to a run", async () => {
+  const calls: Record<string, unknown>[] = [];
+  let finishSnapshot!: () => void;
+  const pending = new Promise<void>(resolve => { finishSnapshot = resolve; });
+  const devices = new TestingDevices(fakeAgentDevice(calls, async () => { await pending; return { nodes: [] }; }) as never);
+  (devices as unknown as { projections: Map<string, unknown> }).projections.set("/project", Promise.resolve(projection));
+  const phone = { ...target, deviceId: "00008150-0000111122223333" };
+  const read = devices.read(phone);
+  const released = devices.releaseOn([phone.deviceId]);
+  finishSnapshot();
+  await Promise.all([read, released]);
+  assert.equal(calls.filter(entry => entry.call === "close").length, 1);
 });

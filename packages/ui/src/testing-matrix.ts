@@ -13,14 +13,14 @@ export const MAX_MATRIX_LIMIT = 8;
 export type LaneProgress = { stepIndex: number; phase: "start" | "end"; status?: string; error?: string };
 export type LaneResult = { status: string; steps: { line: number; status: string; error?: string }[]; error?: string; output?: string; durationMs?: number };
 export type MatrixLane = {
-  runId: string; deviceId: string; deviceName: string; platform: MatrixPlatform; state: LaneState;
+  runId: string; deviceId: string; deviceName: string; platform: MatrixPlatform; kind?: "simulator" | "emulator" | "physical"; state: LaneState;
   resolvedDeviceId?: string; progress: LaneProgress[]; result?: LaneResult; error?: string; startedAt?: number; finishedAt?: number;
 };
 export type MatrixView = { matrixId: string; /** The test the lanes run, relative to the project. */ testPath?: string; lanes: MatrixLane[]; limit: number; startedAt: number; finishedAt?: number };
 
 /** One device in the checklist. `installed` is unknown (undefined) for a device that is off. */
 export type MatrixDeviceOption = {
-  deviceId: string; name: string; platform: MatrixPlatform; runtime: string; booted: boolean; installed?: boolean;
+  deviceId: string; name: string; platform: MatrixPlatform; kind?: "simulator" | "emulator" | "physical"; runtime: string; booted: boolean; installed?: boolean; connectionState?: string;
 };
 
 const TERMINAL: ReadonlySet<LaneState> = new Set(["passed", "failed", "cancelled", "error"]);
@@ -75,6 +75,7 @@ export function parseMatrix(value: unknown): MatrixView | null {
     const result = record(lane.result);
     lanes.push({
       runId: str(lane.runId), deviceId: str(lane.deviceId), deviceName: str(lane.deviceName) || str(lane.deviceId), platform: lane.platform,
+      ...(lane.kind === "physical" || lane.kind === "simulator" || lane.kind === "emulator" ? { kind: lane.kind } : {}),
       state: str(lane.state) as LaneState,
       ...(str(lane.resolvedDeviceId) ? { resolvedDeviceId: str(lane.resolvedDeviceId) } : {}),
       progress: (Array.isArray(lane.progress) ? lane.progress : []).map(record).filter((entry): entry is Record<string, unknown> => entry !== null
@@ -100,17 +101,25 @@ export function parseMatrix(value: unknown): MatrixView | null {
   };
 }
 
-/** Reads the checklist's devices out of the two device-list tools' payloads. Physical iOS devices are not listed. */
+/** Reads the checklist's devices out of the simulator and Android device-list tools. */
 export function parseMatrixDevices(platform: MatrixPlatform, value: unknown): MatrixDeviceOption[] {
   const devices = record(value)?.devices;
   if (!Array.isArray(devices)) return [];
   return devices.map(record).filter((device): device is Record<string, unknown> => device !== null && Boolean(str(device.udid)))
-    // A physical iPhone cannot take a simulator build, and a physical Android is not booted by us.
-    .filter(device => platform === "android" || str(device.kind) !== "physical")
+    .filter(device => str(device.kind) !== "physical")
     .map(device => ({
-      deviceId: str(device.udid), name: str(device.name) || str(device.udid), platform, runtime: str(device.runtime),
+      deviceId: str(device.udid), name: str(device.name) || str(device.udid), platform, kind: platform === "ios" ? "simulator" : "emulator", runtime: str(device.runtime),
       booted: str(device.state) === "Booted" || str(device.state) === "connected" || str(device.state) === "device",
     }));
+}
+
+export function parsePhysicalIosMatrixDevices(value: unknown): MatrixDeviceOption[] {
+  const devices = record(value)?.physicalDevices;
+  if (!Array.isArray(devices)) return [];
+  return devices.map(record).filter((device): device is Record<string, unknown> => device !== null && Boolean(str(device.udid)))
+    .map(device => ({ deviceId: str(device.udid), name: str(device.name) || str(device.udid), platform: "ios", kind: "physical", runtime: str(device.runtime),
+      booted: str(device.state) === "connected" && str(device.pairingState) === "paired",
+      connectionState: str(device.state) !== "connected" ? "Disconnected" : str(device.pairingState) !== "paired" ? "Pair this device" : "Connected" }));
 }
 
 export type MatrixPreferences = { limit: number };

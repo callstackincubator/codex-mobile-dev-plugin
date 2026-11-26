@@ -1,6 +1,7 @@
 import type { TestingRuntimeProgress } from "@mobile-dev/shared/testing-runtime.ts";
 import type { HostBridge } from "./host-bridge.ts";
 import type { DeviceAppsStore } from "./device-apps.ts";
+import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
 import { captureUiError, countUiEvent, getUiTelemetryAttributes, recordUiTiming } from "./telemetry.ts";
 import { testRecorder } from "./test-recorder.ts";
 import type { RecorderTreeSource } from "./test-recorder.ts";
@@ -11,7 +12,7 @@ import { testFileSlug } from "@mobile-dev/shared/test-recording.ts";
 import { branchStoredStepLocator, storedTestCallLines, storedTestUntilSource } from "@mobile-dev/shared/stored-test-steps.ts";
 import type { RecordedStep } from "@mobile-dev/shared/test-recording.ts";
 import type { TestDraftSummary } from "@mobile-dev/shared/test-drafts.ts";
-import { DEFAULT_MATRIX_LIMIT, clampLimit, isTerminalLane, matrixFinished, parseMatrix, parseMatrixDevices, readMatrixPreferences, writeMatrixPreferences } from "./testing-matrix.ts";
+import { DEFAULT_MATRIX_LIMIT, clampLimit, isTerminalLane, matrixFinished, parseMatrix, parseMatrixDevices, parsePhysicalIosMatrixDevices, readMatrixPreferences, writeMatrixPreferences } from "./testing-matrix.ts";
 import type { MatrixDeviceOption, MatrixLane, MatrixView } from "./testing-matrix.ts";
 
 /**
@@ -194,10 +195,11 @@ export function platformLabel(platform: "ios" | "android"): string { return plat
  * Launch app opens an app that is already installed; it never builds one, since a build is the
  * project's own (Expo, EAS, Gradle, Xcode) and takes minutes. A missing app says so, with the way to fix it.
  */
-export function launchErrorMessage(message: string, bundleId: string, platform: "ios" | "android"): string {
+export function launchErrorMessage(message: string, bundleId: string, platform: "ios" | "android", kind?: "physical"): string {
   if (!/is not installed|Unable to find package|Unknown package/i.test(message)) return message;
-  const where = platform === "ios" ? "this simulator" : "this emulator";
-  return `${bundleId} is not installed on ${where}. Build and install it (for an Expo app, \`npx expo run:${platform}\`), then launch again.`;
+  const where = kind === "physical" ? "this iPhone or iPad" : platform === "ios" ? "this simulator" : "this emulator";
+  const command = kind === "physical" ? "npx expo run:ios --device" : `npx expo run:${platform}`;
+  return `${bundleId} is not installed on ${where}. Build and install it (for an Expo app, \`${command}\`), then launch again.`;
 }
 
 function projectName(projectPath: string): string { return projectPath.split("/").filter(Boolean).at(-1) ?? projectPath; }
@@ -223,6 +225,11 @@ function parseTargets(data: Record<string, unknown>): TestingTargetOption[] {
  */
 
 export class TestingPanel {
+  private launchOnDevice(device: SimulatorDevice, bundleId: string) {
+    const physicalIos = device.kind === "physical" && device.platform === "ios";
+    return this.call(physicalIos ? "mobile_testing_physical_launch" : "mobile_launch_app",
+      { deviceId: device.udid, bundleId, ...(physicalIos ? {} : { platform: recordablePlatform(device) }) }, 120_000);
+  }
   private readonly app: HostBridge;
   private readonly deviceApps: DeviceAppsStore;
   private readonly listeners = new Set<() => void>();
@@ -359,14 +366,17 @@ export class TestingPanel {
 
   private treeSource(projectPath: string, bundleId: string): RecorderTreeSource {
     return {
-      read: async (deviceId, platform) => {
-        const result = await this.call("mobile_testing_read_tree", { deviceId, platform, projectPath, bundleId }, 20000);
+      read: async (deviceId, platform, kind) => {
+        const result = await this.call("mobile_testing_read_tree", { deviceId, platform, ...(kind ? { kind } : {}), projectPath, bundleId }, 20000);
         const content = object(result.structuredContent);
         const tree = content?.tree;
         // The screen the runner measured against. Android's is device pixels and the mirror's is
         // the stream's own size, so the mirror cannot place these rectangles without it.
         const screen = screenSize(content?.screen);
         return { tree: Array.isArray(tree) ? tree as ScreenComponent[] : [], ...(screen ? { screen } : {}) };
+      },
+      fill: async (deviceId, nodeId, value) => {
+        await this.call("mobile_testing_fill", { deviceId, projectPath, bundleId, nodeId, text: value }, 30_000);
       },
       // Fire and forget: giving the device back must never hold up stopping a recording, and a
       // release that fails leaves the session for the next `read` to take over.
@@ -739,15 +749,11 @@ export class TestingPanel {
     this.update({ launching: true, error: null });
     const startedAt = performance.now(), telemetryContext = getUiTelemetryAttributes();
     try {
-      await this.call("mobile_launch_app", {
-        platform: recordablePlatform(device),
-        deviceId: device.udid,
-        bundleId,
-      }, 120_000);
+      await this.launchOnDevice(device, bundleId);
       this.update({ appLaunched: true });
       countUiEvent("ui.testing.launch");
     } catch (error) {
-      this.update({ error: launchErrorMessage(error instanceof Error ? error.message : String(error), bundleId, recordablePlatform(device)) });
+      this.update({ error: launchErrorMessage(error instanceof Error ? error.message : String(error), bundleId, recordablePlatform(device), device.kind === "physical" ? "physical" : undefined) });
       captureUiError(error, "testing.launch", telemetryContext);
     } finally {
       if (getUiTelemetryAttributes() === telemetryContext) recordUiTiming("ui.testing.launch", performance.now() - startedAt);
@@ -957,7 +963,7 @@ export class TestingPanel {
     if (!mirrored || mirrored !== platform || !app || !device) return;
     // The element tree is read from the app in front, so it has to be this platform's app.
     if (this.deviceApps.getSnapshot().foregroundApp?.bundleId !== app.bundleId) {
-      try { await this.call("mobile_launch_app", { platform: app.platform, deviceId: device.udid, bundleId: app.bundleId }, 120_000); }
+      try { await this.launchOnDevice(device, app.bundleId); }
       catch (error) { this.update({ error: `Could not open ${app.bundleId}: ${error instanceof Error ? error.message : String(error)}` }); return; }
     }
     const relativePath = this.snapshot.selectedTestPath;
@@ -1306,16 +1312,15 @@ export class TestingPanel {
     const projectPath = this.snapshot.projectPath;
     const bundleId = this.target?.bundleId ?? "";
     const device = this.deviceApps.getSnapshot().device;
-    // Only a booted iOS simulator or Android emulator can be recorded against; anything else is
-    // reported as no device.
     const recordable = device !== undefined && isRecordableDevice(device);
     const deviceId = recordable ? device.udid : "";
     const platform = recordable ? recordablePlatform(device) : undefined;
-    const key = `${projectPath}\u0000${platform ?? ""}\u0000${deviceId}\u0000${bundleId}`;
+    const kind = recordable && device.kind === "physical" ? "physical" : undefined;
+    const key = `${projectPath}\u0000${platform ?? ""}\u0000${kind ?? ""}\u0000${deviceId}\u0000${bundleId}`;
     if (key === this.reportedContext && !force) return;
     this.reportedContext = key;
     try {
-      await this.call("mobile_testing_set_context", { projectPath, deviceId, ...(platform ? { platform } : {}), bundleId }, 10_000);
+      await this.call("mobile_testing_set_context", { projectPath, deviceId, ...(platform ? { platform } : {}), ...(kind ? { kind } : {}), bundleId }, 10_000);
     } catch {
       // The next change reports again; a selection the server missed only means an agent is told
       // to ask the user, which is the refusal it would have given anyway.
@@ -1661,7 +1666,7 @@ export class TestingPanel {
     if (pinned && this.deviceApps.getSnapshot().foregroundApp?.bundleId !== pinned.bundleId) {
       try {
         const device = this.deviceApps.getSnapshot().device;
-        if (device) await this.call("mobile_launch_app", { platform: pinned.platform, deviceId: device.udid, bundleId: pinned.bundleId }, 120_000);
+        if (device) await this.launchOnDevice(device, pinned.bundleId);
       } catch (error) {
         this.update({ running: false, error: `Could not open ${pinned.bundleId}: ${error instanceof Error ? error.message : String(error)}` });
         return;
@@ -1787,7 +1792,12 @@ export class TestingPanel {
     if (!this.matrixEnabled) return [];
     const only = this.matrixPlatform;
     const known = new Map(this.snapshot.matrixDevices.filter(device => !only || device.platform === only).map(device => [device.deviceId, device]));
-    return this.snapshot.matrixSelected.flatMap(id => known.get(id) ?? []);
+    const selected = this.snapshot.matrixSelected.flatMap(id => known.get(id) ?? []);
+    if (selected.length || this.snapshot.matrixSelected.length || only === "android") return selected;
+    const mirror = this.deviceApps.getSnapshot().device;
+    if (mirror?.kind !== "physical" || mirror.platform !== "ios") return selected;
+    return [known.get(mirror.udid) ?? { deviceId: mirror.udid, name: mirror.name, platform: "ios", kind: "physical", runtime: mirror.runtime,
+      booted: mirror.state === "connected" && mirror.pairingState === "paired" }];
   }
 
   /**
@@ -1810,6 +1820,7 @@ export class TestingPanel {
   get runsOnMatrix(): boolean {
     const selection = this.matrixSelection;
     if (selection.length !== 1) return selection.length > 1;
+    if (selection[0]!.kind === "physical") return true;
     return selection[0]!.deviceId !== this.deviceApps.getSnapshot().device?.udid;
   }
 
@@ -1861,23 +1872,31 @@ export class TestingPanel {
     writeMatrixPreferences(this.snapshot.projectPath, { limit: next });
   }
 
-  /** Lists the simulators and emulators, and for each booted one whether the app is on it. */
+  /** Lists simulators, emulators and connected iOS hardware, then checks the selected app. */
   async loadMatrixDevices() {
     if (!this.snapshot.available || this.snapshot.matrixLoading) return;
     this.update({ matrixLoading: true });
     try {
       const read = (name: string) => this.call(name, {}, 20_000).then(result => result.structuredContent, () => undefined);
-      const [simulators, emulators] = await Promise.all([read("mobile_list_simulators"), read("mobile_list_android_devices")]);
-      const devices = [...parseMatrixDevices("ios", simulators), ...parseMatrixDevices("android", emulators)];
+      const [simulators, emulators, physicalIos] = await Promise.all([read("mobile_list_simulators"), read("mobile_list_android_devices"),
+        this.call("mobile_list_ios_devices", {}, 20_000).then(result => result.structuredContent, error => {
+          this.update({ error: `Could not discover connected iOS devices: ${error instanceof Error ? error.message : String(error)}` });
+          return undefined;
+        })]);
+      const devices = [...parseMatrixDevices("ios", simulators), ...parsePhysicalIosMatrixDevices(physicalIos), ...parseMatrixDevices("android", emulators)];
       const apps = this.matrixApps();
       const checked = await Promise.all(devices.map(async device => {
         const appId = apps[device.platform];
         if (!device.booted || !appId) return device;
         try {
-          const result = await this.call("mobile_list_apps", { platform: device.platform, deviceId: device.deviceId }, 20_000);
+          const result = await this.call(device.kind === "physical" ? "mobile_testing_physical_app" : "mobile_list_apps", { platform: device.platform, deviceId: device.deviceId, bundleId: appId }, 20_000);
+          if (device.kind === "physical") return { ...device, installed: object(result.structuredContent)?.installed === true };
           const list = object(result.structuredContent)?.apps;
           return { ...device, installed: Array.isArray(list) && list.some(entry => object(entry)?.bundleId === appId) };
-        } catch { return device; }
+        } catch (error) {
+          if (device.kind === "physical") this.update({ error: `Could not check the app on ${device.name}: ${error instanceof Error ? error.message : String(error)}` });
+          return device;
+        }
       }));
       if (!this.disposed) this.update({ matrixDevices: checked });
     } finally {
@@ -1960,7 +1979,7 @@ export class TestingPanel {
       await this.stageWrite;
       const response = await this.call("mobile_testing_run_matrix", {
         projectPath: this.snapshot.projectPath, relativePath: input.relativePath, untilSource: input.source,
-        devices: selection.map(device => ({ deviceId: device.deviceId, platform: device.platform, name: device.name })),
+        devices: selection.map(device => ({ deviceId: device.deviceId, platform: device.platform, kind: device.kind ?? (device.platform === "ios" ? "simulator" : "emulator"), name: device.name })),
         apps, limit: this.snapshot.matrixLimit,
         ...(this.snapshot.runtimeMode === "project" ? { targets: this.matrixProjectTargets() } : {}),
         ...(this.snapshot.modelPreference ? { model: this.snapshot.modelPreference } : {}),

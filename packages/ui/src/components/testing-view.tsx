@@ -290,8 +290,8 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
     : state.loadingProject ? ""
       : state.targets.length === 0 ? (panel.noProject ? "Open the app you want to record in the mirror. Testing Studio records against the app in the foreground." : "No mobile app identifier was found. Open the app in the mirror, or use E2E setup to enter one.")
         : !target?.bundleId ? `Target "${target?.name}" has no app identifier. Enter one in E2E setup.`
-          : !booted ? "Recording needs a booted simulator or emulator in the mirror. If one is already running, choose it from Add device."
-            : !isRecordableDevice(device) ? "Recording works on an iOS simulator or an Android emulator, not a physical device."
+          : !booted ? "Recording needs a booted simulator, emulator or connected iOS device in the mirror. If one is available, choose it from Add device."
+            : !isRecordableDevice(device) ? "Pair and trust this iOS device, or choose a simulator or emulator. Physical Android recording is not available yet."
               : mismatch;
   return <section className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4 [&_button:not(:disabled)]:cursor-pointer" aria-label="Testing Studio">
     <header className="flex flex-wrap items-center gap-2 border-b pb-3">
