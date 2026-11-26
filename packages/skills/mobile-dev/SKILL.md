@@ -168,7 +168,7 @@ Debug builds use Metro's inspector, so Metro must be running for that route.
 Release and profiling builds use the `@callstack/tracesift-profiler` package
 and do not need Metro. To prepare one from the app root, call
 `mobile_tracesift_profiler_setup` with its project path. If the package is missing,
-call `mobile_tracesift_install_profiler` to install version 0.6.0 from npm.
+call `mobile_tracesift_install_profiler` to install version 0.7.0 from npm.
 Then call `mobile_tracesift_profile_devices`, choose a compatible listed
 device using the user's choice or the active panel device, and pass its exact `id`
 and platform to `mobile_tracesift_profile_build`. Poll
@@ -181,8 +181,8 @@ are plausible, resolve the target before building or recording.
 
 Close React Native DevTools first, because Hermes has a single sampler. Frame
 names can be minified or bundled and task boundaries are inferred. Report the
-CLI's own message when a recording is refused. If the CLI is too old, use a
-newer local TraceSift build through `TRACE_SIFT_COMMAND` and restart Mobile Dev.
+CLI's own message when a recording is refused. If the CLI is too old, install
+`@callstack/tracesift@0.7.0`, run `tracesift init`, and restart Mobile Dev.
 
 The browser-recording tools are the panel's, not yours: a browser you launched would
 record a page nobody had signed into. This is also not `mobile_record_performance`,

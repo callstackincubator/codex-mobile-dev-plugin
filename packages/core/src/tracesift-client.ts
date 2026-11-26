@@ -130,7 +130,7 @@ function cliFailure(diagnostics: string, output: string, code: number | null, fa
     return new TraceSiftError("This TraceSift cannot record. Update @callstack/tracesift, run `tracesift init`, and retry.", "version");
   }
   if (/unknown option '?-{0,2}(platform|metro|target-id)'?/i.test(said)) {
-    return new TraceSiftError("This TraceSift cannot record React Native. Update @callstack/tracesift to 0.6.0 or newer (or point TRACE_SIFT_COMMAND at a newer build), run `tracesift init`, and retry.", "version");
+    return new TraceSiftError("This TraceSift cannot record React Native. Update @callstack/tracesift to 0.7.0 or newer (or point TRACE_SIFT_COMMAND at a newer build), run `tracesift init`, and retry.", "version");
   }
   const reported = parseCliJson(output)?.error;
   if (typeof reported === "string" && reported.trim()) return new TraceSiftError(reported.trim().slice(0, 1024), "request");
@@ -148,7 +148,7 @@ async function detectManager(present: (path: string) => Promise<boolean>): Promi
 }
 
 const PROFILER_PACKAGE = "@callstack/tracesift-profiler";
-const PROFILER_INSTALL_SPEC = `${PROFILER_PACKAGE}@0.6.0`;
+const PROFILER_INSTALL_SPEC = `${PROFILER_PACKAGE}@0.7.0`;
 
 function profilerInstallArgs(manager: PackageManager, source = PROFILER_INSTALL_SPEC) {
   const flag = manager === "yarn" || manager === "bun" ? "--dev" : "--save-dev";
@@ -221,7 +221,7 @@ export class TraceSiftClient {
       child = spawn(this.command, ["start", "--port", String(port), "--no-open"], {
         stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, TRACE_SIFT_HOME: this.home },
       });
-    } catch { throw new TraceSiftError("TraceSift is not installed. Run `npm install -g @callstack/tracesift`, then `tracesift init`.", "setup", "missing_cli"); }
+    } catch { throw new TraceSiftError("TraceSift is not installed. Run `npm install -g @callstack/tracesift@0.7.0`, then `tracesift init`.", "setup", "missing_cli"); }
     this.child = child;
     let spawnError: unknown;
     let exited = false;
@@ -235,7 +235,7 @@ export class TraceSiftClient {
       signal?.throwIfAborted();
       if (spawnError) {
         const missing = spawnError instanceof Error && "code" in spawnError && spawnError.code === "ENOENT";
-        if (missing) throw new TraceSiftError("TraceSift is not installed or is not available to Mobile Dev. Run `npm install -g @callstack/tracesift`, then `tracesift init`.", "setup", "missing_cli");
+        if (missing) throw new TraceSiftError("TraceSift is not installed or is not available to Mobile Dev. Run `npm install -g @callstack/tracesift@0.7.0`, then `tracesift init`.", "setup", "missing_cli");
         throw new TraceSiftError("TraceSift could not start. Check the installation and retry.", "startup", "startup_failed");
       }
       const descriptor = await this.existing(signal);
@@ -298,7 +298,7 @@ export class TraceSiftClient {
 
   async installCli(signal?: AbortSignal) {
     requireTraceSiftHost();
-    await this.runSetupCommand("npm", ["install", "-g", "@callstack/tracesift"], "TraceSift installation", signal);
+    await this.runSetupCommand("npm", ["install", "-g", "@callstack/tracesift@0.7.0"], "TraceSift installation", signal);
   }
 
   async initialize(signal?: AbortSignal) {
@@ -711,7 +711,7 @@ export class TraceSiftClient {
   /** The sentence that names the fix, when the CLI in use predates release-build recording. */
   private async staleCliHint(): Promise<string | undefined> {
     if (await this.probeReleaseSupport() !== false) return;
-    return `The TraceSift CLI in use (${this.command}) is too old to record release builds: it has no \`profile\` command or \`--profiler-port\`. Set TRACE_SIFT_COMMAND to a newer build, for example TRACE_SIFT_COMMAND=/path/to/perf-ai/packages/cli/src/cli.js, and restart Mobile Dev.`;
+    return `The TraceSift CLI in use (${this.command}) is too old to record release builds: it has no \`profile\` command or \`--profiler-port\`. Install @callstack/tracesift@0.7.0, run \`tracesift init\`, and restart Mobile Dev.`;
   }
 
   /**

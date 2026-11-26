@@ -72,7 +72,7 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
 
   registerAppTool(server, "mobile_install_tracesift_cli", {
     title: "Install the TraceSift CLI",
-    description: "Install the TraceSift CLI globally with the fixed command `npm install -g @callstack/tracesift`. App-only: called after the user presses Install in the TraceSift setup panel. Modifies the global npm installation and may access the npm registry.",
+    description: "Install the TraceSift CLI globally with the fixed command `npm install -g @callstack/tracesift@0.7.0`. App-only: called after the user presses Install in the TraceSift setup panel. Modifies the global npm installation and may access the npm registry.",
     inputSchema: {}, outputSchema: traceSiftSetupActionResultSchema.shape,
     annotations: setupMutation,
     _meta: { ui: { visibility: ["app"] } },
@@ -309,7 +309,7 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
 
   registerAppTool(server, "mobile_tracesift_install_profiler", {
     title: "Install the TraceSift profiler package in a project",
-    description: "Add @callstack/tracesift-profiler@0.6.0 as a dev dependency of the chosen project with its own package manager. The optional packagePath accepts a local @callstack/tracesift-profiler package folder. Modifies the project's package.json and lockfile; registry installation may contact npm.",
+    description: "Add @callstack/tracesift-profiler@0.7.0 as a dev dependency of the chosen project with its own package manager. The optional packagePath accepts a local @callstack/tracesift-profiler package folder. Modifies the project's package.json and lockfile; registry installation may contact npm.",
     inputSchema: { projectPath: z.string().min(1).max(4096), packagePath: z.string().min(1).max(4096).optional() },
     outputSchema: { installed: z.literal(true) },
     annotations: setupMutation,

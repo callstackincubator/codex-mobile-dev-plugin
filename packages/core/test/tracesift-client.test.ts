@@ -198,6 +198,19 @@ test("TraceSift readiness identifies an installed CLI that still needs init", as
     error instanceof TraceSiftError && error.setupReason === "needs_init" && /tracesift init/.test(error.message));
 });
 
+test("TraceSift CLI installation pins version 0.7.0", async () => {
+  const client = new TraceSiftClient("missing-tracesift");
+  let command: string | undefined;
+  let args: string[] | undefined;
+  (client as unknown as { runSetupCommand: (executable: string, arguments_: string[]) => Promise<void> }).runSetupCommand = async (executable, arguments_) => {
+    command = executable;
+    args = arguments_;
+  };
+  await client.installCli();
+  assert.equal(command, "npm");
+  assert.deepEqual(args, ["install", "-g", "@callstack/tracesift@0.7.0"]);
+});
+
 test("TraceSift initialization runs the fixed init argument with its private home", async t => {
   const home = await mkdtemp(join(tmpdir(), "mobile-dev-tracesift-"));
   const command = join(home, "tracesift-init");
@@ -443,7 +456,7 @@ test("a TraceSift that knows record but not --platform reads as a version to upd
   await assert.rejects(client.reactNativeTargets(), error =>
     error instanceof TraceSiftError && error.kind === "version" && /cannot record React Native/.test(error.message));
   await assert.rejects(client.startReactNativeRecording(), error =>
-    error instanceof TraceSiftError && error.kind === "version" && /0\.6\.0 or newer/.test(error.message));
+    error instanceof TraceSiftError && error.kind === "version" && /0\.7\.0 or newer/.test(error.message));
 });
 
 test("a targets command that answers with prose rather than JSON is named, not guessed at", async t => {
@@ -512,7 +525,7 @@ test("a CLI without release-build support names TRACE_SIFT_COMMAND when no app i
     `case "$2" in targets) printf '%s' '{"apiVersion":1,"platform":"rn","metro":"http://127.0.0.1:8081","targets":[]}' ;; start) echo "tracesift: no app" >&2; exit 1 ;; esac`);
   const client = new TraceSiftClient(old, fake.home); t.after(() => client.close());
   const stale = (error: unknown) => error instanceof TraceSiftError && error.kind === "version"
-    && /too old to record release builds/.test(error.message) && /TRACE_SIFT_COMMAND=\/path\/to\/perf-ai\/packages\/cli\/src\/cli\.js/.test(error.message);
+    && /too old to record release builds/.test(error.message) && /@callstack\/tracesift@0\.7\.0/.test(error.message);
   await assert.rejects(client.reactNativeTargets(), stale);
   await assert.rejects(client.startReactNativeRecording(), stale);
 });
@@ -578,7 +591,7 @@ test("a project is set up when the profiler package is in its node_modules, and 
   const { mkdir } = await import("node:fs/promises");
   await mkdir(join(root, "ios")); await writeFile(join(root, "ios", "Podfile"), "");
   assert.deepEqual(await client.profilerSetup(root), {
-    installed: false, manager: "yarn", command: "yarn add --dev @callstack/tracesift-profiler@0.6.0", platforms: ["ios"],
+    installed: false, manager: "yarn", command: "yarn add --dev @callstack/tracesift-profiler@0.7.0", platforms: ["ios"],
   });
   await assert.rejects(client.installProfiler(root, undefined, join(root, "missing-profiler")), /folder does not exist/);
   const wrongPackage = join(root, "wrong-profiler");

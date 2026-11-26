@@ -92,7 +92,7 @@ replaces the previously saved folder. Every non-setup tool uses `openWorldHint: 
 operations are confined to local files, the host's own dialogs, and the
 authenticated loopback TraceSift service. The two app-only setup actions are the
 exceptions: `mobile_install_tracesift_cli` runs only
-`npm install -g @callstack/tracesift`, and `mobile_initialize_tracesift` runs only
+`npm install -g @callstack/tracesift@0.7.0`, and `mobile_initialize_tracesift` runs only
 `tracesift init`. Both declare destructive writes and open-world access because
 they replace installed software and may download it. They do not accept a command,
 arguments, environment, or path from the panel.

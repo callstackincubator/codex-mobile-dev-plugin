@@ -179,7 +179,7 @@ build, not a choice. A debug build is read over the Metro inspector, so Metro mu
 be running. A release or profiling build has no inspector target and is read instead
 through the `@callstack/tracesift-profiler` package it carries. To prepare one,
 call `mobile_tracesift_profiler_setup` with the app root. If missing, call
-`mobile_tracesift_install_profiler` to install the published 0.6.0 package. List
+`mobile_tracesift_install_profiler` to install the published 0.7.0 package. List
 targets with
 `mobile_tracesift_profile_devices`, use the user's choice or active panel device,
 then call `mobile_tracesift_profile_build` with that device's exact id and platform.
@@ -193,8 +193,7 @@ TraceSift can find the build's source map.
 
 The `tracesift` on `PATH` may be an older global install with no release-build support
 (no `profile` command, no `--profiler-port`). When a tool reports the CLI is too old,
-tell the user to restart Mobile Dev with `TRACE_SIFT_COMMAND` pointing at a newer build,
-for example `TRACE_SIFT_COMMAND=/path/to/perf-ai/packages/cli/src/cli.js`.
+install `@callstack/tracesift@0.7.0`, run `tracesift init`, and restart Mobile Dev.
 
 Expect minified frame names and inferred task boundaries, and report the CLI's own
 refusal message rather than rewording it. This is not `mobile_record_performance`,

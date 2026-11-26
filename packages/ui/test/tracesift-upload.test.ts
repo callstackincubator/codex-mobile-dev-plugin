@@ -37,7 +37,7 @@ test("TraceSift keeps one workspace while readiness changes its inspector", asyn
       if (input.name === "mobile_tracesift_recorded_profiles") return { content: [], structuredContent: { profiles: [{ path: "/saved/profile.json.gz", name: "profile.json.gz", recordedAt: "2026-11-25T08:00:00.000Z", sizeBytes: 100, projectName: "expoapp57" }] } };
       if (input.name === "mobile_tracesift_delete_recorded_profile") return { content: [], structuredContent: { deleted: true } };
       if (input.name === "mobile_get_tracesift_project") return { content: [], structuredContent: { path: "/project/expoapp57" } };
-      if (input.name === "mobile_tracesift_profiler_setup") return { content: [], structuredContent: { installed: profilerInstalled, command: "npm install --save-dev @callstack/tracesift-profiler@0.6.0", platforms: ["ios"] } };
+      if (input.name === "mobile_tracesift_profiler_setup") return { content: [], structuredContent: { installed: profilerInstalled, command: "npm install --save-dev @callstack/tracesift-profiler@0.7.0", platforms: ["ios"] } };
       if (input.name === "mobile_tracesift_install_profiler") { profilerInstalled = true; return { content: [], structuredContent: {} }; }
       if (input.name === "mobile_tracesift_profile_devices") return { content: [], structuredContent: { devices: [{ kind: "simulator", id: "sim-1", name: "iPhone Simulator", note: "booted" }] } };
       if (input.name === "mobile_tracesift_profile_build") return { content: [], structuredContent: { runId: "build-1", status: "running" } };

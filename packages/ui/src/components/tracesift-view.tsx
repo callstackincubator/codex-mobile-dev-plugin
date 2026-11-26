@@ -432,7 +432,7 @@ function TraceSiftUpload({ controller, available, mode, setMode, profileType, se
           </div>
           <p>{setup.message}</p>
           <div className="tracesift-commands">
-            {setup.reason === "missing_cli" && command(1, "Install TraceSift", "npm install -g @callstack/tracesift", "install", "Install the TraceSift CLI")}
+            {setup.reason === "missing_cli" && command(1, "Install TraceSift", "npm install -g @callstack/tracesift@0.7.0", "install", "Install the TraceSift CLI")}
             {(setup.reason === "missing_cli" || setup.reason === "needs_init") && command(2, "Initialize service", "tracesift init", "init", "Initialize TraceSift")}
           </div>
           {state.setupNotice && <p className="tracesift-notice" role="status">{state.setupNotice}</p>}
