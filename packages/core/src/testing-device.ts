@@ -7,6 +7,7 @@ import type { ScreenComponent, ScreenSize } from "@mobile-dev/shared/screen-anno
 import { APP_FLOW_DIRECTORY, loadVendoredAgentDevice } from "./app-flow-host.ts";
 import { bundledE2eRoot } from "./e2e-runtime.ts";
 import { captureServerError } from "./telemetry.ts";
+import { isHardwareUdid, settlePhysicalIos } from "./physical-ios-settle.ts";
 
 /**
  * The element tree the Testing Studio panel's recorder names selectors from: the one the `e2e` runner
@@ -274,7 +275,12 @@ export class TestingDevices {
 
   private readonly load: typeof loadVendoredAgentDevice;
 
-  constructor(load = loadVendoredAgentDevice) { this.load = load; }
+  /** Lets a physical iPhone finish tearing the recorder's runner down once its session is closed. */
+  private readonly settle: (deviceId: string) => Promise<void>;
+  /** The device the attached session holds, kept so its release knows whether to settle. */
+  private attachedDevice?: { deviceId: string; platform: "ios" | "android" };
+
+  constructor(load = loadVendoredAgentDevice, settle: (deviceId: string) => Promise<void> = settlePhysicalIos) { this.load = load; this.settle = settle; }
 
   private async connect(): Promise<AgentDeviceClient> {
     pinStateDir();
@@ -308,6 +314,7 @@ export class TestingDevices {
       app: target.bundleId, relaunch: false, noRecord: true, timeoutMs: 120_000,
     });
     this.attached = this.key(target);
+    this.attachedDevice = { deviceId: target.deviceId, platform: target.platform };
   }
 
   /** The runner's own snapshot call, with the runner's own options: a different tree is a different test. */
@@ -446,6 +453,8 @@ export class TestingDevices {
     if (this.attached === undefined || this.client === undefined) return;
     this.attached = undefined;
     this.lastRefs = {};
+    const held = this.attachedDevice;
+    this.attachedDevice = undefined;
     try {
       await (await this.client).sessions.close({ session: SESSION });
     } catch (error) {
@@ -453,5 +462,7 @@ export class TestingDevices {
       // about but must not fail the user's stop.
       captureServerError(error, "testing.release");
     }
+    // Closing returns before the phone has torn the runner (and the app it drove) down; see `settlePhysicalIos`.
+    if (held?.platform === "ios" && isHardwareUdid(held.deviceId)) await this.settle(held.deviceId).catch(() => undefined);
   }
 }

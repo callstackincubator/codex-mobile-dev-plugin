@@ -12,7 +12,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { cpuDeviceSchema } from "../../shared/src/cpu.ts";
 import type { CpuTarget } from "../../shared/src/cpu.ts";
-import { parsePhysicalApps, runningPhysicalApps } from "../src/device-apps/apps.ts";
+import { parsePhysicalApps, parsePhysicalBundleForPid, physicalBundleForPid, runningPhysicalApps } from "../src/device-apps/apps.ts";
 import { openPhysicalDebugserver } from "../src/cpu/physical.ts";
 import { CpuSessions } from "../src/cpu/sessions.ts";
 import { registerCpuTools } from "../src/cpu/tools.ts";
@@ -53,6 +53,38 @@ test("physical app discovery joins bundle URLs to main processes and excludes ex
   assert.deepEqual(discovered, [{ bundleId: target.bundleId, pid: 123 }]);
   const malformed = response({ runningProcesses: [{ processIdentifier: -1 }] });
   assert.throws(() => parsePhysicalApps(apps, malformed));
+});
+
+test("the app in front resolves to its bundle id even when it is one of Apple's own", () => {
+  const apps = response({ apps: [app,
+    { bundleIdentifier: "com.apple.Preferences", url: "file:///Applications/Preferences.app/", builtByDeveloper: false },
+    { bundleIdentifier: "com.apple.mobilesafari", url: "file:///private/var/containers/Bundle/Application/C958/MobileSafari.app/", builtByDeveloper: false }] });
+  const processes = response({ runningProcesses: [
+    { processIdentifier: 11, executable: "file:///Applications/Preferences.app/Preferences" },
+    { processIdentifier: 12, executable: "file:///private/var/containers/Bundle/Application/C958/MobileSafari.app/MobileSafari" },
+    { processIdentifier: 13, executable: appPath + "PlugIns/Extension.appex/Extension" },
+    { processIdentifier: 123, executable: appPath + "Example App" },
+  ] });
+  assert.equal(parsePhysicalBundleForPid(apps, processes, 11), "com.apple.Preferences");
+  assert.equal(parsePhysicalBundleForPid(apps, processes, 12), "com.apple.mobilesafari");
+  assert.equal(parsePhysicalBundleForPid(apps, processes, 123), target.bundleId);
+  assert.equal(parsePhysicalBundleForPid(apps, processes, 13), undefined, "an extension is not an app to record");
+  assert.equal(parsePhysicalBundleForPid(apps, processes, 999), undefined, "a pid that is not running");
+  // The monitoring list is unchanged: nothing can be sampled in an Apple app.
+  assert.deepEqual(parsePhysicalApps(apps, processes), [{ bundleId: target.bundleId, pid: 123 }]);
+});
+
+test("resolving the front app asks devicectl for every app, which is what brings the preinstalled ones back", async () => {
+  const seen: string[][] = [];
+  const bundle = await physicalBundleForPid(udid, 11, undefined, async (_file, args) => {
+    seen.push(args);
+    return { stdout: args[3] === "apps"
+      ? response({ apps: [{ bundleIdentifier: "com.apple.Preferences", url: "file:///Applications/Preferences.app/", builtByDeveloper: false }] })
+      : response({ runningProcesses: [{ processIdentifier: 11, executable: "file:///Applications/Preferences.app/Preferences" }] }) };
+  });
+  assert.equal(bundle, "com.apple.Preferences");
+  assert.ok(seen.find(args => args[3] === "apps")?.includes("--include-all-apps"));
+  assert.ok(seen.every(args => args.includes(udid) && args.includes("--timeout")));
 });
 
 test("physical app discovery only issues bounded read-only devicectl commands and forwards cancellation", async () => {

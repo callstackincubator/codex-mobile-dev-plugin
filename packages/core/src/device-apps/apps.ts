@@ -66,6 +66,33 @@ export async function runningPhysicalApps(deviceId: string, signal?: AbortSignal
   return parsePhysicalApps(results[0].stdout, results[1].stdout);
 }
 
+/**
+ * The bundle id of the physical-device app running as `pid`, Apple's own apps included. The monitoring
+ * list above leaves those out because nothing can be sampled in them, but Testing Studio records
+ * against whatever app is in front, Settings or Safari as much as the user's own.
+ */
+export function parsePhysicalBundleForPid(apps: string, processes: string, pid: number): string | undefined {
+  const installed = appResponse.parse(JSON.parse(apps) as unknown);
+  const running = processResponse.parse(JSON.parse(processes) as unknown);
+  const process = running.result.runningProcesses.find(entry => entry.processIdentifier === pid && entry.executable !== undefined);
+  if (process?.executable === undefined) return undefined;
+  const directory = dirname(devicePath(process.executable));
+  for (const app of installed.result.apps) if (devicePath(app.url) === directory) return app.bundleIdentifier;
+  return undefined;
+}
+
+export async function physicalBundleForPid(deviceId: string, pid: number, signal?: AbortSignal, run: DeviceCommand = execute): Promise<string | undefined> {
+  const prefix = ["devicectl", "device", "info"];
+  const options = ["--device", deviceId, "--quiet", "--timeout", "10", "--omit-deprecated-fields-in-json", "--json-output", "-"];
+  const settings: Parameters<DeviceCommand>[2] = { encoding: "utf8", timeout: 15000, maxBuffer: 8 * 1024 * 1024, signal };
+  // `--include-all-apps` is what brings Apple's preinstalled apps back: devicectl hides them (and
+  // anything that is not a developer build) unless asked, which is why Settings or Safari never resolved.
+  const installed = runDiscoveryCommand("ios_physical_apps", "/usr/bin/xcrun", [...prefix, "apps", "--include-all-apps", ...options], settings, run);
+  const running = runDiscoveryCommand("ios_physical_processes", "/usr/bin/xcrun", [...prefix, "processes", ...options], settings, run);
+  const results = await Promise.all([installed, running]);
+  return parsePhysicalBundleForPid(results[0].stdout, results[1].stdout, pid);
+}
+
 /** The running simulator apps in `launchctl list` output. Apple's own apps are left out unless `includeSystem`. */
 export function parseRunningApps(output: string, includeSystem = false): DeviceApp[] {
   const apps: DeviceApp[] = [];

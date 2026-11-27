@@ -24,7 +24,7 @@ import { ensureIosSigning, iosSigningStatus, projectStateDir, saveIosTeam, withA
 import { LAUNCHER_APP, createLaneExecutor } from "./testing-prepare.ts";
 import type { DeviceOps } from "./testing-prepare.ts";
 import { deviceIdSchema } from "@mobile-dev/shared/panel-target.ts";
-import { simulatorBundleForPid } from "./device-apps/apps.ts";
+import { physicalBundleForPid, simulatorBundleForPid } from "./device-apps/apps.ts";
 import { listIosDevices } from "./ios-devices.ts";
 import type { BundledModelProvider } from "./testing-run.ts";
 import { answerTestingSetup, applyTestingSetup, cancelTestingSetup, inspectTestingSetup, planTestingSetup, readTestingLoginStatus, readTestingModelPreference, saveTestingModelPreference, SETUP_PROVIDERS, startTestingLogin, testingSetupProgress } from "./testing-setup.ts";
@@ -327,14 +327,15 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
       projectPath, foregroundPlatform: z.enum(["ios", "android"]).optional(), foregroundBundleId: z.string().min(1).max(512).optional(),
       foregroundDeviceId: deviceIdSchema.optional().describe("With foregroundPid, for an iOS simulator app the device's app list leaves out (Apple's own apps)."),
       foregroundPid: z.number().int().positive().optional(),
+      foregroundKind: z.enum(["simulator", "physical"]).optional().describe("With foregroundPid, whether the device is a physical iPhone or iPad (resolved through devicectl) or a simulator."),
     },
     annotations: read,
     _meta: appVisibility,
-  }, safe(async ({ projectPath: selected, foregroundPlatform, foregroundBundleId, foregroundDeviceId, foregroundPid }: { projectPath: string; foregroundPlatform?: "ios" | "android"; foregroundBundleId?: string; foregroundDeviceId?: string; foregroundPid?: number }) => {
+  }, safe(async ({ projectPath: selected, foregroundPlatform, foregroundBundleId, foregroundDeviceId, foregroundPid, foregroundKind }: { projectPath: string; foregroundPlatform?: "ios" | "android"; foregroundBundleId?: string; foregroundDeviceId?: string; foregroundPid?: number; foregroundKind?: "simulator" | "physical" }) => {
     // The panel's device list names only apps that can be monitored, so an Apple app in front (Fitness,
     // Settings) arrives as a pid alone. The home screen is never an app to record.
     const resolved = foregroundBundleId ?? (foregroundPlatform === "ios" && foregroundDeviceId && foregroundPid
-      ? await (matrix.foregroundBundle ?? simulatorBundleForPid)(foregroundDeviceId, foregroundPid).catch(() => undefined) : undefined);
+      ? await (matrix.foregroundBundle ?? (foregroundKind === "physical" ? physicalBundleForPid : simulatorBundleForPid))(foregroundDeviceId, foregroundPid).catch(() => undefined) : undefined);
     const bundleId = resolved && !LAUNCHER_APP.test(resolved) ? resolved : undefined;
     const project = await inspectProject(selected, foregroundPlatform && bundleId ? { platform: foregroundPlatform, bundleId } : undefined);
     const needsRuntime = project.runtimeMode === "bundled" && testingRuntimeDownload && testingRuntimeDownload.progress.phase !== "ready";

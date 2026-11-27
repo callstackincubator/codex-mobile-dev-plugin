@@ -1,3 +1,5 @@
+import { coreDeviceLaunchCode, rewriteCoreDeviceHint } from "./coredevice-errors.ts";
+import { countTestingLaunchRetry } from "./telemetry.ts";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
@@ -356,6 +358,8 @@ export interface TestRunDeps {
   /** Kills the run's process when aborted, for a matrix lane the user cancels. */
   signal?: AbortSignal;
   release?: () => Promise<void>;
+  /** Pause before the one retry of a launch that raced the app's shutdown; tests shorten it. */
+  retryDelayMs?: number;
   /** Called for each live `step` event, as it arrives. */
   onProgress?: (progress: TestRunProgress) => void;
   /** The working directory a workspace run spawns from; {@link RUNNER_CWD} unless a test overrides it. */
@@ -450,6 +454,36 @@ function refusedTheConfig(result: TestRunResult): boolean {
 }
 
 export async function runRecordedTest(request: TestRunRequest, deps: TestRunDeps = {}): Promise<TestRunResult> {
+  let result = await dispatchRun(request, deps);
+  if (launchRacedShutdown(result)) {
+    // The settle in `TestingDevices.release` removes the usual cause. This is the one bounded retry for
+    // what it cannot see: the run died on its first launch (no step passed, so nothing it did needs
+    // undoing) because CoreDevice lost the app's process, which the phone clears within seconds.
+    await new Promise(resolve => setTimeout(resolve, deps.retryDelayMs ?? 2_000));
+    if (!deps.signal?.aborted) {
+      const retried = await dispatchRun(request, deps);
+      countTestingLaunchRetry(retried.status === "passed" || !launchRacedShutdown(retried) ? "recovered" : "failed");
+      result = retried;
+    }
+  }
+  return explainLaunchFailure(result, request.bundledTarget?.bundleId);
+}
+
+/** A run whose very first launch failed with CoreDevice error 10004: the app's process vanished as it started. */
+function launchRacedShutdown(result: TestRunResult): boolean {
+  if (result.status === "passed" || result.steps.some(step => step.status === "passed")) return false;
+  return coreDeviceLaunchCode(`${result.error ?? ""}\n${result.steps.map(step => step.error ?? "").join("\n")}`) === "10004";
+}
+
+/** The runner passes agent-device's generic "unlocked, trusted" hint through; see `coredevice-errors.ts`. */
+function explainLaunchFailure(result: TestRunResult, appId?: string): TestRunResult {
+  if (result.status === "passed") return result;
+  const rewrite = (text: string | undefined) => text === undefined ? undefined : rewriteCoreDeviceHint(text, appId);
+  const error = rewrite(result.error);
+  return { ...result, ...(error === undefined ? {} : { error }), steps: result.steps.map(step => step.error === undefined ? step : { ...step, error: rewrite(step.error) }) };
+}
+
+async function dispatchRun(request: TestRunRequest, deps: TestRunDeps): Promise<TestRunResult> {
   if (request.runtime?.mode === "bundled") return runBundledTest(request, deps);
   if (request.projectLane) return runProjectLane(request, deps);
   if (request.untilSource !== undefined) return runProjectPreview(request, deps);

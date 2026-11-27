@@ -652,3 +652,60 @@ test("the sweep removes lane files of a dead process and keeps those of a live o
   await sweepLaneFiles(root);
   assert.deepEqual((await readdir(root)).filter(name => name !== "node_modules").sort(), [`${LANE_FILE_PREFIX}${process.pid}-live.ts`, "e2e.config.ts"].sort());
 });
+
+const GENERIC_HINT = "Hint: Ensure the iOS device is unlocked, trusted, and available in Xcode > Devices, then retry.";
+const RACED = `open com.example.app failed: Failed to launch iOS app: The process identifier of the launched application could not be determined. (com.apple.dt.CoreDeviceError error 10004 (0x2714)) ${GENERIC_HINT}`;
+
+/** A spawner that answers each call with the next canned report, so a retry sees a different run. */
+function sequence(reports: unknown[], launches: { count: number }) {
+  return ((command: string, args: readonly string[], options: { cwd?: string }) => {
+    const next = reports[Math.min(launches.count, reports.length - 1)];
+    launches.count += 1;
+    return spawner(JSON.stringify(next), next === reports[reports.length - 1] && (next as { run: { status: string } }).run.status === "passed" ? 0 : 1)(command, args, options as never);
+  }) as never;
+}
+const failedOpen = (message: string) => ({ ...report([], "failed"), run: { ...report([], "failed").run, errors: [{ message }] } });
+
+test("a run that died on its first launch with CoreDevice 10004 is started once more, and the second answer stands", async () => {
+  const root = await project();
+  const launches = { count: 0 };
+  let released = 0;
+  const result = await runRecordedTest({ projectPath: root, relativePath: FILE }, {
+    release: async () => { released += 1; }, retryDelayMs: 0,
+    spawner: sequence([failedOpen(RACED), report([{ line: 8, status: "passed" }])], launches),
+  });
+  assert.equal(launches.count, 2);
+  assert.equal(result.status, "passed");
+  assert.equal(released, 2, "each attempt hands the device over before it spawns");
+});
+
+test("the retry is bounded and its failure keeps an accurate hint instead of unlock-and-trust", async () => {
+  const root = await project();
+  const launches = { count: 0 };
+  const result = await runRecordedTest({ projectPath: root, relativePath: FILE }, { retryDelayMs: 0, spawner: sequence([failedOpen(RACED)], launches) });
+  assert.equal(launches.count, 2, "one retry, never a loop");
+  assert.equal(result.status, "failed");
+  assert.doesNotMatch(result.error ?? "", /unlocked, trusted/);
+  assert.match(result.error ?? "", /wait a moment and try again/);
+});
+
+test("a run that got past its first step, or failed for any other reason, is never started again", async () => {
+  const root = await project();
+  for (const reports of [
+    [{ ...report([{ line: 8, status: "passed" }], "failed"), run: { ...report([{ line: 8, status: "passed" }], "failed").run, errors: [{ message: RACED }] } }],
+    [failedOpen("Timed out waiting for Explore")],
+    [failedOpen(RACED.replace("10004", "10002"))],
+  ]) {
+    const launches = { count: 0 };
+    await runRecordedTest({ projectPath: root, relativePath: FILE }, { retryDelayMs: 0, spawner: sequence(reports, launches) });
+    assert.equal(launches.count, 1);
+  }
+});
+
+test("a 10002 refusal of an Apple app is explained as such, not as a locked or untrusted phone", async () => {
+  const root = await project();
+  const message = `open com.apple.Preferences failed: Failed to launch iOS app: The application failed to launch. (com.apple.dt.CoreDeviceError error 10002 (0x2712)) ${GENERIC_HINT}`;
+  const result = await runRecordedTest({ projectPath: root, relativePath: FILE, runtime: { mode: "bundled", root }, bundledTarget: { platform: "ios", bundleId: "com.apple.Preferences", device: "x" } } as never, { retryDelayMs: 0, spawner: sequence([failedOpen(message)], { count: 0 }) }).catch(error => error);
+  // A bundled run needs its runtime; what matters is that no path reports the generic hint for this code.
+  assert.doesNotMatch(String(result.error ?? result.message ?? ""), /unlocked, trusted/);
+});

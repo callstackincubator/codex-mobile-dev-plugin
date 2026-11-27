@@ -628,7 +628,7 @@ export class TestingPanel {
     try {
       const platform = recordablePlatform(device);
       const response = await this.call("mobile_testing_project_config", { projectPath, foregroundPlatform: platform,
-        ...(foregroundBundleId ? { foregroundBundleId } : { foregroundDeviceId: device.udid, foregroundPid: pid }) });
+        ...(foregroundBundleId ? { foregroundBundleId } : { foregroundDeviceId: device.udid, foregroundPid: pid, ...(device.kind === "physical" ? { foregroundKind: "physical" } : {}) }) });
       if (revision !== this.loadRevision || this.snapshot.runtimeMode !== "bundled") return;
       const data = object(response.structuredContent) ?? {};
       const targets = parseTargets(data);

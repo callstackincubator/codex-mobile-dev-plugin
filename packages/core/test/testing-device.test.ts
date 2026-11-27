@@ -143,7 +143,7 @@ test("releasing closes the session, so the next e2e run is not refused the devic
 
 test("a physical iOS field is filled by the runner ref and the session is released", async () => {
   const calls: Record<string, unknown>[] = [];
-  const devices = new TestingDevices(fakeAgentDevice(calls, () => ({ nodes: [{ kind: "text-field", ref: "e4", node: { role: "textbox", name: "Search", rect } }] })) as never);
+  const devices = new TestingDevices(fakeAgentDevice(calls, () => ({ nodes: [{ kind: "text-field", ref: "e4", node: { role: "textbox", name: "Search", rect } }] })) as never, async () => undefined);
   (devices as unknown as { projections: Map<string, unknown> }).projections.set("/project", Promise.resolve(projection));
   const phone = { ...target, deviceId: "00008150-0000111122223333" };
   const read = await devices.read(phone);
@@ -332,7 +332,7 @@ test("releaseOn waits for an in-flight physical screen read before handing the d
   const calls: Record<string, unknown>[] = [];
   let finishSnapshot!: () => void;
   const pending = new Promise<void>(resolve => { finishSnapshot = resolve; });
-  const devices = new TestingDevices(fakeAgentDevice(calls, async () => { await pending; return { nodes: [] }; }) as never);
+  const devices = new TestingDevices(fakeAgentDevice(calls, async () => { await pending; return { nodes: [] }; }) as never, async () => undefined);
   (devices as unknown as { projections: Map<string, unknown> }).projections.set("/project", Promise.resolve(projection));
   const phone = { ...target, deviceId: "00008150-0000111122223333" };
   const read = devices.read(phone);
@@ -350,7 +350,7 @@ test("a fill lands on the field it named even after the screen was re-read and r
     reads += 1;
     // After the first read a new field appears above and the refs are renumbered.
     return { nodes: reads === 1 ? [field("e1", "City", 10), field("e2", "Zip", 40)] : [field("e7", "Banner", 0), field("e8", "City", 10), field("e9", "Zip", 40)] };
-  }) as never);
+  }) as never, async () => undefined);
   (devices as unknown as { projections: Map<string, unknown> }).projections.set("/project", Promise.resolve(projection));
   const phone = { ...target, deviceId: "00008150-0000111122223333" };
   const first = await devices.read(phone);
@@ -360,5 +360,38 @@ test("a fill lands on the field it named even after the screen was re-read and r
   assert.equal(calls.find(entry => entry.call === "fill")?.ref, "@e9", "the same field, by its new ref");
   assert.ok(reads >= 3, "the fill took a fresh snapshot");
   await assert.rejects(devices.fillNode(phone, "s-gone", "x"), /no longer on the current screen/);
+  await devices.release();
+});
+
+test("releasing a physical iPhone waits for it to settle; a simulator is not waited on", async () => {
+  const calls: Record<string, unknown>[] = [];
+  const order: string[] = [];
+  const settled: string[] = [];
+  const load = fakeAgentDevice(calls, () => ({ nodes: [] }));
+  const settle = async (deviceId: string) => { settled.push(deviceId); order.push("settle"); };
+  const devices = new TestingDevices((async () => {
+    const module = await load();
+    return { createAgentDeviceClient: () => {
+      const client = module.createAgentDeviceClient();
+      const close = client.sessions.close;
+      client.sessions.close = async (options: Record<string, unknown>) => { await close(options); order.push("close"); };
+      return client;
+    } };
+  }) as never, settle);
+  (devices as unknown as { projections: Map<string, unknown> }).projections.set("/project", Promise.resolve(projection));
+  const phone = { ...target, deviceId: "00008150-0000111122223333" };
+  await devices.read(phone);
+  await devices.release();
+  assert.deepEqual(order, ["close", "settle"], "the run is only handed the device after the phone let go of the runner");
+  assert.deepEqual(settled, [phone.deviceId]);
+  await devices.read(target);
+  await devices.release();
+  assert.deepEqual(settled, [phone.deviceId], "a simulator has no runner to wait out");
+});
+
+test("a settle that fails does not fail the release", async () => {
+  const devices = new TestingDevices(fakeAgentDevice([], () => ({ nodes: [] })) as never, async () => { throw new Error("devicectl missing"); });
+  (devices as unknown as { projections: Map<string, unknown> }).projections.set("/project", Promise.resolve(projection));
+  await devices.read({ ...target, deviceId: "00008150-0000111122223333" });
   await devices.release();
 });
