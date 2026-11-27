@@ -7,7 +7,8 @@ import { createSimulatorPanel } from "./simulator-panel.ts";
 import { setUiGauge, setUiTelemetryContext } from "./telemetry.ts";
 import type { WorkspaceTools } from "./workspace-tools.ts";
 
-export type DevicePane = { key: number; beside?: number; platform: Platform; last: SimulatorDevice; device?: SimulatorDevice };
+// `join` opens the pane as a tab in `beside`'s group; otherwise it splits to its right.
+export type DevicePane = { key: number; beside?: number; join?: boolean; platform: Platform; last: SimulatorDevice; device?: SimulatorDevice };
 type Snapshot = { panes: DevicePane[]; visible: number[]; active?: number; available: boolean; message: string; stopping?: string };
 
 /** A stopped AVD has an avd: ID and acquires a serial while running. Keep the same screen across that transition. */
@@ -116,10 +117,10 @@ export class DeviceWorkspace {
     if (message && message !== this.state.message) this.notice(message);
   }
 
-  private add(platform: Platform, device: SimulatorDevice, boot: boolean, beside = this.state.active) {
+  private add(platform: Platform, device: SimulatorDevice, boot: boolean, beside = this.state.active, join = false) {
     const key = ++this.nextKey;
     if (boot && device.kind !== "physical" && device.state === "Shutdown") this.bootOnMount.add(key);
-    const panes = [...this.state.panes, { key, beside, platform, last: device, device }];
+    const panes = [...this.state.panes, { key, beside, join, platform, last: device, device }];
     const visible = [...this.state.visible, key];
     this.update({ panes, visible, active: key, message: "" });
     this.publishSelection();
@@ -164,7 +165,7 @@ export class DeviceWorkspace {
     void this.initialize();
     const pane = this.state.panes.find(item => item.platform === platform && item.last.udid === device.udid);
     if (pane) this.remove(pane.key);
-    else this.add(platform, device, true, beside);
+    else this.add(platform, device, true, beside, true);
   }
 
   remove(key: number) {

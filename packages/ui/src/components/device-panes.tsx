@@ -94,7 +94,7 @@ function DeviceDock({ workspace }: { workspace: DeviceWorkspace }) {
       }
       const beside = String(pane.beside);
       const referencePanel = dock.getPanel(beside);
-      const position = referencePanel ? { referencePanel, direction: "right" as const } : undefined;
+      const position = referencePanel ? { referencePanel, direction: pane.join ? "within" as const : "right" as const } : undefined;
       dock.addPanel({ id, component: "device", title: pane.last.name, minimumWidth: 220, minimumHeight: 180, position });
     }
   }, [dock, panes]);

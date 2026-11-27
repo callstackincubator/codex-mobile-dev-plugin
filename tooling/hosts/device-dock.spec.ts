@@ -16,6 +16,8 @@ async function selectAndroid(view: FrameLocator) {
   await picker.getByRole("button", { name: /Pixel Tablet/ }).click();
   await expect(picker).toBeHidden();
   await expect(view.getByRole("tab")).toHaveCount(3);
+  // Add device opens each device as a tab in the group whose button was clicked.
+  await expect(view.getByRole("tablist")).toHaveCount(1);
 }
 
 async function drag(page: Page, source: Locator, destination: Locator, x: number, y: number) {
@@ -36,10 +38,11 @@ for (const theme of ["light", "dark"] as const) {
     const { view } = await openView("mobile_open_simulator", { arguments: { deviceId: iphone.udid }, displayMode: "inline", theme, width: 900, inventory });
     await selectAndroid(view);
     const pane = view.locator("[data-device-pane]:visible");
-    await expect(pane).toHaveCount(3);
-    const pixelTab = view.getByRole("tab", { name: pixel.name });
-    const phone = view.locator(`[data-device-pane][aria-label="${iphone.name}"]`);
-    await drag(page, pixelTab, phone, 0.5, 0.5);
+    await expect(pane).toHaveCount(1);
+    await view.getByRole("tab", { name: pixel.name }).click();
+    const tabletTab = view.getByRole("tab", { name: tablet.name });
+    const group = view.locator(`[data-device-pane][aria-label="${pixel.name}"]`);
+    await drag(page, tabletTab, group, 0.92, 0.5);
     await expect(pane).toHaveCount(2);
     await expect(view.getByRole("tablist")).toHaveCount(2);
     await expect.soft(view.locator("#simulator-panels")).toHaveScreenshot(`device-tabs-split-${theme}.png`);
@@ -69,7 +72,7 @@ test("rounded dock overlays do not resize a device that fits", async ({ openView
   expect(fits).toBe(true);
 });
 
-test("choosing a device dismisses the picker and keeps Add device centered in narrow groups", async ({ openView, server }) => {
+test("choosing a device dismisses the picker and keeps Add device centered in narrow groups", async ({ page, openView, server }) => {
   test.skip(hasPanel(server) === false, "This target opens the workspace in a separate browser tab.");
   const { view } = await openView("mobile_open_simulator", { displayMode: "inline", width: 360, inventory });
   await view.getByRole("button", { name: "Add device" }).click();
@@ -86,8 +89,10 @@ test("choosing a device dismisses the picker and keeps Add device centered in na
   await firstAdd.press("Enter");
   await picker.getByRole("button", { name: /Pixel Tablet/ }).click();
   await expect(picker).toBeHidden();
-  await expect(view.getByRole("tablist")).toHaveCount(2);
+  await expect(view.getByRole("tablist")).toHaveCount(1);
   const dock = view.locator("#simulator-panels");
+  await drag(page, view.getByRole("tab", { name: tablet.name }), dock.locator(`[data-device-pane][aria-label="${tablet.name}"]`), 0.92, 0.5);
+  await expect(view.getByRole("tablist")).toHaveCount(2);
   await expect.poll(() => dock.evaluate(node => node.scrollWidth - node.clientWidth)).toBeGreaterThan(60);
   const add = dock.getByRole("button", { name: "Add device" }).last();
   await add.scrollIntoViewIfNeeded();
@@ -103,11 +108,6 @@ test("devices split at every edge, nest, rejoin and reorder without replacing th
   const tab = (name: string) => dock.getByRole("tab", { name, exact: true });
   const panel = (name: string) => dock.locator(`[data-device-pane][aria-label="${name}"]`);
   await dock.locator("canvas").evaluateAll(canvases => canvases.forEach(canvas => canvas.setAttribute("data-original", "")));
-  await expect(dock.getByRole("tablist")).toHaveCount(3);
-  const bounds = await dock.locator("[data-device-pane]:visible").evaluateAll(panes => panes.map(pane => pane.getBoundingClientRect().x));
-  expect(new Set(bounds).size).toBe(3);
-  await drag(page, tab(pixel.name), panel(iphone.name), 0.5, 0.5);
-  await drag(page, tab(tablet.name), panel(pixel.name), 0.5, 0.5);
   await expect(dock.getByRole("tablist")).toHaveCount(1);
   const edges = [[0.08, 0.5], [0.92, 0.5], [0.5, 0.08], [0.5, 0.92]];
   for (const [x, y] of edges) {
@@ -147,9 +147,9 @@ test("devices split at every edge, nest, rejoin and reorder without replacing th
   await expect(view.getByRole("button", { name: /Pixel 9/ })).toHaveAttribute("aria-pressed", "false");
   await view.getByRole("button", { name: /Pixel 9/ }).click();
   await expect(view.getByRole("dialog")).toBeHidden();
-  const restored = (await panel(pixel.name).boundingBox())!;
-  const phoneBox = (await panel(iphone.name).boundingBox())!;
-  expect(restored.x).toBeGreaterThanOrEqual(phoneBox.x + phoneBox.width - 2);
-  expect(Math.abs(restored.y - phoneBox.y)).toBeLessThan(2);
+  // The clicked group gains the tab even though another group was active.
+  await expect(dock.getByRole("tablist")).toHaveCount(2);
+  await expect(phoneGroup.getByRole("tab")).toHaveCount(2);
+  await expect(phoneGroup.getByRole("tab", { name: pixel.name, exact: true })).toHaveAttribute("aria-selected", "true");
   expect(pageErrors).toEqual([]);
 });
