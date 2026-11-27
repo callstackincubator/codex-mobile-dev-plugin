@@ -534,7 +534,7 @@ async function laneProject() {
 test("a hardware UDID or phone serial is pinned through a provider the runner reads as an id, not a device name", () => {
   for (const device of ["00008110-001A2B3C4D5E801E", "R58M123ABC"]) {
     const pin = devicePinSource(device);
-    assert.match(pin, /acquire: async \(\) => \(\{ id: "[^"]+", deviceId: "[^"]+" \}\)/);
+    assert.match(pin, /acquire: async \(\) => \(\{ id: "[^"]+", deviceId: "[^"]+", client: \{\} \}\)/);
     assert.ok(pin.includes(JSON.stringify(device)));
     assert.match(bundledConfigSource({ platform: "ios", bundleId: "com.example.app", device }), /device: \{ name: "mobile-dev-pinned-device"/);
     assert.match(rewriteLaneConfig('export default { targets: [{ name: "a", engine: mobile() }] };', "a", device, "s"), /device: \{ name: "mobile-dev-pinned-device"/);
@@ -544,9 +544,9 @@ test("a hardware UDID or phone serial is pinned through a provider the runner re
   assert.equal(devicePinSource("emulator-5554"), '"emulator-5554"');
 });
 
-function laneSpawner(seen: { args?: readonly string[]; cwd?: string; config?: string; existed?: string[] }) {
-  return ((command: string, args: readonly string[], options: { cwd?: string }) => {
-    seen.args = args; seen.cwd = options.cwd;
+function laneSpawner(seen: { args?: readonly string[]; cwd?: string; config?: string; existed?: string[]; env?: NodeJS.ProcessEnv }) {
+  return ((command: string, args: readonly string[], options: { cwd?: string; env?: NodeJS.ProcessEnv }) => {
+    seen.args = args; seen.cwd = options.cwd; seen.env = options.env;
     const config = args[args.indexOf("--config") + 1]!;
     const imported = config.endsWith(".progress.mts") ? readFileSync(config, "utf8").match(/file:\/\/[^"]+/)![0] : undefined;
     seen.config = readFileSync(imported ? fileURLToPath(imported) : config, "utf8");
@@ -572,6 +572,16 @@ test("a project lane runs a hidden rewritten copy beside the config, with its ow
   assert.equal(existsSync(args[args.indexOf("--output") + 1]!), false, "the output directory is removed");
   assert.deepEqual((await readdir(root)).filter(name => name.startsWith(LANE_FILE_PREFIX)), [], "the lane files are removed");
   assert.equal(readFileSync(join(root, "e2e.config.ts"), "utf8"), LANE_CONFIG, "the project's own config is never touched");
+});
+
+test("a project lane on iOS hardware gets its own agent-device state; other lanes get the terminal's", async () => {
+  const root = await laneProject();
+  const hardware: { env?: NodeJS.ProcessEnv } = {}, simulator: { env?: NodeJS.ProcessEnv } = {};
+  const base = { projectPath: root, relativePath: FILE, configPath: join(root, "e2e.config.ts"), target: "ios" };
+  await runRecordedTest({ ...base, projectLane: { target: "ios", device: "00008110-001A2C3E0E12801E", stateDir: "/state/project-a" } }, { spawner: laneSpawner(hardware) });
+  await runRecordedTest({ ...base, projectLane: { target: "ios", device: "3F2504E0-4F89-41D3-9A0C-0305E82C3301" } }, { spawner: laneSpawner(simulator) });
+  assert.equal(hardware.env?.AGENT_DEVICE_STATE_DIR, "/state/project-a");
+  assert.equal(simulator.env?.AGENT_DEVICE_STATE_DIR, undefined, "a simulator lane keeps the state a terminal run would get");
 });
 
 test("two lanes at once use different files and different sessions, and one finishing removes only its own", async () => {

@@ -20,7 +20,7 @@ import { runRecordedTest, sweepLaneFiles } from "./testing-run.ts";
 import type { TestRunRequest } from "./testing-run.ts";
 import { MatrixRegistry, MAX_MATRIX_LIMIT, snapshotMatrix, startMatrix } from "./testing-matrix.ts";
 import type { LaneExecutor, MatrixDevice, MatrixRun } from "./testing-matrix.ts";
-import { ensureIosSigning, withAgentDeviceHint } from "./ios-signing.ts";
+import { ensureIosSigning, projectStateDir, withAgentDeviceHint } from "./ios-signing.ts";
 import { LAUNCHER_APP, createLaneExecutor } from "./testing-prepare.ts";
 import type { DeviceOps } from "./testing-prepare.ts";
 import { deviceIdSchema } from "@mobile-dev/shared/panel-target.ts";
@@ -650,7 +650,7 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
       const projectExecutor = createLaneExecutor({
         ops: matrix.ops, projectMode: true, projectPath: input.projectPath, apps: Object.fromEntries(Object.entries(lanes).map(([platform, target]) => [platform, target.bundleId])),
         runTest: (lane, deviceId, signal, onProgress) => runTest(
-          { ...request, configPath: project.configPath, target: lanes[lane.platform]!.name, projectLane: { target: lanes[lane.platform]!.name, device: deviceId } },
+          { ...request, configPath: project.configPath, target: lanes[lane.platform]!.name, projectLane: { target: lanes[lane.platform]!.name, device: deviceId, ...(lane.kind === "physical" && lane.platform === "ios" ? { stateDir: projectStateDir(request.projectPath) } : {}) } },
           { release: () => devices.releaseOn([lane.deviceId, deviceId]), onProgress, signal }),
       });
       const { run } = launchMatrix(input.relativePath, input.devices, input.limit, projectExecutor);

@@ -159,6 +159,8 @@ test("physical app lookup and launch use devicectl, never simctl", async () => {
   assert.equal(await ops.physicalIos!.hasApp("phone", "com.app"), true);
   await ops.physicalIos!.launch("phone", "com.app");
   assert.equal(calls.length, 2);
+  // System and App Store apps are only listed with this flag, so without it Settings reads as not installed.
+  assert.ok(calls[0]!.includes("--include-all-apps"));
   assert.ok(calls.every(args => args[0] === "/usr/bin/xcrun" && args[1] === "devicectl" && args.includes("phone")));
 });
 

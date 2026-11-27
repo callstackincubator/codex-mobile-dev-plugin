@@ -342,7 +342,7 @@ export function systemDeviceOps(deps: { simulators: Simctl; android: ServeEmu; d
       },
       async hasApp(deviceId, appId) {
         try {
-          const output = await commands.run("/usr/bin/xcrun", ["devicectl", "device", "info", "apps", "--device", deviceId, "--quiet", "--timeout", "10", "--omit-deprecated-fields-in-json", "--json-output", "-"], { timeout: 15_000 });
+          const output = await commands.run("/usr/bin/xcrun", ["devicectl", "device", "info", "apps", "--device", deviceId, "--include-all-apps", "--quiet", "--timeout", "10", "--omit-deprecated-fields-in-json", "--json-output", "-"], { timeout: 15_000 });
           const parsed = JSON.parse(output) as { result?: { apps?: { bundleIdentifier?: string }[] } };
           return parsed.result?.apps?.some(app => app.bundleIdentifier === appId) ?? false;
         } catch (error) { throw physicalIosError(error, "Reading the apps on the device"); }

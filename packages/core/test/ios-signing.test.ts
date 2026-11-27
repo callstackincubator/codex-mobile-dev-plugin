@@ -2,10 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { errorHint, errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
-import { configuredTeamId, developmentIdentities, developmentTeams, ensureIosSigning, iosSigningEnv, resetIosSigning, resolveIosTeamId, runnerBundleId, teamFromSubject, withAgentDeviceHint } from "../src/ios-signing.ts";
+import { configuredTeamId, developmentIdentities, developmentTeams, ensureIosSigning, iosSigningEnv, resetIosSigning, projectStateDir, PROJECT_STATE_ROOT, restartStaleDaemons, resolveIosTeamId, runnerBundleId, teamFromSubject, withAgentDeviceHint } from "../src/ios-signing.ts";
 import { AgentDeviceRuntime } from "../src/agent-device-runtime.ts";
 
 const none = async () => { throw new Error("no keychain"); };
@@ -55,14 +55,14 @@ test("signing is exported for the in-process client and the e2e runner, and a us
     for (const key of keys) delete process.env[key];
     resetIosSigning();
     process.env.MOBILE_DEV_IOS_TEAM_ID = "ABCDE12345";
-    await ensureIosSigning();
+    await ensureIosSigning({ daemons: { stateDirs: [] } });
     assert.equal(process.env.AGENT_DEVICE_IOS_TEAM_ID, "ABCDE12345");
     assert.equal(process.env.AGENT_DEVICE_IOS_BUNDLE_ID, runnerBundleId("ABCDE12345"));
     process.env.MOBILE_DEV_IOS_TEAM_ID = "FGHIJ67890";
-    await ensureIosSigning();
+    await ensureIosSigning({ daemons: { stateDirs: [] } });
     assert.equal(process.env.AGENT_DEVICE_IOS_BUNDLE_ID, runnerBundleId("FGHIJ67890"), "a bundle id this module set follows the team");
     process.env.AGENT_DEVICE_IOS_BUNDLE_ID = "com.me.runner";
-    await ensureIosSigning();
+    await ensureIosSigning({ daemons: { stateDirs: [] } });
     assert.equal(process.env.AGENT_DEVICE_IOS_BUNDLE_ID, "com.me.runner");
     assert.deepEqual(iosSigningEnv("ABCDE12345", "com.me.runner"), { AGENT_DEVICE_IOS_TEAM_ID: "ABCDE12345", AGENT_DEVICE_IOS_BUNDLE_ID: "com.me.runner" });
   } finally {
@@ -101,4 +101,32 @@ test("agent-device's hint reaches the message with local paths removed, and a fi
   assert.equal(reported.outcome, "invalid_input");
   assert.equal(withAgentDeviceHint(new Error("plain"), errorHint, errorMessage) instanceof ExpectedOperationError, false);
   assert.equal(errorMessage(new Error("plain")), "plain");
+});
+
+test("a daemon started without this team is stopped, one that carries it and a stranger are not", async () => {
+  const signing = iosSigningEnv("ABCDE12345");
+  const carried = Object.entries(signing).map(([key, value]) => `${key}=${value}`).join(" ");
+  const files: Record<string, string> = { "/a/daemon.json": '{"pid":11}', "/b/daemon.json": '{"pid":22}', "/c/daemon.json": '{"pid":33}', "/d/daemon.json": "not json" };
+  const processes: Record<number, string> = {
+    11: "node agent-device/dist/src/internal/daemon.js PATH=/usr/bin",
+    22: `node agent-device/dist/src/internal/daemon.js ${carried}`,
+    33: "node some-other-server.js",
+  };
+  const killed: number[] = [];
+  const stopped = await restartStaleDaemons(signing, {
+    stateDirs: ["/a", "/b", "/c", "/d", "/missing"],
+    readFile: async path => files[path] ?? Promise.reject(new Error("ENOENT")),
+    processEnvironment: async pid => processes[pid] ?? Promise.reject(new Error("gone")),
+    kill: pid => { killed.push(pid); },
+  });
+  assert.deepEqual(stopped, [11]);
+  assert.deepEqual(killed, [11]);
+});
+
+test("each project's hardware runs keep their state in a folder of their own under the app's directory", () => {
+  const a = projectStateDir("/work/app-a"), b = projectStateDir("/work/app-b");
+  assert.equal(dirname(a), PROJECT_STATE_ROOT);
+  assert.notEqual(a, b);
+  assert.equal(projectStateDir("/work/app-a"), a, "the same project always gets the same folder");
+  assert.equal(a.includes("app-a"), false, "the folder name does not carry the project's path");
 });

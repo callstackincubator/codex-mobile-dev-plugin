@@ -1,8 +1,10 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
+import { APP_FLOW_DIRECTORY } from "./app-flow-host.ts";
 
 /**
  * Code signing for the XCTest runner agent-device builds for a physical iPhone.
@@ -93,7 +95,7 @@ export function runnerBundleId(teamId: string): string {
   return `com.mobiledev.agentdevice.${teamId.toLowerCase()}`;
 }
 
-export interface ResolveOptions { env?: NodeJS.ProcessEnv; projectPath?: string; run?: SigningCommand }
+export interface ResolveOptions { env?: NodeJS.ProcessEnv; projectPath?: string; run?: SigningCommand; daemons?: DaemonRestartOptions }
 
 /** The signing team for the runner, or an error that says how to name one. */
 export async function resolveIosTeamId(options: ResolveOptions = {}): Promise<string> {
@@ -134,11 +136,78 @@ export async function ensureIosSigning(options: ResolveOptions = {}): Promise<st
   const signing = iosSigningEnv(teamId, user);
   Object.assign(process.env, signing);
   exportedBundleId = user ? undefined : signing.AGENT_DEVICE_IOS_BUNDLE_ID;
+  // Once per signing: a daemon that predates it would keep building the runner without a team.
+  const signature = JSON.stringify(signing);
+  if (checkedSigning !== signature) { checkedSigning = signature; await restartStaleDaemons(signing, options.daemons).catch(() => []); }
   return teamId;
 }
 
+export interface DaemonRestartOptions {
+  /** State directories whose daemon may be stopped; by default only Mobile Dev's pinned one. */
+  stateDirs?: string[];
+  readFile?: (path: string) => Promise<string>;
+  /** `ps eww -p <pid>` output: the command line and environment of the process. */
+  processEnvironment?: (pid: number) => Promise<string>;
+  kill?: (pid: number) => void;
+}
+
+const defaultProcessEnvironment = async (pid: number): Promise<string> =>
+  (await execute("/bin/ps", ["eww", "-o", "command=", "-p", String(pid)], { encoding: "utf8", timeout: 5_000 })).stdout;
+
+/**
+ * Stops an agent-device daemon that was started without this signing.
+ *
+ * A daemon reads `AGENT_DEVICE_IOS_TEAM_ID` once, from the environment it was started in, and every
+ * later client reuses it. One started from a terminal, or before the team was chosen, keeps failing
+ * `build-for-testing` with a provisioning error however the next run is configured. The next client
+ * starts a fresh daemon from this process's environment, so the stale one is simply asked to stop.
+ * Only a process that is an agent-device daemon and does not carry this team and bundle id is touched.
+ * Returns the pids stopped.
+ */
+export async function restartStaleDaemons(signing: Record<string, string>, options: DaemonRestartOptions = {}): Promise<number[]> {
+  const read = options.readFile ?? ((path: string) => readFile(path, "utf8"));
+  const environmentOf = options.processEnvironment ?? defaultProcessEnvironment;
+  const kill = options.kill ?? ((pid: number) => process.kill(pid, "SIGTERM"));
+  // Only Mobile Dev's own daemons: one under `~/.agent-device`, or a state dir the user set, may be
+  // serving their own agent-device work and is not ours to stop.
+  const dirs = options.stateDirs ?? await mobileDevStateDirs();
+  const stopped: number[] = [];
+  for (const dir of dirs) {
+    let pid = NaN;
+    try { pid = Number((JSON.parse(await read(join(dir, "daemon.json"))) as { pid?: unknown }).pid); } catch { continue; }
+    if (!Number.isInteger(pid) || pid <= 1 || stopped.includes(pid)) continue;
+    const environment = await environmentOf(pid).catch(() => "");
+    if (!/agent-device/.test(environment) || !/daemon/.test(environment)) continue;
+    const carries = Object.entries(signing).every(([key, value]) => environment.includes(`${key}=${value}`));
+    if (carries) continue;
+    try { kill(pid); stopped.push(pid); } catch { /* already gone */ }
+  }
+  return stopped;
+}
+
+let checkedSigning: string | undefined;
+
+/**
+ * Where a project-mode run on iOS hardware keeps its agent-device state: one folder per project, under
+ * the app's directory. Such a run cannot share the app's folder (the project's agent-device is another
+ * build, and a daemon refuses a client of a different version), and the terminal's `~/.agent-device`
+ * may hold a daemon started without the signing team, which is the user's and not ours to stop. A
+ * folder of our own gets a daemon started from this process's signed environment, and a stale one
+ * left there by an earlier process is restarted like the app's own.
+ */
+export const PROJECT_STATE_ROOT = join(APP_FLOW_DIRECTORY, "agent-device-projects");
+
+export function projectStateDir(projectPath: string): string {
+  return join(PROJECT_STATE_ROOT, createHash("sha256").update(projectPath).digest("hex").slice(0, 16));
+}
+
+async function mobileDevStateDirs(): Promise<string[]> {
+  const projects = await readdir(PROJECT_STATE_ROOT, { withFileTypes: true }).catch(() => []);
+  return [join(APP_FLOW_DIRECTORY, "agent-device"), ...projects.filter(entry => entry.isDirectory()).map(entry => join(PROJECT_STATE_ROOT, entry.name))];
+}
+
 /** Forgets what was exported; tests only. */
-export function resetIosSigning(): void { exportedBundleId = undefined; }
+export function resetIosSigning(): void { exportedBundleId = undefined; checkedSigning = undefined; }
 
 /** Runner startup classes agent-device names in `details.reason` that the user fixes on their machine. */
 const USER_FIXABLE_REASONS = /^(?:signing_|bundle_identifier_already_registered|devtools_security_|developer_mode|device_locked|not_ready)/;

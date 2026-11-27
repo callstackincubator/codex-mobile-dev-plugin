@@ -302,7 +302,8 @@ export interface TestRunRequest {
    * A project-mode matrix lane: run the project's own config on one chosen device. See `runProjectLane`.
    * `target` is the config's target name (its engine must be a direct `mobile(...)` call).
    */
-  projectLane?: { target: string; device: string };
+  /** `stateDir` gives the lane's runner its own agent-device state; see `projectStateDir`. */
+  projectLane?: { target: string; device: string; stateDir?: string };
   /** Non-secret preference for a bundled test containing agent.* calls. */
   model?: { provider: BundledModelProvider; model: string; endpoint?: string };
 }
@@ -512,7 +513,7 @@ const POOL_DEVICE_ID = /^(?:[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9
 export function devicePinSource(device: string): string {
   if (POOL_DEVICE_ID.test(device)) return quoted(device);
   const id = quoted(device);
-  return `{ name: "mobile-dev-pinned-device", acquire: async () => ({ id: ${id}, deviceId: ${id} }), release: async () => {} }`;
+  return `{ name: "mobile-dev-pinned-device", acquire: async () => ({ id: ${id}, deviceId: ${id}, client: {} }), release: async () => {} }`;
 }
 
 /*
@@ -646,7 +647,7 @@ async function runProjectLane(request: TestRunRequest, deps: TestRunDeps): Promi
   if (!mirror) await sweepLaneFiles(configDir);
   const run = (config: string, onProgress?: TestRunDeps["onProgress"]) => spawnRun({
     command: bin, cwd: root, runPath: request.relativePath, configName: config, output,
-    target: lane.target, timeoutMs: request.timeoutMs, spawner: deps.spawner ?? spawn, onProgress, signal: deps.signal,
+    target: lane.target, ...(lane.stateDir ? { stateDir: lane.stateDir } : {}), timeoutMs: request.timeoutMs, spawner: deps.spawner ?? spawn, onProgress, signal: deps.signal,
   });
   try {
     if (mirror) {
