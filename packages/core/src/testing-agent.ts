@@ -390,8 +390,9 @@ export class TestingAgentRecordings {
     let device: { deviceId: string; platform: "ios" | "android"; name?: string } | undefined;
     if (reported?.deviceId) {
       if (reported.kind === "physical") {
-        if (reported.platform !== "ios" || !ops?.physicalIos) refused("Physical Android recording is not available yet.");
-        await ops.physicalIos.ready(reported.deviceId);
+        const physical = reported.platform === "ios" ? ops?.physicalIos : ops?.physicalAndroid;
+        if (!physical) refused("Physical device recording is unavailable on this server.");
+        await physical.ready(reported.deviceId);
       }
       device = { deviceId: reported.deviceId, platform: reported.platform };
     }
@@ -405,7 +406,7 @@ export class TestingAgentRecordings {
 
     let bundleId = "";
     if (device) {
-      const front = reported?.kind === "physical" ? null : ops?.foregroundApp ? await ops.foregroundApp(device.platform, device.deviceId).catch(() => null) : null;
+      const front = reported?.kind === "physical" && device.platform === "ios" ? null : ops?.foregroundApp ? await ops.foregroundApp(device.platform, device.deviceId).catch(() => null) : null;
       const foreground = front && !LAUNCHER_APP.test(front) ? front : "";
       if (bundled) {
         bundleId = foreground || reported?.bundleId || "";

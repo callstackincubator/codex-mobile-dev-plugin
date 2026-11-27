@@ -423,7 +423,8 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     _meta: appVisibility,
   }, safe(async ({ deviceId, platform, kind, projectPath: selected, bundleId }: { deviceId: string; platform: "ios" | "android"; kind?: "simulator" | "emulator" | "physical"; projectPath: string; bundleId: string }) => {
     assertKindMatchesPlatform({ kind, platform });
-    if (kind === "physical") { if (platform !== "ios") throw new ExpectedOperationError("unsupported_platform", "Physical Android recording is not available yet."); await connectedPhysicalIos(deviceId); await ensureIosSigning({ projectPath: selected }); }
+    // Android needs no preflight here: starting a recording already checked the phone, and a tree read is frequent.
+    if (kind === "physical" && platform === "ios") { await connectedPhysicalIos(deviceId); await ensureIosSigning({ projectPath: selected }); }
     const project = await inspectProject(selected, { platform, bundleId });
     // The refs go no further than the server: the panel records selectors and drives the mirror,
     // so an agent-device handle per element would be a few kilobytes a read that nothing reads.
@@ -598,7 +599,7 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
   registerAppTool(server, "mobile_testing_run_matrix", {
     title: "Run a recorded test on several devices",
     description:
-      "Run one saved test on several devices at once, one independent lane per device (iOS and Android can be mixed), and return a matrixId immediately; read progress with mobile_testing_run_progress. At most `limit` lanes run at once (default 3, max 8); the rest are queued. Simulators and emulators that are off are booted; a missing app may be copied from another booted virtual device. For a connected, paired iPhone or iPad pass kind physical and its hardware UDID from mobile_list_ios_devices; the app must already be installed for physical hardware. `apps` defaults to the apps the test is pinned to. In project mode each lane runs the config's target for its platform, whose engine must be a direct mobile(...) call. A failure on one device does not stop the others. projectPath defaults to the Testing Studio tab's project.",
+      "Run one saved test on several devices at once, one independent lane per device (iOS and Android can be mixed), and return a matrixId immediately; read progress with mobile_testing_run_progress. At most `limit` lanes run at once (default 3, max 8); the rest are queued. Simulators and emulators that are off are booted; a missing app may be copied from another booted virtual device. For a connected, paired iPhone or iPad pass kind physical and its hardware UDID from mobile_list_ios_devices; the app must already be installed for physical hardware. For an authorized, unlocked Android phone pass platform android, kind physical and its adb serial; a missing app may be copied from another Android device if its ABIs match. `apps` defaults to the apps the test is pinned to. In project mode each lane runs the config's target for its platform, whose engine must be a direct mobile(...) call. A failure on one device does not stop the others. projectPath defaults to the Testing Studio tab's project.",
     inputSchema: {
       projectPath: projectPath.optional(),
       relativePath: z.string().min(1).max(512).describe("The test to run, relative to the project."),
@@ -634,12 +635,13 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
       if (device.kind === "physical" && busy.has(device.deviceId))
         throw new ExpectedOperationError("device_unavailable", `${device.name ?? "This device"} is already running a test. Wait for it to finish or cancel it, then run again.`);
       if (device.kind === "physical") {
-        if (device.platform !== "ios") throw new ExpectedOperationError("unsupported_platform", "Physical Android test runs are not available yet.");
-        await connectedPhysicalIos(device.deviceId);
+        if (device.platform === "ios") await connectedPhysicalIos(device.deviceId);
+        else if (!matrix.ops.physicalAndroid) throw new ExpectedOperationError("unsupported_platform", "Physical Android test runs are unavailable on this server.");
+        else await matrix.ops.physicalAndroid.ready(device.deviceId);
       }
     }
     // The runner signs itself for hardware: resolve the team once, before any lane builds it.
-    if (input.devices.some(device => device.kind === "physical")) await ensureIosSigning({ projectPath: projectPathValue });
+    if (input.devices.some(device => device.kind === "physical" && device.platform === "ios")) await ensureIosSigning({ projectPath: projectPathValue });
     const first = input.devices[0]!;
     const { request, project } = await prepareRequest({ ...input, platform: first.platform, ...(input.apps[first.platform] ? { bundleId: input.apps[first.platform]! } : {}) });
     if (project.runtimeMode === "project") {
@@ -666,7 +668,7 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
         const result = await runTest(
           { ...request, bundledTarget: { platform: lane.platform, bundleId: input.apps[lane.platform]!, device: deviceId } },
           { release: () => devices.releaseOn([lane.deviceId, deviceId]), onProgress, signal });
-        await attachFailure(lane, result, request.untilSource ?? "", { deviceId, platform: lane.platform, projectPath: input.projectPath, runtimeRoot: project.runtime.root, bundleId: input.apps[lane.platform]!, physical: lane.kind === "physical" });
+        await attachFailure(lane, result, request.untilSource ?? "", { deviceId, platform: lane.platform, projectPath: input.projectPath, runtimeRoot: project.runtime.root, bundleId: input.apps[lane.platform]!, physical: lane.kind === "physical" && lane.platform === "ios" });
         return result;
       },
     });

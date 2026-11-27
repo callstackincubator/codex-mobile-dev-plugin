@@ -5,7 +5,7 @@ description: Record, edit, and run deterministic e2e tests from an iOS simulator
 
 Open **Testing Studio** to turn interactions with a running app into an editable e2e test. The mirror, generated TypeScript, and ordered step list share one workspace, so you can drive the app and review the test at the same time.
 
-Testing Studio supports iOS simulators, connected and paired iPhones and iPads, and Android emulators. Physical Android devices and Maestro output are not supported.
+Testing Studio supports iOS simulators, connected and paired iPhones and iPads, and Android emulators. Android phones over USB or wireless adb work too; Maestro output is not supported.
 
 ## No project, or your own project
 
@@ -113,3 +113,11 @@ Recording and replay on hardware run an XCTest runner on the device, which has t
 - The runner is built as `com.mobiledev.agentdevice.<team id>` so it is unique to your team. Set `AGENT_DEVICE_IOS_BUNDLE_ID` to use your own, and `AGENT_DEVICE_IOS_PROVISIONING_PROFILE` when Xcode cannot pick a profile.
 - A failure carries the fix agent-device reports, such as the signing or Developer Mode hint, without local paths.
 - One runner per phone: a device that is already running a test is refused until it finishes.
+
+## Physical Android setup
+
+- Turn on **USB debugging** (Developer options), connect the phone and accept the "Allow USB debugging" prompt for this Mac. An unauthorized or offline phone can't be selected.
+- Keep the screen awake and unlocked (Developer options → Stay awake). Testing Studio refuses a sleeping or locked phone.
+- Some vendors block installs over USB, which also blocks the helper apps the runner installs: turn on **Install via USB** (Xiaomi) or turn off **Auto Blocker** (Samsung), or accept the prompt on the phone.
+- **Install the app first.** If it is missing, Testing Studio copies it from another connected Android device when its CPU ABIs include the phone's, preferring a phone. Otherwise build it for the phone (for an Expo app, `npx expo run:android --device`).
+- A wireless phone gets a new address when it reconnects; if a run says the device is no longer connected, refresh Devices and pick it again.

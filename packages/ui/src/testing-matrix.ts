@@ -106,11 +106,17 @@ export function parseMatrixDevices(platform: MatrixPlatform, value: unknown): Ma
   const devices = record(value)?.devices;
   if (!Array.isArray(devices)) return [];
   return devices.map(record).filter((device): device is Record<string, unknown> => device !== null && Boolean(str(device.udid)))
-    .filter(device => str(device.kind) !== "physical")
-    .map(device => ({
-      deviceId: str(device.udid), name: str(device.name) || str(device.udid), platform, kind: platform === "ios" ? "simulator" : "emulator", runtime: str(device.runtime),
-      booted: str(device.state) === "Booted" || str(device.state) === "connected" || str(device.state) === "device",
-    }));
+    // Physical iOS comes from its own listing; an Android phone is listed with the emulators.
+    .filter(device => str(device.kind) !== "physical" || platform === "android")
+    .map(device => {
+      const physical = str(device.kind) === "physical";
+      return {
+        deviceId: str(device.udid), name: str(device.name) || str(device.udid), platform, kind: physical ? "physical" as const : platform === "ios" ? "simulator" as const : "emulator" as const, runtime: str(device.runtime),
+        booted: str(device.state) === "Booted" || str(device.state) === "connected" || str(device.state) === "device",
+        // An unauthorized or offline phone can be listed but not run on.
+        ...(physical && str(device.state) !== "Booted" ? { connectionState: str(device.state) === "unauthorized" ? "Authorize USB debugging" : "Offline" } : {}),
+      };
+    });
 }
 
 export function parsePhysicalIosMatrixDevices(value: unknown): MatrixDeviceOption[] {

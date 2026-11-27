@@ -19,7 +19,17 @@ export const LAUNCHER_APP = /^com\.apple\.springboard$|^com\.android\.systemui$|
 export interface MatrixAppIds { ios?: string; android?: string }
 
 /** What preparing a device needs from the machine; faked in tests. */
+export interface PhysicalDeviceOps {
+    /** Connected and usable (for Android: adb-authorized, awake, unlocked); throws what to fix. */
+    ready(deviceId: string, options?: { projectPath?: string }): Promise<void>;
+    hasApp(deviceId: string, appId: string): Promise<boolean>;
+    launch(deviceId: string, appId: string): Promise<void>;
+    /** Android only: installs the app from the first of `sources` (other devices) that has a compatible build. */
+    installFrom?(deviceId: string, appId: string, sources: string[]): Promise<"installed" | "no_source">;
+}
+
 export interface DeviceOps {
+  physicalAndroid?: PhysicalDeviceOps;
   physicalIos?: {
     /** Paired, connected, Developer Mode on, and a signing team for the runner; throws what to fix. */
     ready(deviceId: string, options?: { projectPath?: string }): Promise<void>;
@@ -70,8 +80,25 @@ export function createLaneExecutor(deps: LaneExecutorDeps): LaneExecutor {
       const appId = deps.apps[lane.platform];
       if (!appId) throw new ExpectedOperationError("invalid_input", `No ${lane.platform === "ios" ? "iOS bundle id" : "Android package"} was given for this run, so ${lane.deviceName} cannot run it.`);
       let deviceId = lane.deviceId;
+      if (lane.kind === "physical" && lane.platform === "android") {
+        const physical = deps.ops.physicalAndroid;
+        if (!physical?.installFrom) throw new ExpectedOperationError("unsupported_platform", "Physical Android runs are unavailable on this server.");
+        await physical.ready(deviceId, { projectPath: deps.projectPath });
+        signal.throwIfAborted();
+        if (!await physical.hasApp(deviceId, appId)) {
+          setState("installing");
+          // An APK can be copied between devices, unlike an iOS build. A phone is preferred as the source
+          // because its ABIs match; the install is checked against this phone's ABIs.
+          const sources = await androidSources(deps.ops, lane, lanes, deviceId, appId);
+          const result = await physical.installFrom(deviceId, appId, sources);
+          if (result === "no_source") throw new ExpectedOperationError("app_unavailable", `App not installed: ${appId} is not on ${lane.deviceName}, and no other connected device has it to copy. Build and install it on this phone (for an Expo app, \`npx expo run:android --device\`), then run again.`);
+        }
+        signal.throwIfAborted();
+        if (!deps.projectMode) await physical.launch(deviceId, appId);
+        return deviceId;
+      }
       if (lane.kind === "physical") {
-        if (lane.platform !== "ios" || !deps.ops.physicalIos) throw new ExpectedOperationError("unsupported_platform", "Physical device runs currently support connected iOS devices only.");
+        if (!deps.ops.physicalIos) throw new ExpectedOperationError("unsupported_platform", "Physical iOS runs are unavailable on this server.");
         const physical = deps.ops.physicalIos;
         await physical.ready(deviceId, { projectPath: deps.projectPath });
         signal.throwIfAborted();
@@ -131,6 +158,23 @@ async function findSource(ops: DeviceOps, lane: Lane, lanes: readonly Lane[], ow
   return undefined;
 }
 
+/** Devices an Android phone may take the app from: phones of this run, other devices of it, then any booted emulator. */
+async function androidSources(ops: DeviceOps, lane: Lane, lanes: readonly Lane[], own: string, appId: string): Promise<string[]> {
+  const found: string[] = [];
+  const usable = async (candidate: string, physical: boolean) => {
+    if (candidate === own || found.includes(candidate)) return;
+    try {
+      const has = physical ? ops.physicalAndroid && await ops.physicalAndroid.hasApp(candidate, appId) : await ops.isBooted("android", candidate) && await ops.hasApp("android", candidate, appId);
+      if (has) found.push(candidate);
+    } catch { /* offline or going away: not a source */ }
+  };
+  const others = lanes.filter(other => other.runId !== lane.runId && other.platform === "android");
+  for (const other of others.filter(entry => entry.kind === "physical")) await usable(other.resolvedDeviceId ?? other.deviceId, true);
+  for (const other of others.filter(entry => entry.kind !== "physical")) await usable(other.resolvedDeviceId ?? other.deviceId, false);
+  for (const device of await ops.bootedDevices?.("android").catch(() => []) ?? []) await usable(device.deviceId, false);
+  return found;
+}
+
 /** Whether devicectl reports Developer Mode off. An unreadable answer is not a refusal: the runner says so itself. */
 async function developerModeDisabledWith(run: Commands["run"], deviceId: string): Promise<boolean> {
   try {
@@ -169,6 +213,61 @@ export function parsePmPaths(output: string): string[] {
   return output.split(/\r?\n/).map(line => line.trim()).filter(line => line.startsWith("package:")).map(line => line.slice("package:".length)).filter(path => APK_PATH.test(path));
 }
 
+/** The CPU ABIs a set of APK entries ships native code for; empty when the APK is pure Java. */
+export function apkAbis(entries: string[]): string[] {
+  const abis = new Set<string>();
+  for (const entry of entries) {
+    const lib = /^lib\/([^/]+)\//.exec(entry);
+    if (lib) abis.add(lib[1]!);
+  }
+  return [...abis];
+}
+
+/** ABIs named by split APK file names such as `split_config.arm64_v8a.apk`. */
+export function splitNameAbis(fileNames: string[]): string[] {
+  const names = ["arm64_v8a", "armeabi_v7a", "x86_64", "x86", "armeabi", "mips64", "mips"];
+  const abis = new Set<string>();
+  for (const file of fileNames) {
+    const match = /config\.([a-z0-9_]+)\.apk$/i.exec(file);
+    if (match && names.includes(match[1]!)) abis.add(match[1]!.replace(/_/g, "-"));
+  }
+  return [...abis];
+}
+
+/** Whether the device can run an APK that ships `apk` ABIs. An APK with no native code runs anywhere. */
+export function abiCompatible(device: string[], apk: string[]): boolean {
+  return apk.length === 0 || apk.some(abi => device.includes(abi));
+}
+
+/** Parses `dumpsys window`/`power` into why the screen is not usable, or null when it is awake and unlocked. */
+export function androidScreenBlock(power: string, window: string): "asleep" | "locked" | null {
+  if (/mWakefulness=(Asleep|Dozing)/.test(power)) return "asleep";
+  if (/(?:mShowingLockscreen|isStatusBarKeyguard|mKeyguardShowing|showingLockscreen)=true|mDreamingLockscreen=true/.test(window)) return "locked";
+  return null;
+}
+
+/**
+ * `adb install` and agent-device helper-APK failures as something to act on. Vendor settings
+ * (Xiaomi "Install via USB", Samsung Auto Blocker) refuse USB installs with generic codes.
+ */
+export function androidInstallError(error: unknown, action: string, appId?: string): Error {
+  if (error instanceof ExpectedOperationError) return error;
+  const output = commandOutput(error);
+  if (/INSTALL_FAILED_NO_MATCHING_ABIS/.test(output))
+    return new ExpectedOperationError("app_unavailable", `${action} failed: this build has no native code for the phone's CPU. Build and install it on this phone (for an Expo app, \`npx expo run:android --device\`).`);
+  if (/UPDATE_INCOMPATIBLE|INSTALL_FAILED_VERSION_DOWNGRADE|signatures do not match/i.test(output))
+    return new ExpectedOperationError("app_unavailable", `${action} failed: a different build of ${appId ?? "the app"} is already on the phone. Uninstall it, or build and install it on this phone (for an Expo app, \`npx expo run:android --device\`).`);
+  if (/INSTALL_FAILED_USER_RESTRICTED|INSTALL_FAILED_ABORTED|Install canceled|Auto Blocker|Install via USB|USER_RESTRICTED/i.test(output))
+    return new ExpectedOperationError("device_unavailable", `${action} failed: the phone blocks installs over USB. Turn on "Install via USB" (Xiaomi, in Developer options), turn off Auto Blocker (Samsung), or accept the prompt on the phone, then try again.`);
+  if (/INSUFFICIENT_STORAGE/.test(output))
+    return new ExpectedOperationError("device_unavailable", `${action} failed: the phone is out of storage.`);
+  if (/unauthorized/i.test(output))
+    return new ExpectedOperationError("device_unavailable", `${action} failed: the phone has not authorized this Mac. Unlock it and accept the USB debugging prompt.`);
+  if (/offline|device .* not found|no devices/i.test(output))
+    return new ExpectedOperationError("device_unavailable", `${action} failed: the phone is not reachable. Reconnect it, unlock it, and refresh Devices.`);
+  return commandError(error, action, "adb");
+}
+
 /** The real thing: `simctl` for iOS simulators, the emulator through `ServeEmu` and `adb` for Android. */
 export function systemDeviceOps(deps: { simulators: Simctl; android: ServeEmu; drivers: DriverFactory; commands?: Commands; foreground?: (platform: MatrixPlatform, deviceId: string) => Promise<string | null> }): DeviceOps {
   const commands = deps.commands ?? systemCommands;
@@ -178,7 +277,60 @@ export function systemDeviceOps(deps: { simulators: Simctl; android: ServeEmu; d
     if (!udidSchema.safeParse(id).success) throw new ExpectedOperationError("invalid_input", "Use an iOS simulator UDID here. For a connected iPhone or iPad, select kind physical from device discovery.");
     return id;
   };
+  const wireless = (serial: string) => /:\d+$|\._adb(?:-tls-connect)?\._tcp\.?$/.test(serial);
+  const adbShell = async (serial: string, args: string[], timeout = 10_000) => adb(serial, ["shell", ...args], timeout);
   return {
+    physicalAndroid: {
+      async ready(deviceId) {
+        const listing = await commands.run(await commands.adb(), ["devices"], { timeout: 10_000 }).catch(error => { throw androidInstallError(error, "Reading the connected Android devices"); });
+        const state = listing.split(/\r?\n/).map(line => line.trim().split(/\s+/)).find(parts => parts[0] === deviceId)?.[1];
+        if (!state) throw new ExpectedOperationError("device_unavailable", wireless(deviceId)
+          ? "This wireless Android device is no longer connected; its address changes when it reconnects. Reconnect it and refresh Devices to pick it again."
+          : "The Android phone is no longer connected. Reconnect it with USB debugging on and refresh Devices.");
+        if (state === "unauthorized") throw new ExpectedOperationError("device_unavailable", "The Android phone has not authorized this Mac. Unlock it and accept the USB debugging prompt, then try again.");
+        if (state === "offline") throw new ExpectedOperationError("device_unavailable", "The Android phone is offline. Reconnect the cable, or toggle USB debugging, then refresh Devices.");
+        if (state !== "device") throw new ExpectedOperationError("device_unavailable", `The Android phone is ${state}. Reconnect it and refresh Devices.`);
+        const [power, window] = await Promise.all([adbShell(deviceId, ["dumpsys", "power"]), adbShell(deviceId, ["dumpsys", "window"], 15_000)].map(read => read.catch(() => "")));
+        const block = androidScreenBlock(power!, window!);
+        if (block) throw new ExpectedOperationError("device_unavailable", `The Android phone is ${block === "asleep" ? "asleep" : "locked"}. Unlock it and keep the screen on (Developer options → Stay awake), then try again.`);
+      },
+      async hasApp(deviceId, appId) {
+        const user = (await adbShell(deviceId, ["am", "get-current-user"]).catch(() => "0")).trim();
+        const args = /^\d+$/.test(user) ? ["--user", user] : [];
+        try { return parsePmPaths(await adbShell(deviceId, ["pm", "path", ...args, appId])).length > 0; } catch { return false; }
+      },
+      async launch(deviceId, appId) {
+        try { await adbShell(deviceId, ["monkey", "-p", appId, "-c", "android.intent.category.LAUNCHER", "1"], 30_000); }
+        catch (error) { throw androidInstallError(error, "Opening the app", appId); }
+      },
+      async installFrom(deviceId, appId, sources) {
+        const abis = (await adbShell(deviceId, ["getprop", "ro.product.cpu.abilist"]).catch(() => "")).trim().split(",").filter(Boolean);
+        let mismatch = false;
+        for (const source of sources) {
+          const remotes = parsePmPaths(await adbShell(source, ["pm", "path", appId]).catch(() => ""));
+          if (remotes.length === 0) continue;
+          let installed = false;
+          await withTemporaryDirectory(async directory => {
+            const files: string[] = [];
+            for (const [index, remote] of remotes.entries()) {
+              const local = join(directory, `${index}-${remote.split("/").at(-1)}`);
+              await adb(source, ["pull", remote, local], 120_000);
+              files.push(local);
+            }
+            const entries: string[] = [];
+            for (const file of files) entries.push(...(await commands.run("unzip", ["-Z1", file], { timeout: 30_000 }).catch(() => "")).split(/\r?\n/));
+            const shipped = [...apkAbis(entries), ...splitNameAbis(files)];
+            if (abis.length > 0 && !abiCompatible(abis, shipped)) { mismatch = true; return; }
+            try { await adb(deviceId, files.length === 1 ? ["install", "-r", files[0]!] : ["install-multiple", "-r", ...files], 300_000); }
+            catch (error) { throw androidInstallError(error, "Installing the app", appId); }
+            installed = true;
+          });
+          if (installed) return "installed";
+        }
+        if (mismatch) throw new ExpectedOperationError("app_unavailable", `${appId} on the other devices has no native code for this phone's CPU (${abis.join(", ")}). Build and install it on this phone (for an Expo app, \`npx expo run:android --device\`).`);
+        return "no_source";
+      },
+    },
     physicalIos: {
       async ready(deviceId, options) {
         const device = (await listIosDevices()).find(entry => entry.udid === deviceId);

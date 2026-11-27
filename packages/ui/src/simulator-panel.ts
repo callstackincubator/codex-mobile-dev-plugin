@@ -309,7 +309,7 @@ export function createSimulatorPanel(
       // there is no input message that clears a field. So a `fill` recorded into a field that
       // already has text leaves the app showing something the test will not produce — the step is
       // still right, the screen behind it is not. Non-ASCII is refused by the input schema.
-      else if (selected?.kind === "physical") {
+      else if (selected?.kind === "physical" && selected.platform === "ios") {
         if (!action.nodeId) notice("The text field could not be identified. Read the screen and record the step again.");
         else void testRecorder.fillTree(selected.udid, action.nodeId, action.text).catch(error => notice(error instanceof Error ? error.message : String(error)));
       }
