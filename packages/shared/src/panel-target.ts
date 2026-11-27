@@ -22,7 +22,11 @@ export function recordablePlatform(device: SimulatorDevice): "ios" | "android" {
 
 export function isRecordableDevice(device?: SimulatorDevice): boolean {
   if (!device) return false;
-  if (device.kind === "physical") return device.platform === "ios" && device.state === "connected" && device.pairingState === "paired";
+  if (device.kind === "physical") {
+    // Android phones are listed like emulators: Booted once adb has authorized them.
+    if (device.platform === "android") return device.state === "Booted";
+    return device.platform === "ios" && device.state === "connected" && device.pairingState === "paired";
+  }
   if (device.state !== "Booted") return false;
   return device.platform === "android" ? device.kind === "emulator" : device.platform === "ios" || device.platform === undefined;
 }

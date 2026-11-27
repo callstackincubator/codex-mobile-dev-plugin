@@ -51,6 +51,16 @@ test("the checklist reads simulators and emulators and skips physical iPhones", 
   assert.deepEqual(android.map(device => [device.deviceId, device.booted]), [["emulator-5554", true], ["avd:Old", false]]);
 });
 
+test("the Android checklist keeps authorized phones as physical rows and marks unauthorized ones unavailable", () => {
+  const android = parseMatrixDevices("android", { devices: [
+    { udid: "emulator-5554", name: "Pixel", state: "Booted", kind: "emulator" },
+    { udid: "R5CT1", name: "Galaxy", state: "Booted", kind: "physical" },
+    { udid: "R5CT2", name: "Other", state: "unauthorized", kind: "physical" },
+  ] });
+  assert.deepEqual(android.map(device => [device.deviceId, device.kind, device.booted, device.connectionState]), [
+    ["emulator-5554", "emulator", true, undefined], ["R5CT1", "physical", true, undefined], ["R5CT2", "physical", false, "Authorize USB debugging"]]);
+});
+
 test("physical iOS checklist distinguishes connected, unpaired and disconnected devices", () => {
   const devices = parsePhysicalIosMatrixDevices({ physicalDevices: [
     { udid: "P", name: "Phone", state: "connected", pairingState: "paired", runtime: "iOS 27" },

@@ -341,3 +341,24 @@ test("releaseOn waits for an in-flight physical screen read before handing the d
   await Promise.all([read, released]);
   assert.equal(calls.filter(entry => entry.call === "close").length, 1);
 });
+
+test("a fill lands on the field it named even after the screen was re-read and renumbered", async () => {
+  const calls: Record<string, unknown>[] = [];
+  let reads = 0;
+  const field = (ref: string, name: string, y: number) => ({ kind: "text-field", ref, node: { role: "textbox", name, rect: { x: 0, y, width: 100, height: 20 } } });
+  const devices = new TestingDevices(fakeAgentDevice(calls, () => {
+    reads += 1;
+    // After the first read a new field appears above and the refs are renumbered.
+    return { nodes: reads === 1 ? [field("e1", "City", 10), field("e2", "Zip", 40)] : [field("e7", "Banner", 0), field("e8", "City", 10), field("e9", "Zip", 40)] };
+  }) as never);
+  (devices as unknown as { projections: Map<string, unknown> }).projections.set("/project", Promise.resolve(projection));
+  const phone = { ...target, deviceId: "00008150-0000111122223333" };
+  const first = await devices.read(phone);
+  const zip = first.tree.find(component => component.label === "Zip")!.nodeId!;
+  await devices.read(phone); // a refresh the panel queued ahead of its fill
+  await devices.fillNode(phone, zip, "10115");
+  assert.equal(calls.find(entry => entry.call === "fill")?.ref, "@e9", "the same field, by its new ref");
+  assert.ok(reads >= 3, "the fill took a fresh snapshot");
+  await assert.rejects(devices.fillNode(phone, "s-gone", "x"), /no longer on the current screen/);
+  await devices.release();
+});

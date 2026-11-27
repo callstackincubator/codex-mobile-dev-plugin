@@ -486,14 +486,16 @@ export class TestRecorder {
    * Measured as its own timing: how long Record is unusable for is a number the panel is judged on,
    * and it is not the same as `ui.testing.tree_read`, which also covers the warm reads during a
    * recording. A read that fails leaves `preparing` false — the overlay must never outlive the
-   * thing it is explaining — and the next hover retries as it always did.
+   * thing it is explaining — and reports why in the recorder's alert; the next hover retries.
    */
   private async prepare(deviceId: string, platform: DevicePlatform): Promise<void> {
     const startedAt = performance.now();
     try {
       await this.currentComponents();
-    } catch {
-      // Silent: a failed warm read is not an error the user asked for. The first hover says so.
+    } catch (error) {
+      // Shown, not swallowed: a recording that cannot read the device (a missing signing team, a
+      // locked phone) would otherwise just lose its overlay and look like Record did nothing.
+      if (this.isRecordingDevice(deviceId, platform)) this.update({ error: error instanceof Error ? error.message : String(error) });
     } finally {
       recordUiTiming("ui.testing.record_prepare", performance.now() - startedAt, platform);
       // Only the recording this prepared for: Stop, or a second Record, owns the flag after that.

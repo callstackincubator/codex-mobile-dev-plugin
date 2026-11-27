@@ -29,6 +29,18 @@ export class StreamInput {
     void this.flush();
   }
 
+  /** Queues a gesture's samples as they are: a swipe's moves are the path, so they are not coalesced. */
+  sendAll(messages: StreamMessage[]) {
+    if (this.accepting === false) return;
+    this.queued.push(...messages);
+    if (this.queued.length > 64) {
+      this.close();
+      this.failed(new Error("Simulator input cannot keep up. Reconnect before continuing."));
+      return;
+    }
+    void this.flush();
+  }
+
   flush(): Promise<void> {
     if (this.sending) return this.sending;
     this.sending = this.drain().catch(error => {

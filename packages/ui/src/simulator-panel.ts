@@ -26,6 +26,7 @@ import { FrameStream } from "./frame-stream.ts";
 import { frameArrivals, observeFrameArrivals } from "./frame-arrivals.ts";
 import { readFrame } from "./read-frame.ts";
 import { BrowserProfile } from "./browser-profile.ts";
+import { toPhysicalTouches } from "./physical-touch.ts";
 import { StreamInput } from "./stream-input.ts";
 import type { StreamMessage } from "./stream-input.ts";
 import { IosVideo } from "./ios-video.ts";
@@ -133,6 +134,12 @@ export function createSimulatorPanel(
     // Every input can change the screen, so a tree read before it no longer describes what the
     // next tap lands on. Typing and the hardware buttons go through here too, not just touches.
     if (isRecordingSelected()) testRecorder.invalidate();
+    // A physical iPhone's input tool takes only touch samples, so a recorded tap or swipe becomes touches.
+    if (stream.physicalIos) {
+      const touches = toPhysicalTouches(message);
+      if (touches.length === 1) stream.input?.send(touches[0]!); else stream.input?.sendAll(touches);
+      return;
+    }
     stream.input?.send(message);
   }
 
@@ -309,7 +316,7 @@ export function createSimulatorPanel(
       // there is no input message that clears a field. So a `fill` recorded into a field that
       // already has text leaves the app showing something the test will not produce — the step is
       // still right, the screen behind it is not. Non-ASCII is refused by the input schema.
-      else if (selected?.kind === "physical") {
+      else if (selected?.kind === "physical" && selected.platform === "ios") {
         if (!action.nodeId) notice("The text field could not be identified. Read the screen and record the step again.");
         else void testRecorder.fillTree(selected.udid, action.nodeId, action.text).catch(error => notice(error instanceof Error ? error.message : String(error)));
       }

@@ -5,7 +5,7 @@ description: Record, edit, and run deterministic e2e tests from an iOS simulator
 
 Open **Testing Studio** to turn interactions with a running app into an editable e2e test. The mirror, generated TypeScript, and ordered step list share one workspace, so you can drive the app and review the test at the same time.
 
-Testing Studio supports iOS simulators, connected and paired iPhones and iPads, and Android emulators. Physical Android devices and Maestro output are not supported.
+Testing Studio supports iOS simulators, connected and paired iPhones and iPads, and Android emulators. Android phones over USB or wireless adb work too; Maestro output is not supported.
 
 ## No project, or your own project
 
@@ -75,7 +75,7 @@ Open **E2E setup → Devices** to pick where a test runs. The list shows iOS sim
 - Tick one device that isn't the mirrored one and the test runs there (**Run on iPhone Air**).
 - **Run up to N at once** sets how many devices work at the same time, from 1 to 8. The rest wait in a queue.
 - A simulator or emulator that is off is booted first.
-- A simulator or emulator without the app gets it copied from another booted device of the same platform that has it, even one you didn't tick. Install the physical iOS build on a phone or tablet before running; Testing Studio does not copy simulator apps to it.
+- A simulator or emulator without the app gets it copied from another booted device of the same platform that has it, even one you didn't tick. On a phone or tablet, Testing Studio never copies a simulator app. If the app is missing it installs a matching `Debug-iphoneos` build it finds on this Mac (your project's `ios/build` or Xcode's DerivedData), and otherwise asks you to run `npx expo run:ios --device` first.
 - iOS and Android devices can run in the same batch. In a project, each device runs the config's target for its platform.
 
 Click a lane to see that device's steps on the preview. A failure on one device doesn't stop the others. Each `agent.*` step calls the model once per device.
@@ -103,3 +103,21 @@ In a project, the recording stays unsaved for you to review, adjust and save.
 ## Data and telemetry
 
 Test source, step contents, element names, labels, typed values, project paths, bundle IDs, and device identifiers are excluded from Mobile Dev telemetry. Aggregate timings and counts cover recorder preparation, element-tree reads, editing, runs, and agent-recording handoff. See [Privacy](/docs/privacy) for collection and opt-out details.
+
+## Physical iPhone and iPad setup
+
+Recording and replay on hardware run an XCTest runner on the device, which has to be code signed.
+
+- **Developer Mode** must be on (Settings → Privacy & Security → Developer Mode), and the phone unlocked and trusted. Testing Studio checks Developer Mode before a run and says what to turn on.
+- **Signing team.** Mobile Dev picks your Apple Developer Team ID in this order: `MOBILE_DEV_IOS_TEAM_ID` (or `AGENT_DEVICE_IOS_TEAM_ID`) in Mobile Dev's environment, then the project's `DEVELOPMENT_TEAM`, then the single team behind your Apple Development certificates. With none or several it stops and asks you to set `MOBILE_DEV_IOS_TEAM_ID`. Find the ID with `security find-identity -v -p codesigning`.
+- The runner is built as `com.mobiledev.agentdevice.<team id>` so it is unique to your team. Set `AGENT_DEVICE_IOS_BUNDLE_ID` to use your own, and `AGENT_DEVICE_IOS_PROVISIONING_PROFILE` when Xcode cannot pick a profile.
+- A failure carries the fix agent-device reports, such as the signing or Developer Mode hint, without local paths.
+- One runner per phone: a device that is already running a test is refused until it finishes.
+
+## Physical Android setup
+
+- Turn on **USB debugging** (Developer options), connect the phone and accept the "Allow USB debugging" prompt for this Mac. An unauthorized or offline phone can't be selected.
+- Keep the screen awake and unlocked (Developer options → Stay awake). Testing Studio refuses a sleeping or locked phone.
+- Some vendors block installs over USB, which also blocks the helper apps the runner installs: turn on **Install via USB** (Xiaomi) or turn off **Auto Blocker** (Samsung), or accept the prompt on the phone.
+- **Install the app first.** If it is missing, Testing Studio copies it from another connected Android device when its CPU ABIs include the phone's, preferring a phone. Otherwise build it for the phone (for an Expo app, `npx expo run:android --device`).
+- A wireless phone gets a new address when it reconnects; if a run says the device is no longer connected, refresh Devices and pick it again.

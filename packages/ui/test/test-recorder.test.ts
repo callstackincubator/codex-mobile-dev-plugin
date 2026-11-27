@@ -833,3 +833,12 @@ test("only the mirror of the platform being recorded or picked draws the recorde
   assert.equal(recorderShowsOn("ios", "android"), false);
   assert.equal(recorderShowsOn("", "ios"), true, "nothing recording: nothing to hide");
 });
+
+test("a failed first screen read after Record says why instead of silently dropping the overlay", async () => {
+  const recorder = new TestRecorder();
+  recorder.attach(UDID, "ios", { readComponents: async () => { throw new Error("Choose your signing team in E2E setup → Devices"); }, screen: () => SCREEN, release() {} });
+  recorder.start(UDID, "ios");
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(recorder.getSnapshot().preparing, false);
+  assert.match(recorder.getSnapshot().error, /signing team/);
+});

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createLaneExecutor, parsePmPaths, systemDeviceOps } from "../src/testing-prepare.ts";
+import { abiCompatible, androidInstallError, androidScreenBlock, apkAbis, createLaneExecutor, parsePmPaths, splitNameAbis, physicalIosError, systemDeviceOps } from "../src/testing-prepare.ts";
 import type { DeviceOps } from "../src/testing-prepare.ts";
 import { MatrixRegistry, startMatrix } from "../src/testing-matrix.ts";
 import type { LaneState, MatrixDevice } from "../src/testing-matrix.ts";
@@ -92,7 +92,7 @@ test("a physical iPhone without the app fails with hardware install guidance", a
   const { ops, log } = machine({ phone: { booted: false, apps: [] }, sim: { booted: true, apps: ["com.app"] } });
   ops.physicalIos = { ready: async () => undefined, hasApp: async () => false, launch: async () => undefined };
   const { matrix } = await run([{ deviceId: "phone", platform: "ios", kind: "physical" }, { deviceId: "sim", platform: "ios" }], ops);
-  assert.match(matrix.lanes[0]?.error ?? "", /Build for a physical iPhone/);
+  assert.match(matrix.lanes[0]?.error ?? "", /no device build of it was found.*expo run:ios --device/);
   assert.equal(log.some(entry => entry.includes("phone")), false, "simulator copy and boot commands never receive the phone UDID");
 });
 
@@ -159,6 +159,8 @@ test("physical app lookup and launch use devicectl, never simctl", async () => {
   assert.equal(await ops.physicalIos!.hasApp("phone", "com.app"), true);
   await ops.physicalIos!.launch("phone", "com.app");
   assert.equal(calls.length, 2);
+  // System and App Store apps are only listed with this flag, so without it Settings reads as not installed.
+  assert.ok(calls[0]!.includes("--include-all-apps"));
   assert.ok(calls.every(args => args[0] === "/usr/bin/xcrun" && args[1] === "devicectl" && args.includes("phone")));
 });
 
@@ -182,4 +184,127 @@ test("the system ops list only the booted devices of a platform and read the for
   assert.deepEqual(await ops.bootedDevices!("android"), [{ deviceId: "emulator-5554", name: "Pixel" }]);
   assert.equal(await ops.foregroundApp!("android", "emulator-5554"), "com.example");
   assert.deepEqual(asked, [["android", "emulator-5554"]]);
+});
+
+test("a physical iPhone without the app gets a device build installed, never a simulator copy", async () => {
+  const { ops, log } = machine({ phone: { booted: false, apps: [] }, sim: { booted: true, apps: ["com.app"] } });
+  const installs: string[] = [];
+  ops.physicalIos = { ready: async () => undefined, hasApp: async () => installs.length > 0, launch: async () => { log.push("launch phone"); }, install: async (id, app) => { installs.push(`${id} ${app}`); return "installed"; } };
+  const states: string[] = [];
+  const executor = createLaneExecutor({ ops, apps: { ios: "com.app" }, runTest: async () => ({ status: "passed", exitCode: 0, steps: [] }) });
+  const { run: matrix, done } = startMatrix(new MatrixRegistry(), { testPath: "t", devices: [{ deviceId: "phone", platform: "ios", kind: "physical" }, { deviceId: "sim", platform: "ios" }] }, {
+    ...executor, prepare: (lane, lanes, signal, setState) => executor.prepare(lane, lanes, signal, state => { states.push(`${lane.deviceId}:${state}`); setState(state); }),
+  });
+  await done;
+  assert.equal(matrix.lanes[0]!.state, "passed");
+  assert.deepEqual(installs, ["phone com.app"]);
+  assert.ok(states.includes("phone:installing"));
+  assert.equal(log.some(entry => entry.startsWith("copy")), false);
+});
+
+test("a simulator lane never takes a physical lane as the app source", async () => {
+  const { ops, log } = machine({ phone: { booted: true, apps: ["com.app"] }, sim: { booted: true, apps: [] } });
+  ops.physicalIos = { ready: async () => undefined, hasApp: async () => true, launch: async () => undefined };
+  const { matrix } = await run([{ deviceId: "phone", platform: "ios", kind: "physical" }, { deviceId: "sim", platform: "ios" }], ops);
+  assert.equal(matrix.lanes[1]!.state, "error");
+  assert.equal(log.some(entry => entry.startsWith("copy")), false);
+});
+
+test("devicectl failures become instructions", () => {
+  const failure = (stderr: string) => physicalIosError(Object.assign(new Error("Command failed"), { stderr }), "Installing the app", "com.app").message;
+  assert.match(failure("The device is locked."), /locked\. Unlock it/);
+  assert.match(failure("Developer Mode is disabled"), /Developer Mode is off/);
+  assert.match(failure("ApplicationVerificationFailed: its profile has not been explicitly trusted by the user"), /VPN & Device Management/);
+  assert.match(failure("error: no provisioning profile includes the device (0xe8008015)"), /not provisioned for the device.*expo run:ios --device/);
+  assert.match(failure("The app could not be found: not installed"), /com\.app is not installed/);
+  assert.doesNotMatch(failure("The device is unlocked and fine but something else broke"), /Unlock it/);
+});
+
+/** adb/unzip fake for a physical Android phone: `devices` lists it in `state`, other answers come from `answers`. */
+function phoneOps(state: string, answers: Record<string, string>, calls: string[][] = []) {
+  const commands = {
+    adb: async () => "adb", aapt2: async () => null, readBinary: async () => Buffer.alloc(0),
+    run: async (file: string, args: string[]) => {
+      calls.push([file, ...args]);
+      if (args[0] === "devices") return `List of devices attached\nR5CT1\t${state}\n`;
+      const key = args[0] === "-Z1" ? "-Z1" : args.slice(2).join(" ");
+      const hit = Object.entries(answers).find(([prefix]) => key.startsWith(prefix));
+      if (!hit) return "";
+      if (hit[1].startsWith("throw:")) throw Object.assign(new Error("failed"), { stderr: hit[1].slice(6) });
+      return hit[1];
+    },
+  };
+  return systemDeviceOps({ simulators: {} as never, android: {} as never, drivers: (() => ({})) as never, commands }).physicalAndroid!;
+}
+
+test("physical Android ready maps adb states to what to fix", async () => {
+  await assert.rejects(phoneOps("unauthorized", {}).ready("R5CT1"), /USB debugging prompt/);
+  await assert.rejects(phoneOps("offline", {}).ready("R5CT1"), /offline/);
+  await assert.rejects(phoneOps("device", {}).ready("OTHER"), /no longer connected/);
+  await assert.rejects(phoneOps("device", {}).ready("192.168.1.5:5555"), /address changes/);
+});
+
+test("physical Android ready refuses a sleeping or locked screen and accepts an unlocked one", async () => {
+  await assert.rejects(phoneOps("device", { "shell dumpsys power": "mWakefulness=Asleep" }).ready("R5CT1"), /asleep/);
+  await assert.rejects(phoneOps("device", { "shell dumpsys power": "mWakefulness=Awake", "shell dumpsys window": "mShowingLockscreen=true" }).ready("R5CT1"), /locked/);
+  await phoneOps("device", { "shell dumpsys power": "mWakefulness=Awake", "shell dumpsys window": "mShowingLockscreen=false" }).ready("R5CT1");
+  assert.equal(androidScreenBlock("mWakefulness=Awake", "isStatusBarKeyguard=false"), null);
+});
+
+test("physical Android hasApp asks for the current user and launch uses monkey", async () => {
+  const calls: string[][] = [];
+  const ops = phoneOps("device", { "shell am get-current-user": "10\n", "shell pm path": "package:/data/app/x/base.apk\n" }, calls);
+  assert.equal(await ops.hasApp("R5CT1", "com.app"), true);
+  assert.ok(calls.at(-1)!.join(" ").includes("pm path --user 10 com.app"));
+  await ops.launch("R5CT1", "com.app");
+  assert.ok(calls.at(-1)!.join(" ").includes("monkey -p com.app -c android.intent.category.LAUNCHER 1"));
+});
+
+test("ABI checks compare the phone's ABIs with the APK's native libraries", () => {
+  assert.deepEqual(apkAbis(["classes.dex", "lib/arm64-v8a/liba.so", "lib/x86_64/liba.so"]), ["arm64-v8a", "x86_64"]);
+  assert.deepEqual(splitNameAbis(["0-base.apk", "1-split_config.arm64_v8a.apk"]), ["arm64-v8a"]);
+  assert.equal(abiCompatible(["arm64-v8a", "armeabi-v7a"], ["x86_64"]), false);
+  assert.equal(abiCompatible(["arm64-v8a"], ["x86_64", "arm64-v8a"]), true);
+  assert.equal(abiCompatible(["arm64-v8a"], []), true, "pure Java runs anywhere");
+});
+
+test("physical Android install copies from a source only when the ABIs match", async () => {
+  const calls: string[][] = [];
+  const base = { "shell getprop ro.product.cpu.abilist": "arm64-v8a,armeabi-v7a", "shell pm path": "package:/data/app/x/base.apk\n" };
+  const ok = phoneOps("device", { ...base, "-Z1": "lib/arm64-v8a/a.so\nclasses.dex" }, calls);
+  assert.equal(await ok.installFrom!("R5CT1", "com.app", ["emulator-5554"]), "installed");
+  assert.ok(calls.some(call => call.includes("install") && call.includes("R5CT1")));
+  const mismatch = phoneOps("device", { ...base, "-Z1": "lib/x86_64/a.so" });
+  await assert.rejects(mismatch.installFrom!("R5CT1", "com.app", ["emulator-5554"]), /no native code for this phone/);
+  assert.equal(await phoneOps("device", base).installFrom!("R5CT1", "com.app", []), "no_source");
+});
+
+test("adb install failures say what to fix, including vendor USB-install blocks", () => {
+  const fail = (stderr: string) => androidInstallError(Object.assign(new Error("x"), { stderr }), "Installing the app", "com.app").message;
+  assert.match(fail("INSTALL_FAILED_NO_MATCHING_ABIS"), /expo run:android --device/);
+  assert.match(fail("INSTALL_FAILED_UPDATE_INCOMPATIBLE"), /Uninstall/);
+  assert.match(fail("INSTALL_FAILED_USER_RESTRICTED: Install canceled by user"), /Install via USB/);
+});
+
+test("a physical Android lane copies the app from a phone before an emulator and launches it", async () => {
+  const log: string[] = [];
+  const ops: DeviceOps = {
+    ...machine({ "emulator-5554": { booted: true, apps: ["com.app"] } }).ops,
+    physicalAndroid: {
+      ready: async id => { log.push(`ready ${id}`); },
+      hasApp: async id => id === "phoneB" || log.includes("installed"),
+      launch: async id => { log.push(`launch ${id}`); },
+      installFrom: async (id, _app, sources) => { log.push(`from ${sources.join(",")}`); log.push("installed"); return "installed"; },
+    },
+  };
+  const { matrix } = await run([{ deviceId: "phoneA", platform: "android", kind: "physical" }, { deviceId: "phoneB", platform: "android", kind: "physical" }, { deviceId: "emulator-5554", platform: "android" }], ops);
+  assert.equal(matrix.lanes[0]!.state, "passed");
+  assert.ok(log.includes("from phoneB,emulator-5554"));
+  assert.ok(log.indexOf("installed") < log.indexOf("launch phoneA"));
+});
+
+test("a physical Android lane with no source says to build for the phone", async () => {
+  const ops: DeviceOps = { ...machine({}).ops, physicalAndroid: { ready: async () => undefined, hasApp: async () => false, launch: async () => undefined, installFrom: async () => "no_source" } };
+  const { matrix } = await run([{ deviceId: "phone", platform: "android", kind: "physical" }], ops);
+  assert.match(matrix.lanes[0]!.error ?? "", /expo run:android --device/);
 });

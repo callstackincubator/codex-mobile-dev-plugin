@@ -290,8 +290,8 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
     : state.loadingProject ? ""
       : state.targets.length === 0 ? (panel.noProject ? "Open the app you want to record in the mirror. Testing Studio records against the app in the foreground." : "No mobile app identifier was found. Open the app in the mirror, or use E2E setup to enter one.")
         : !target?.bundleId ? `Target "${target?.name}" has no app identifier. Enter one in E2E setup.`
-          : !booted ? "Recording needs a booted simulator, emulator or connected iOS device in the mirror. If one is available, choose it from Add device."
-            : !isRecordableDevice(device) ? "Pair and trust this iOS device, or choose a simulator or emulator. Physical Android recording is not available yet."
+          : !booted ? "Recording needs a booted simulator, emulator or connected phone in the mirror. If one is available, choose it from Add device."
+            : !isRecordableDevice(device) ? "Pair and trust this iOS device, or authorize USB debugging on this Android phone, or choose a simulator or emulator."
               : mismatch;
   return <section className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4 [&_button:not(:disabled)]:cursor-pointer" aria-label="Testing Studio">
     <header className="flex flex-wrap items-center gap-2 border-b pb-3">
@@ -310,6 +310,7 @@ export function TestingView({ panel, deviceApps }: { panel: TestingPanel; device
       <TestingControls panel={panel} recordable={recordable} deviceId={deviceId} platform={platform} />
     </header>
 
+    <SigningPrompt panel={panel} />
     {state.error && <Alert variant="destructive">
       <AlertTitle>Testing Studio</AlertTitle>
       <AlertDescription>
@@ -460,9 +461,9 @@ function TestingControls({ panel, recordable, deviceId, platform }: { panel: Tes
       : recording
         ? <Button type="button" size="sm" variant="outline" data-testing-stop onClick={() => testRecorder.stop()}><SquareIcon />Stop</Button>
         : state.steps.length > 0
-          ? <RecordMenu deviceId={deviceId} platform={platform} recordable={recordable} steps={state.steps.length} />
+          ? <RecordMenu panel={panel} deviceId={deviceId} platform={platform} recordable={recordable} steps={state.steps.length} />
           : <Button type="button" size="sm" variant="outline" data-testing-record disabled={!recordable}
-            onClick={() => testRecorder.start(deviceId, platform)}><CircleIcon />Record</Button>}
+            onClick={() => void panel.startRecording(deviceId, platform)}><CircleIcon />Record</Button>}
     <Button type="button" size="sm" variant="outline" data-testing-run disabled={panelState.selectedTestPath ? !panel.canRunStored : !panel.canRun}
       title={panelState.selectedTestPath && panel.storedRunHint ? panel.storedRunHint : panel.runsOnMatrix ? `Run the current preview on ${panel.matrixRunCount === 1 ? panel.matrixSelection[0]!.name : `${panel.matrixRunCount} devices, up to ${panelState.matrixLimit} at once,`} without saving it.` : "Run the current preview without saving it. Recording stops because the runner needs the device to itself."}
       onClick={() => void (panelState.selectedTestPath ? panel.runStoredTest() : panel.runTest())}>
@@ -483,9 +484,9 @@ function TestingControls({ panel, recordable, deviceId, platform }: { panel: Tes
  * Escape dismisses it without recording: a popover that starts something on the way out is one
  * nobody can back out of.
  */
-function RecordMenu({ deviceId, platform, recordable, steps }: { deviceId: string; platform: DevicePlatform; recordable: boolean; steps: number }) {
+function RecordMenu({ panel, deviceId, platform, recordable, steps }: { panel: TestingPanel; deviceId: string; platform: DevicePlatform; recordable: boolean; steps: number }) {
   const [open, setOpen] = useState(false);
-  const choose = (keepSteps: boolean) => { setOpen(false); testRecorder.start(deviceId, platform, keepSteps); };
+  const choose = (keepSteps: boolean) => { setOpen(false); void panel.startRecording(deviceId, platform, keepSteps); };
   const count = `${steps} step${steps === 1 ? "" : "s"}`;
   return <Popover open={open} onOpenChange={setOpen}>
     <PopoverTrigger asChild>
@@ -1257,4 +1258,23 @@ function StepMenu({ step, index }: { step: RecordedStep; index: number }) {
       </Branch>}
     </PopoverContent>
   </Popover>;
+}
+
+/**
+ * Asks which team signs the test runner when Record or Run on a physical iPhone found none. Choosing
+ * saves the team and lets the waiting action continue; closing it cancels that action.
+ */
+function SigningPrompt({ panel }: { panel: TestingPanel }) {
+  const { signingPrompt } = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
+  if (!signingPrompt) return null;
+  return <Alert data-testing-signing-prompt role="alertdialog" aria-label="Choose a signing team">
+    <AlertTitle>Choose a signing team for your iPhone</AlertTitle>
+    <AlertDescription>
+      <span className="min-w-0">Mobile Dev signs its test runner with an Apple Developer team. Pick one to continue; you can change it later in E2E setup.</span>
+      {signingPrompt.teams.length > 0
+        ? <span className="flex flex-wrap gap-1.5">{signingPrompt.teams.map(team => <Button key={team.id} type="button" size="sm" variant="outline" data-signing-team={team.id} onClick={() => void panel.chooseIosTeam(team.id)}>{team.name ? `${team.name} (${team.id})` : team.id}</Button>)}</span>
+        : <span className="min-w-0">No Apple Development identity was found. Sign in to Xcode with your Apple ID, or set MOBILE_DEV_IOS_TEAM_ID.</span>}
+      <Button type="button" variant="ghost" size="sm" className="self-start" onClick={() => panel.dismissSigningPrompt()}>Cancel</Button>
+    </AlertDescription>
+  </Alert>;
 }

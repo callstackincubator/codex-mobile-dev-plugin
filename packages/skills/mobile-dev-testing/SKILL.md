@@ -171,7 +171,7 @@ user the path. Nothing in the test file names a platform until you branch a line
   at once; read `mobile_testing_run_progress({ matrixId })` until `running` is false. `apps`
   defaults to the apps the test is pinned to.
 - **Simulators and emulators that are off are booted by the matrix**, and a missing app is copied
-  from another booted simulator or emulator that has it. A physical iOS device must already be connected, paired, and have a build for hardware installed.
+  from another booted simulator or emulator that has it. A physical iOS device must be connected, paired, unlocked and have Developer Mode on. If the app is missing, a matching `Debug-iphoneos` build on this Mac is installed; otherwise ask the user to run `npx expo run:ios --device`. A simulator build is never copied to hardware. A physical Android phone needs USB debugging on and this Mac authorized, the screen awake and unlocked, and (Xiaomi/Samsung) "Install via USB" allowed or Auto Blocker off; pass `kind: "physical"` with its adb serial. A missing app is copied from another Android device only when its ABIs match the phone; otherwise ask the user to run `npx expo run:android --device`. The test runner needs a signing team: on a signing error set `MOBILE_DEV_IOS_TEAM_ID` (Apple Team ID, `security find-identity -v -p codesigning`) and run again; relay the hint the error carries.
 - The runs show in the Testing Studio tab as live lanes, and the tab is locked while they go.
 
 ### A platform has no app yet

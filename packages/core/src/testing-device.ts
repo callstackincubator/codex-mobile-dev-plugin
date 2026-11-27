@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -196,19 +197,46 @@ function depthOf(entry: ProjectedNode): number {
   return depth;
 }
 
+/**
+ * An id for a component that follows the element, not its position in one read.
+ *
+ * The projection mints `n1…nK` per read, so the same field has a different id after the screen
+ * re-reads, and a fill that arrives after a queued read would land on whichever element now holds
+ * that number. Derived from what identifies the element (role, names, box), the id is the same
+ * across reads while the element is, and simply absent when it is not. The typed `value` is left
+ * out so a field keeps its id while it is being filled. Identical siblings are told apart by order.
+ */
+function stableId(component: ScreenComponent, seen: Map<string, number>): string {
+  const { x, y, width, height } = component.bounds;
+  const key = [component.role, component.label, component.text, component.identifier, component.placeholder, Math.round(x), Math.round(y), Math.round(width), Math.round(height)].join("\u0000");
+  const occurrence = seen.get(key) ?? 0;
+  seen.set(key, occurrence + 1);
+  return `s${createHash("sha1").update(key).digest("hex").slice(0, 10)}${occurrence ? `-${occurrence}` : ""}`;
+}
+
 export function projectedComponents(projection: EngineProjection, nodes: readonly unknown[]): TestingDeviceTree {
   let minted = 0;
   const snapshot = projection.projectSnapshot(nodes, { mintId: () => `n${++minted}` });
   const tree: ScreenComponent[] = [];
   const refs: Record<string, string> = {};
+  const ids = new Map<string, string>();
+  const seen = new Map<string, number>();
   for (const entry of snapshot.index) {
     const component = toComponent(entry, depthOf(entry));
     if (!component) continue;
+    const id = stableId(component, seen);
+    ids.set(entry.id, id);
+    component.nodeId = id;
+    // A parent without a box is not in the tree; the child then has no parent link, as before.
+    if (component.parentId !== undefined) {
+      const parent = ids.get(component.parentId);
+      if (parent) component.parentId = parent; else delete component.parentId;
+    }
     tree.push(component);
     // agent-device's own refs are `@e20`; the projection strips the `@` for its own use, and
     // `interactions.click({ ref })` parses a bare `e20` as a selector and refuses it. So the
     // sigil is put back here, at the one boundary that hands a ref to agent-device.
-    if (entry.ref) refs[entry.id] = entry.ref.startsWith("@") ? entry.ref : `@${entry.ref}`;
+    if (entry.ref) refs[id] = entry.ref.startsWith("@") ? entry.ref : `@${entry.ref}`;
   }
   return { tree, refs, ...(snapshot.viewport ? { screen: snapshot.viewport } : {}) };
 }
@@ -325,9 +353,18 @@ export class TestingDevices {
     return projected;
   }
 
+  /**
+   * Enters the recorded text into the field the panel named.
+   *
+   * The panel's fill is fire-and-forget behind its own refresh, so a read can be queued ahead of
+   * it and the refs from the read the panel acted on are gone. The field is therefore found again
+   * on a fresh snapshot, by its stable id, and the fill waits its turn in the queue like any read.
+   * A field that moved or went away is refused, never filled on a neighbour.
+   */
   async fillNode(target: TestingDeviceTarget, nodeId: string, text: string): Promise<void> {
     const fill = async () => {
-      const ref = this.attached === this.key(target) ? this.lastRefs[nodeId] : undefined;
+      await this.readOnce(target);
+      const ref = this.lastRefs[nodeId];
       if (!ref) throw new ExpectedOperationError("invalid_input", "The selected text field is no longer on the current screen. Read the screen and record the step again.");
       await this.performOnce(target, { kind: "type", ref, text });
     };

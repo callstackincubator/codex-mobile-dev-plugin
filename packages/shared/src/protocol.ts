@@ -72,6 +72,24 @@ export function parseBaseUrl(value: string, label = "BAGUETTE_URL"): URL {
   return url;
 }
 
+/** Absolute and home-relative paths, which never leave the machine in a message that may be reported. */
+const LOCAL_PATH = /(?:~|\/)[^\s"'`()<>]*\/[^\s"'`()<>]*/g;
+
+/**
+ * The fix agent-device attaches to a failure (`details.hint`), with local paths removed. agent-device
+ * throws `{ message, details: { reason, hint, logPath } }`; the hint is what tells the user what to do
+ * (set a signing team, enable Developer Mode), and the log path stays on this machine.
+ */
+export function errorHint(error: unknown): string | undefined {
+  if (error === null || typeof error !== "object" || !("details" in error)) return undefined;
+  const details = (error as { details?: unknown }).details;
+  const hint = details !== null && typeof details === "object" ? (details as { hint?: unknown }).hint : undefined;
+  if (typeof hint !== "string" || !hint.trim()) return undefined;
+  return hint.replace(LOCAL_PATH, "<path>").trim();
+}
+
 export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  const message = error instanceof Error ? error.message : String(error);
+  const hint = errorHint(error);
+  return hint && !message.includes(hint) ? `${message} ${hint}` : message;
 }
