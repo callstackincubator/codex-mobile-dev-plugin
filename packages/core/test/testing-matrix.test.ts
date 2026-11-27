@@ -173,3 +173,11 @@ test("lanes carry stable unique run ids", () => {
   const { run } = new MatrixRegistry().create("t", devices(3), 3);
   assert.equal(new Set(run.lanes.map((lane: Lane) => lane.runId)).size, 3);
 });
+
+test("a kind that cannot belong to the platform is refused before anything runs", async () => {
+  const { assertKindMatchesPlatform } = await import("../src/testing-tools.ts");
+  assert.throws(() => assertKindMatchesPlatform({ kind: "simulator", platform: "android" }), /use kind emulator/);
+  assert.throws(() => assertKindMatchesPlatform({ kind: "emulator", platform: "ios" }), /use kind simulator/);
+  assert.doesNotThrow(() => assertKindMatchesPlatform({ kind: "physical", platform: "android" }));
+  assert.doesNotThrow(() => assertKindMatchesPlatform({ platform: "ios" }));
+});

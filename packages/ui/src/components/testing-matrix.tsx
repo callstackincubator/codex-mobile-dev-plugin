@@ -25,7 +25,7 @@ function DeviceRow({ device, checked, busy, appMissing, onToggle }: { device: Ma
     <span className="flex shrink-0 items-center gap-1">
       {busy && <Badge variant="outline">Busy</Badge>}
       <Badge variant="ghost" className={device.booted ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-muted text-muted-foreground"}>{device.kind === "physical" ? device.connectionState : device.booted ? "Booted" : "Off"}</Badge>
-      {device.booted && device.installed !== undefined && <Badge variant="ghost" title={device.installed ? "The app is on this device." : device.kind === "physical" ? "Build for a physical iPhone and install the app on this device." : "Not installed. It will be copied from another booted device that has it."}
+      {device.booted && device.installed !== undefined && <Badge variant="ghost" title={device.installed ? "The app is on this device." : device.kind === "physical" ? "Not installed. A device build already on this Mac is installed when the run starts; otherwise build it with `npx expo run:ios --device`." : "Not installed. It will be copied from another booted device that has it."}
         className={device.installed ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-amber-500/10 text-amber-600 dark:text-amber-400"}>{device.installed ? "Installed" : "App missing"}</Badge>}
     </span>
   </li>;

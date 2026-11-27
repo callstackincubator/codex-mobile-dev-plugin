@@ -936,3 +936,5 @@ names, packages, service lists, paths, command arguments, CLI output or preferen
 contents are attached. There are no background samplers or per-frame spans for
 this feature. Benchmark process measurements are local report artifacts and are
 not submitted to Sentry. Existing startup, stream and input coverage is retained.
+
+Physical iPhone recording and replay add no metrics. Testing Studio timings (`ui.testing.*`) already carry `device_platform` and `device_kind` (`physical` for hardware) from the device workspace whenever one device is shown, so hardware series are separable from simulator ones. agent-device failures now include its `details.hint` in the user-facing message and, for signing, Developer Mode and locked-device classes, are reported as expected outcomes. Hints have local paths replaced with `<path>`; log paths, team IDs, identities and device identifiers are never sent.

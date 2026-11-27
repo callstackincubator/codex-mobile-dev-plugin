@@ -9,6 +9,7 @@ import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { SIGNING_ENV_KEYS } from "./ios-signing.ts";
 import { startStorageMetrics } from "./storage-metrics.ts";
 import { captureServerError } from "./telemetry.ts";
 
@@ -83,7 +84,8 @@ export class AgentDeviceRuntime {
   private environment(directory: string) {
     const env: Record<string, string> = {};
     for (const [key, value] of Object.entries(process.env)) {
-      if (key.startsWith("AGENT_DEVICE_") === false && value !== undefined) env[key] = value;
+      // Signing variables are the user's (or Testing Studio's resolved team); the rest of AGENT_DEVICE_* is ours.
+      if (value !== undefined && (key.startsWith("AGENT_DEVICE_") === false || (SIGNING_ENV_KEYS as readonly string[]).includes(key))) env[key] = value;
     }
     env.AGENT_DEVICE_CONFIG = this.config;
     env.AGENT_DEVICE_STATE_DIR = directory;

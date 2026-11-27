@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
-import { errorMessage } from "@mobile-dev/shared/protocol.ts";
+import { errorHint, errorMessage } from "@mobile-dev/shared/protocol.ts";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import { captureServerError, recordTestingSetupOperation } from "./telemetry.ts";
 import type { TestingProjectChoices } from "./testing-projects.ts";
@@ -20,6 +20,7 @@ import { runRecordedTest, sweepLaneFiles } from "./testing-run.ts";
 import type { TestRunRequest } from "./testing-run.ts";
 import { MatrixRegistry, MAX_MATRIX_LIMIT, snapshotMatrix, startMatrix } from "./testing-matrix.ts";
 import type { LaneExecutor, MatrixDevice, MatrixRun } from "./testing-matrix.ts";
+import { ensureIosSigning, withAgentDeviceHint } from "./ios-signing.ts";
 import { LAUNCHER_APP, createLaneExecutor } from "./testing-prepare.ts";
 import type { DeviceOps } from "./testing-prepare.ts";
 import { deviceIdSchema } from "@mobile-dev/shared/panel-target.ts";
@@ -37,6 +38,11 @@ async function connectedPhysicalIos(deviceId: string) {
   if (!device || device.state !== "connected" || device.pairingState !== "paired")
     throw new ExpectedOperationError("device_unavailable", "The selected iPhone or iPad is not connected and paired. Reconnect and trust this Mac, then refresh Devices.");
   return device;
+}
+/** A `kind` that cannot belong to the platform is a caller's mistake, refused before anything runs. */
+export function assertKindMatchesPlatform(device: { kind?: "simulator" | "emulator" | "physical"; platform: "ios" | "android" }): void {
+  if (device.kind === "simulator" && device.platform !== "ios") throw new ExpectedOperationError("invalid_input", "A simulator is an iOS device; use kind emulator for Android.");
+  if (device.kind === "emulator" && device.platform !== "android") throw new ExpectedOperationError("invalid_input", "An emulator is an Android device; use kind simulator for iOS.");
 }
 /** The Testing Studio panel drives these itself; the model has its own e2e MCP server for test work. */
 const appVisibility = { ui: { visibility: ["app"] as ("app" | "model")[] } };
@@ -78,8 +84,10 @@ function safe<T>(handler: (input: T) => Promise<CallToolResult>) {
     try {
       return await handler(input);
     } catch (error) {
-      captureServerError(error, "testing.tool");
-      return { isError: true, content: [{ type: "text", text: errorMessage(error) }] };
+      // A signing or device-state failure carries agent-device's hint and is the user's to fix.
+      const reported = withAgentDeviceHint(error, errorHint, errorMessage);
+      captureServerError(reported, "testing.tool");
+      return { isError: true, content: [{ type: "text", text: errorMessage(reported) }] };
     }
   };
 }
@@ -414,7 +422,8 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     annotations: read,
     _meta: appVisibility,
   }, safe(async ({ deviceId, platform, kind, projectPath: selected, bundleId }: { deviceId: string; platform: "ios" | "android"; kind?: "simulator" | "emulator" | "physical"; projectPath: string; bundleId: string }) => {
-    if (kind === "physical") { if (platform !== "ios") throw new ExpectedOperationError("unsupported_platform", "Physical Android recording is not available yet."); await connectedPhysicalIos(deviceId); }
+    assertKindMatchesPlatform({ kind, platform });
+    if (kind === "physical") { if (platform !== "ios") throw new ExpectedOperationError("unsupported_platform", "Physical Android recording is not available yet."); await connectedPhysicalIos(deviceId); await ensureIosSigning({ projectPath: selected }); }
     const project = await inspectProject(selected, { platform, bundleId });
     // The refs go no further than the server: the panel records selectors and drives the mirror,
     // so an agent-device handle per element would be a few kilobytes a read that nothing reads.
@@ -449,6 +458,7 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     annotations: write, _meta: appVisibility,
   }, safe(async ({ deviceId, projectPath: selected, bundleId, nodeId, text }: { deviceId: string; projectPath: string; bundleId: string; nodeId: string; text: string }) => {
     await connectedPhysicalIos(deviceId);
+    await ensureIosSigning({ projectPath: selected });
     const project = await inspectProject(selected, { platform: "ios", bundleId });
     const runtimeRoot = project.runtimeMode === "bundled" ? await bundledE2eRoot() : project.runtime.root;
     await devices.fillNode({ deviceId, platform: "ios", projectPath: selected, runtimeRoot, bundleId }, nodeId, text);
@@ -510,10 +520,13 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
    * verdict is already in hand, and a device that cannot be read only costs the element list.
    */
   async function attachFailure(lane: { failure?: import("./testing-failure.ts").LaneFailure }, result: Awaited<ReturnType<typeof runRecordedTest>>, source: string,
-    read: { deviceId: string; platform: "ios" | "android"; projectPath: string; runtimeRoot: string; bundleId?: string }) {
+    read: { deviceId: string; platform: "ios" | "android"; projectPath: string; runtimeRoot: string; bundleId?: string; physical?: boolean }) {
     const failure = describeFailure(result, source);
     if (!failure) return;
     lane.failure = failure;
+    // Reading the screen starts a second XCTest runner on the phone, which can fail on its own signing
+    // or trust prompt and costs minutes. The lane's own failure and screenshot already say what broke.
+    if (read.physical) { failure.elementsError = "The device's screen was not re-read after the failure on a physical device; see the failing step and its screenshot."; return; }
     if (!read.bundleId) { failure.elementsError = "No app id is known for this device, so its screen was not read."; return; }
     if (!read.deviceId) { failure.elementsError = "The runner chose the device, so its screen was not read. Run with mobile_testing_run_matrix to name one."; return; }
     try {
@@ -614,19 +627,26 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     const unique = new Set(input.devices.map(device => device.deviceId));
     if (unique.size !== input.devices.length) throw new ExpectedOperationError("invalid_input", "Each device can appear only once in a matrix.");
     if (!matrix.ops) throw new ExpectedOperationError("unsupported_platform", "This server cannot prepare devices for a matrix run.");
+    const busy = new Set(registry.busyDevices());
     for (const device of input.devices) {
+      assertKindMatchesPlatform(device);
+      // One XCTest runner per phone: a second lane would fight the first for the device.
+      if (device.kind === "physical" && busy.has(device.deviceId))
+        throw new ExpectedOperationError("device_unavailable", `${device.name ?? "This device"} is already running a test. Wait for it to finish or cancel it, then run again.`);
       if (device.kind === "physical") {
         if (device.platform !== "ios") throw new ExpectedOperationError("unsupported_platform", "Physical Android test runs are not available yet.");
         await connectedPhysicalIos(device.deviceId);
       }
     }
+    // The runner signs itself for hardware: resolve the team once, before any lane builds it.
+    if (input.devices.some(device => device.kind === "physical")) await ensureIosSigning({ projectPath: projectPathValue });
     const first = input.devices[0]!;
     const { request, project } = await prepareRequest({ ...input, platform: first.platform, ...(input.apps[first.platform] ? { bundleId: input.apps[first.platform]! } : {}) });
     if (project.runtimeMode === "project") {
       const lanes = projectLaneTargets(project.targets, input.devices, input.targets);
       await devices.releaseOn(input.devices.map(device => device.deviceId)).catch(() => undefined);
       const projectExecutor = createLaneExecutor({
-        ops: matrix.ops, projectMode: true, apps: Object.fromEntries(Object.entries(lanes).map(([platform, target]) => [platform, target.bundleId])),
+        ops: matrix.ops, projectMode: true, projectPath: input.projectPath, apps: Object.fromEntries(Object.entries(lanes).map(([platform, target]) => [platform, target.bundleId])),
         runTest: (lane, deviceId, signal, onProgress) => runTest(
           { ...request, configPath: project.configPath, target: lanes[lane.platform]!.name, projectLane: { target: lanes[lane.platform]!.name, device: deviceId } },
           { release: () => devices.releaseOn([lane.deviceId, deviceId]), onProgress, signal }),
@@ -641,12 +661,12 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     // Only the devices of this matrix lose the recorder; a recorder on another device keeps its session.
     await devices.releaseOn(input.devices.map(device => device.deviceId)).catch(() => undefined);
     const executor = createLaneExecutor({
-      ops: matrix.ops, apps: input.apps,
+      ops: matrix.ops, apps: input.apps, projectPath: input.projectPath,
       runTest: async (lane, deviceId, signal, onProgress) => {
         const result = await runTest(
           { ...request, bundledTarget: { platform: lane.platform, bundleId: input.apps[lane.platform]!, device: deviceId } },
           { release: () => devices.releaseOn([lane.deviceId, deviceId]), onProgress, signal });
-        await attachFailure(lane, result, request.untilSource ?? "", { deviceId, platform: lane.platform, projectPath: input.projectPath, runtimeRoot: project.runtime.root, bundleId: input.apps[lane.platform]! });
+        await attachFailure(lane, result, request.untilSource ?? "", { deviceId, platform: lane.platform, projectPath: input.projectPath, runtimeRoot: project.runtime.root, bundleId: input.apps[lane.platform]!, physical: lane.kind === "physical" });
         return result;
       },
     });

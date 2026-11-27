@@ -1660,6 +1660,13 @@ export class TestingPanel {
     const mirrored = this.mirroredPlatform;
     const pinned = stored && mirrored ? this.storedAppOn(mirrored) : stored;
     const runTarget = pinned ?? (stored ? undefined : this.foregroundTarget);
+    // A pinned test with no app for the mirrored phone's platform must not fall through to an unpinned
+    // run on whatever device the runner finds; say why nothing ran.
+    const mirror = this.deviceApps.getSnapshot().device;
+    if (stored && !pinned && mirror?.kind === "physical") {
+      this.update({ error: `This test is pinned to ${stored.platform === "ios" ? "iOS" : "Android"} and has no app for ${mirror.name}'s platform. Show a ${stored.platform === "ios" ? "iOS" : "Android"} device in the mirror, or add an app for this platform first.` });
+      return;
+    }
     if (this.snapshot.runtimeMode === "bundled" && !runTarget) return;
     if (this.runsOnMatrix) { await this.runMatrix({ relativePath, source: untilSource, ...(untilLine === undefined ? {} : { untilLine }), callLines: storedTestCallLines(source) }); return; }
     this.update({ running: true, error: null });
