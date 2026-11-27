@@ -53,7 +53,21 @@ else {
   }
   else if (command[0] === 'forward' && command[1] === 'tcp:0') process.stdout.write('28000');
   else if (command.includes('app_process')) setInterval(() => {}, 1000);
-  else if (command[1] === 'cat') { process.stderr.write('device booting-device not found'); process.exitCode = 1; }
+  else if (command[1] === 'cat') {
+    // spawnAdb starts app_process before polling the socket, but the two adb
+    // processes can reach this fake in either order on a busy CI runner.
+    const deadline = Date.now() + 5000;
+    const checkLaunch = () => {
+      if (fs.readFileSync(${JSON.stringify(calls)}, 'utf8').includes('app_process')) {
+        process.stderr.write('device booting-device not found');
+        process.exitCode = 1;
+      } else if (Date.now() >= deadline) {
+        process.stderr.write('scrcpy app_process did not launch');
+        process.exitCode = 1;
+      } else setTimeout(checkLaunch, 10);
+    };
+    checkLaunch();
+  }
 }
 `;
   await writeFile(join(platformTools, "adb"), program, { mode: 0o755 });
