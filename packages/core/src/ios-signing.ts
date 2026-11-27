@@ -1,10 +1,11 @@
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
-import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import { APP_FLOW_DIRECTORY } from "./app-flow-host.ts";
+import { TESTING_DIRECTORY } from "./testing-projects.ts";
 
 /**
  * Code signing for the XCTest runner agent-device builds for a physical iPhone.
@@ -14,8 +15,9 @@ import { APP_FLOW_DIRECTORY } from "./app-flow-host.ts";
  * resolved in this order, first hit wins:
  *
  * 1. `MOBILE_DEV_IOS_TEAM_ID`, Mobile Dev's own setting, then an already-set `AGENT_DEVICE_IOS_TEAM_ID`.
- * 2. The project's `DEVELOPMENT_TEAM` build setting, when every target agrees.
- * 3. The one team behind the Apple Development identities in the keychain.
+ * 2. The team the user chose in Testing Studio's E2E setup (saved next to the model preference).
+ * 3. The project's `DEVELOPMENT_TEAM` build setting, when every target agrees.
+ * 4. The one team behind the Apple Development identities in the keychain.
  *
  * More than one candidate is never guessed between: the user names the team.
  */
@@ -27,15 +29,50 @@ const defaultCommand: SigningCommand = async (file, args) => (await execute(file
 
 const TEAM_ID = /^[A-Z0-9]{10}$/;
 
-export const SIGNING_SETUP_HINT = "Set MOBILE_DEV_IOS_TEAM_ID to your Apple Developer Team ID (10 characters; find it with `security find-identity -v -p codesigning` or in Xcode → Settings → Accounts), then record again.";
+export const SIGNING_SETUP_HINT = "Choose your signing team in E2E setup → Devices (or set MOBILE_DEV_IOS_TEAM_ID to your 10-character Apple Developer Team ID; find it in Xcode → Settings → Accounts), then try again.";
+
+/** Where the user's chosen team is saved: beside the Testing Studio model preference. */
+const SIGNING_TEAM_FILE = join(TESTING_DIRECTORY, "ios-signing-team.json");
+
+export type SigningTeamSource = "env" | "user" | "project" | "keychain";
+export type SigningTeam = { id: string; name?: string };
+
+/** The team the user chose in the panel, if any and still well-formed. */
+export async function readSavedIosTeam(file: string = SIGNING_TEAM_FILE): Promise<string | undefined> {
+  try {
+    const team = String((JSON.parse(await readFile(file, "utf8")) as { teamId?: unknown }).teamId ?? "").trim().toUpperCase();
+    return TEAM_ID.test(team) ? team : undefined;
+  } catch { return undefined; }
+}
+
+/** Saves the user's team, or clears the choice when `teamId` is undefined. */
+export async function saveIosTeam(teamId: string | undefined, file: string = SIGNING_TEAM_FILE): Promise<void> {
+  if (!teamId) { await unlink(file).catch(() => undefined); return; }
+  const team = teamId.trim().toUpperCase();
+  if (!TEAM_ID.test(team)) throw new ExpectedOperationError("invalid_input", "A signing team is 10 letters or digits.");
+  await mkdir(dirname(file), { recursive: true, mode: 0o700 });
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, JSON.stringify({ teamId: team }, null, 2) + "\n", { mode: 0o600 });
+    await rename(temporary, file);
+  } finally { await unlink(temporary).catch(() => undefined); }
+}
 
 /** The explicit team: Mobile Dev's setting first, then agent-device's own variable. */
-export function configuredTeamId(env: NodeJS.ProcessEnv = process.env): string | undefined {
-  for (const value of [env.MOBILE_DEV_IOS_TEAM_ID, env.AGENT_DEVICE_IOS_TEAM_ID]) {
-    const team = value?.trim().toUpperCase();
-    if (team && TEAM_ID.test(team)) return team;
+export const TEAM_ENV_VARS = ["MOBILE_DEV_IOS_TEAM_ID", "AGENT_DEVICE_IOS_TEAM_ID"] as const;
+export type TeamEnvVar = (typeof TEAM_ENV_VARS)[number];
+
+/** The explicit team and the variable that named it. */
+export function configuredTeam(env: NodeJS.ProcessEnv = process.env): { teamId: string; envVar: TeamEnvVar } | undefined {
+  for (const envVar of TEAM_ENV_VARS) {
+    const team = env[envVar]?.trim().toUpperCase();
+    if (team && TEAM_ID.test(team)) return { teamId: team, envVar };
   }
   return undefined;
+}
+
+export function configuredTeamId(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  return configuredTeam(env)?.teamId;
 }
 
 /** Every distinct `DEVELOPMENT_TEAM = XXXXXXXXXX;` in a project file. */
@@ -71,10 +108,18 @@ export function teamFromSubject(subject: string): string | undefined {
   return match?.[1];
 }
 
-async function identityTeams(run: SigningCommand): Promise<string[]> {
+/** The organization (`O=`) in an `openssl x509 -subject` line: the team's display name. */
+export function teamNameFromSubject(subject: string): string | undefined {
+  const match = /(?:^|[,/\s])O\s*=\s*((?:\\.|[^,/\n])+)/.exec(subject);
+  const name = match?.[1]?.replace(/\\(.)/g, "$1").trim();
+  return name || undefined;
+}
+
+/** The distinct teams behind the keychain's Apple Development identities, with names where the certificate gives one. */
+export async function identityTeams(run: SigningCommand): Promise<SigningTeam[]> {
   let output: string;
   try { output = await run("/usr/bin/security", ["find-identity", "-v", "-p", "codesigning"]); } catch { return []; }
-  const teams = new Set<string>();
+  const teams = new Map<string, SigningTeam>();
   for (const name of developmentIdentities(output)) {
     try {
       const pem = await run("/usr/bin/security", ["find-certificate", "-c", name, "-p"]);
@@ -83,11 +128,11 @@ async function identityTeams(run: SigningCommand): Promise<string[]> {
         child.stdin?.end(pem);
       });
       // RFC2253 prints `OU=XXXXXXXXXX`.
-      const team = teamFromSubject(subject);
-      if (team) teams.add(team);
+      const id = teamFromSubject(subject);
+      if (id && !teams.get(id)?.name) teams.set(id, { id, ...(teamNameFromSubject(subject) ? { name: teamNameFromSubject(subject)! } : {}) });
     } catch { /* an identity we cannot read is not a candidate */ }
   }
-  return [...teams];
+  return [...teams.values()];
 }
 
 /** The bundle id the runner is built as. It must be unique to the team, so the team is in it. */
@@ -95,19 +140,49 @@ export function runnerBundleId(teamId: string): string {
   return `com.mobiledev.agentdevice.${teamId.toLowerCase()}`;
 }
 
-export interface ResolveOptions { env?: NodeJS.ProcessEnv; projectPath?: string; run?: SigningCommand; daemons?: DaemonRestartOptions }
+export interface ResolveOptions { env?: NodeJS.ProcessEnv; projectPath?: string; run?: SigningCommand; daemons?: DaemonRestartOptions; /** The saved-choice file; tests only. */ savedTeamFile?: string }
+
+/** The team and where it came from, or an error that says how to name one. */
+export async function resolveIosTeam(options: ResolveOptions = {}): Promise<{ teamId: string; source: SigningTeamSource; envVar?: TeamEnvVar }> {
+  const explicit = configuredTeam(options.env);
+  if (explicit) return { ...explicit, source: "env" };
+  const saved = await readSavedIosTeam(options.savedTeamFile);
+  if (saved) return { teamId: saved, source: "user" };
+  const project = options.projectPath ? await projectTeam(options.projectPath) : undefined;
+  if (project) return { teamId: project, source: "project" };
+  const teams = await identityTeams(options.run ?? defaultCommand);
+  if (teams.length === 1) return { teamId: teams[0]!.id, source: "keychain" };
+  if (teams.length === 0)
+    throw new ExpectedOperationError("invalid_input", `Testing on an iPhone needs a signing team for the test runner, and none was found: this project does not name a DEVELOPMENT_TEAM and the keychain has no Apple Development identity. Sign in to Xcode with your Apple ID, then ${SIGNING_SETUP_HINT}`);
+  throw new ExpectedOperationError("invalid_input", `The keychain has Apple Development identities for ${teams.length} teams (${teams.map(team => team.name ? `${team.name} ${team.id}` : team.id).join(", ")}), so Mobile Dev cannot choose the one that signs the test runner. ${SIGNING_SETUP_HINT}`);
+}
 
 /** The signing team for the runner, or an error that says how to name one. */
 export async function resolveIosTeamId(options: ResolveOptions = {}): Promise<string> {
-  const explicit = configuredTeamId(options.env);
-  if (explicit) return explicit;
-  const project = options.projectPath ? await projectTeam(options.projectPath) : undefined;
-  if (project) return project;
+  return (await resolveIosTeam(options)).teamId;
+}
+
+export type IosSigningStatus = {
+  teams: SigningTeam[];
+  /** The team the runner would be signed with now; absent when none resolves. */
+  resolved?: SigningTeam & { source: SigningTeamSource; /** The variable that pinned the team, when source is env. */ envVar?: TeamEnvVar };
+  /** The user's saved choice, which an env setting overrides. */
+  saved?: string;
+  /** Why nothing resolves. */
+  error?: string;
+};
+
+/** What the Testing Studio picker shows: the keychain's teams, the saved choice, and the team in effect. */
+export async function iosSigningStatus(options: ResolveOptions = {}): Promise<IosSigningStatus> {
   const teams = await identityTeams(options.run ?? defaultCommand);
-  if (teams.length === 1) return teams[0]!;
-  if (teams.length === 0)
-    throw new ExpectedOperationError("invalid_input", `Testing on an iPhone needs a signing team for the test runner, and none was found: this project does not name a DEVELOPMENT_TEAM and the keychain has no Apple Development identity. Sign in to Xcode with your Apple ID, or ${SIGNING_SETUP_HINT}`);
-  throw new ExpectedOperationError("invalid_input", `The keychain has Apple Development identities for ${teams.length} teams (${teams.join(", ")}), so Mobile Dev cannot choose the one that signs the test runner. ${SIGNING_SETUP_HINT}`);
+  const saved = await readSavedIosTeam(options.savedTeamFile);
+  const status: IosSigningStatus = { teams, ...(saved ? { saved } : {}) };
+  try {
+    const { teamId, source, envVar } = await resolveIosTeam(options);
+    const known = teams.find(team => team.id === teamId);
+    status.resolved = { id: teamId, ...(known?.name ? { name: known.name } : {}), source, ...(envVar ? { envVar } : {}) };
+  } catch (error) { status.error = error instanceof Error ? error.message : String(error); }
+  return status;
 }
 
 /** The signing variables agent-device reads, for one team. A runner bundle id the user set stays. */

@@ -10,7 +10,7 @@ import { Label } from "./ui/label.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover.tsx";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/base-select.tsx";
 import { Switch } from "./ui/switch.tsx";
-import { MatrixDevices } from "./testing-matrix.tsx";
+import { MatrixDevices, SigningTeam } from "./testing-matrix.tsx";
 
 type SetupPlanView = { id: string; actions: { action: string; path: string; detail: string }[]; installCommand: string };
 type SetupTarget = { name: string; platform: "ios" | "android"; bundleId: string };
@@ -209,6 +209,7 @@ export function TestingSetup({ panel }: { panel: TestingPanel }) {
       {loginActive && <Button size="xs" variant="ghost" className="self-start" onClick={() => void panel.cancelSetup(login.id)}>Cancel sign-in</Button>}
     </div>}
   </>;
+  const signing = panel.showsSigningTeam ? <Section key="signing" title="iPhone signing team" hint="The Apple Developer team that signs the test runner on a physical iPhone."><SigningTeam panel={panel} /></Section> : null;
   const needsModel = state.modelPickerOpen && !state.modelPreference;
   const modelHint = "Deterministic steps never use a model. Only the provider, model and endpoint are saved, never credentials or prompts.";
 
@@ -235,6 +236,7 @@ export function TestingSetup({ panel }: { panel: TestingPanel }) {
             <Button size="sm" variant="outline" disabled={saving || provider === "none" || !model.trim() || (modelUnchanged && !saved)} onClick={() => void saveModel()} title="Use this model for agent steps in Testing Studio runs. Nothing is written to the project.">{saving ? <LoaderCircleIcon className="animate-spin" /> : <BotIcon />}Use model</Button>
           </div>
         </Section>
+        {signing}
         <Section key="devices" title="Devices" hint="Run the open test on several devices at once."><MatrixDevices panel={panel} /></Section>
         <Section title="Project">
           <ul className="grid grid-cols-1 gap-2"><StatusItem ok={false} label={panel.noProject ? "No project open" : "Project setup"} value={panel.noProject ? "Recording against the app in the mirror. Tests stay in Mobile Dev." : "None. Tests stay in Mobile Dev."} /></ul>
@@ -255,6 +257,7 @@ export function TestingSetup({ panel }: { panel: TestingPanel }) {
           {state.targets.length > 0 ? <ul className="flex flex-wrap gap-1.5">{state.targets.map(target => <li key={target.name}><Badge variant="outline" className="h-auto gap-1.5 py-1 font-normal"><span className="font-medium">{target.name}</span><span className="text-muted-foreground">{target.platform ?? "unknown"} · {target.bundleId ?? "no identifier"}</span></Badge></li>)}</ul>
             : <p className="text-xs text-muted-foreground">No targets configured.</p>}
         </Section>
+        {signing}
         <Section key="devices" title="Devices"><MatrixDevices panel={panel} /></Section>
         <div className="flex justify-end"><Button size="sm" variant="outline" onClick={() => setView("setup")}><WandSparklesIcon />Update setup</Button></div>
       </>) : <>

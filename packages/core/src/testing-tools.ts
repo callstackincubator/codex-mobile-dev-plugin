@@ -20,7 +20,7 @@ import { runRecordedTest, sweepLaneFiles } from "./testing-run.ts";
 import type { TestRunRequest } from "./testing-run.ts";
 import { MatrixRegistry, MAX_MATRIX_LIMIT, snapshotMatrix, startMatrix } from "./testing-matrix.ts";
 import type { LaneExecutor, MatrixDevice, MatrixRun } from "./testing-matrix.ts";
-import { ensureIosSigning, projectStateDir, withAgentDeviceHint } from "./ios-signing.ts";
+import { ensureIosSigning, iosSigningStatus, projectStateDir, saveIosTeam, withAgentDeviceHint } from "./ios-signing.ts";
 import { LAUNCHER_APP, createLaneExecutor } from "./testing-prepare.ts";
 import type { DeviceOps } from "./testing-prepare.ts";
 import { deviceIdSchema } from "@mobile-dev/shared/panel-target.ts";
@@ -407,6 +407,21 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
     title: "Save the Testing model preference", description: "Save or clear only the non-secret provider, model and endpoint preference used by bundled runs. Keys and OAuth credentials are never accepted.",
     inputSchema: { preference: z.object({ provider: z.enum(["vercel", "openrouter", "openai-compatible", "chatgpt", "copilot", "opencode-console", "grok"]), model: z.string().min(1).max(256), endpoint: z.string().max(2048).optional() }).optional() }, annotations: write, _meta: appVisibility,
   }, safe(async ({ preference }: { preference?: { provider: BundledModelProvider; model: string; endpoint?: string } }) => { await saveTestingModelPreference(preference); recordTestingSetupOperation("preference", "succeeded", preference?.provider); return dataResult({ saved: Boolean(preference) }); }));
+
+  registerAppTool(server, "mobile_testing_ios_signing", {
+    title: "Read the iPhone signing team", description: "List the signing teams in the keychain and report which team signs the test runner on a physical iPhone, and whether an environment variable, the saved choice, the project or the keychain picked it.",
+    inputSchema: { projectPath: projectPath.optional() }, annotations: read, _meta: appVisibility,
+  }, safe(async ({ projectPath: selected }: { projectPath?: string }) => dataResult({ ...await iosSigningStatus({ projectPath: selected }) })));
+  registerAppTool(server, "mobile_testing_ios_signing_team", {
+    title: "Choose the iPhone signing team", description: "Save the team that signs the test runner on a physical iPhone, or clear the choice. An environment variable still overrides it. A changed team restarts a stale runner daemon so the runner rebuilds.",
+    inputSchema: { teamId: z.string().regex(/^[A-Za-z0-9]{10}$/).optional(), projectPath: projectPath.optional() }, annotations: write, _meta: appVisibility,
+  }, safe(async ({ teamId, projectPath: selected }: { teamId?: string; projectPath?: string }) => {
+    await saveIosTeam(teamId);
+    recordTestingSetupOperation("signing", "succeeded");
+    // Apply now, so the stale-daemon restart does not wait for the next run; no team yet is not an error here.
+    await ensureIosSigning({ projectPath: selected }).catch(() => undefined);
+    return dataResult({ ...await iosSigningStatus({ projectPath: selected }) });
+  }));
 
   registerAppTool(server, "mobile_testing_read_tree", {
     title: "Read the runner's element tree",

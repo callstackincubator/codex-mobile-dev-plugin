@@ -11,6 +11,7 @@ import { Badge } from "./ui/badge.tsx";
 import { Button } from "./ui/button.tsx";
 import { Input } from "./ui/input.tsx";
 import { Label } from "./ui/label.tsx";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/base-select.tsx";
 
 /** One row of the checklist: a checkbox, the device, and what is true of it right now. */
 function DeviceRow({ device, checked, busy, appMissing, onToggle }: { device: MatrixDeviceOption; checked: boolean; busy: boolean; appMissing: boolean; onToggle: (value: boolean) => void }) {
@@ -29,6 +30,32 @@ function DeviceRow({ device, checked, busy, appMissing, onToggle }: { device: Ma
         className={device.installed ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-amber-500/10 text-amber-600 dark:text-amber-400"}>{device.installed ? "Installed" : "App missing"}</Badge>}
     </span>
   </li>;
+}
+
+const SIGNING_SOURCE: Record<string, string> = { env: "set by the environment", user: "your choice", project: "from the project", keychain: "the only team in your keychain" };
+const AUTOMATIC = "__automatic__";
+
+/** The team that signs the test runner on a physical iPhone: read-only when the environment pins it, otherwise a picker. */
+export function SigningTeam({ panel }: { panel: TestingPanel }) {
+  const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
+  const signing = state.iosSigning;
+  useEffect(() => { void panel.loadIosSigning(); }, [panel]);
+  if (!signing) return null;
+  const label = (team: { id: string; name?: string }) => team.name ? `${team.name} (${team.id})` : team.id;
+  const resolved = signing.resolved;
+  if (resolved?.source === "env") return <div className="flex flex-col gap-1" data-ios-signing="env">
+    <p className="text-sm">{label(resolved)} <span className="text-xs text-muted-foreground">· {resolved.envVar ? `set by ${resolved.envVar}` : SIGNING_SOURCE.env}</span></p>
+  </div>;
+  const teams = signing.teams.some(team => team.id === signing.saved) || !signing.saved ? signing.teams : [...signing.teams, { id: signing.saved }];
+  const items = [{ value: AUTOMATIC, label: resolved && resolved.source !== "user" ? `Automatic · ${label(resolved)}` : "Automatic" }, ...teams.map(team => ({ value: team.id, label: label(team) }))];
+  return <div className="flex flex-col gap-1" data-ios-signing={resolved?.source ?? "unresolved"}>
+        <Select items={items} value={signing.saved ?? AUTOMATIC} onValueChange={value => { if (value) void panel.chooseIosTeam(value === AUTOMATIC ? undefined : value); }}>
+      <SelectTrigger size="sm" className="w-full" aria-label="iPhone signing team"><SelectValue>{items.find(item => item.value === (signing.saved ?? AUTOMATIC))?.label}</SelectValue></SelectTrigger>
+      <SelectContent>{items.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
+    </Select>
+    {resolved ? <p className="text-xs text-muted-foreground">Signs the test runner on iPhones: {SIGNING_SOURCE[resolved.source]}.</p>
+      : <TestingNote tone="warning">No signing team yet. Choose one{signing.teams.length === 0 ? ", after signing in to Xcode with your Apple ID" : ""} to record or run on an iPhone.</TestingNote>}
+  </div>;
 }
 
 /**

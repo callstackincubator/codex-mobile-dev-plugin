@@ -26,6 +26,7 @@ import { FrameStream } from "./frame-stream.ts";
 import { frameArrivals, observeFrameArrivals } from "./frame-arrivals.ts";
 import { readFrame } from "./read-frame.ts";
 import { BrowserProfile } from "./browser-profile.ts";
+import { toPhysicalTouches } from "./physical-touch.ts";
 import { StreamInput } from "./stream-input.ts";
 import type { StreamMessage } from "./stream-input.ts";
 import { IosVideo } from "./ios-video.ts";
@@ -133,6 +134,12 @@ export function createSimulatorPanel(
     // Every input can change the screen, so a tree read before it no longer describes what the
     // next tap lands on. Typing and the hardware buttons go through here too, not just touches.
     if (isRecordingSelected()) testRecorder.invalidate();
+    // A physical iPhone's input tool takes only touch samples, so a recorded tap or swipe becomes touches.
+    if (stream.physicalIos) {
+      const touches = toPhysicalTouches(message);
+      if (touches.length === 1) stream.input?.send(touches[0]!); else stream.input?.sendAll(touches);
+      return;
+    }
     stream.input?.send(message);
   }
 

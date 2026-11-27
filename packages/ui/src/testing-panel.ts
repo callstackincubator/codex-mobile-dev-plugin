@@ -4,6 +4,7 @@ import type { DeviceAppsStore } from "./device-apps.ts";
 import type { SimulatorDevice } from "@mobile-dev/shared/protocol.ts";
 import { captureUiError, countUiEvent, getUiTelemetryAttributes, recordUiTiming } from "./telemetry.ts";
 import { testRecorder } from "./test-recorder.ts";
+import type { DevicePlatform } from "./test-recorder.ts";
 import type { RecorderTreeSource } from "./test-recorder.ts";
 import { PANEL_HEARTBEAT_MS, isRecordableDevice, recordablePlatform } from "@mobile-dev/shared/panel-target.ts";
 import type { ScreenComponent } from "@mobile-dev/shared/screen-annotations.ts";
@@ -144,6 +145,10 @@ export type TestingSnapshot = {
   /** Devices the matrix checklist can offer, with whether each is booted and has the app. */
   matrixDevices: MatrixDeviceOption[];
   matrixLoading: boolean;
+  /** The signing team for physical iPhones, as the server resolved it; undefined until read. */
+  iosSigning?: IosSigningView;
+  /** Set while Record or Run on a physical iPhone waits for the user to pick a signing team. */
+  signingPrompt?: { teams: IosSigningTeamView[] };
   /** The devices the user ticked for the current test in this panel session. */
   matrixSelected: string[];
   /** How many devices run at once; the rest queue. Saved per project. */
@@ -188,7 +193,28 @@ function object(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? value as Record<string, unknown> : null;
 }
 function text(value: unknown): string { return typeof value === "string" ? value : ""; }
+
+function parseIosSigning(value: unknown): IosSigningView {
+  const data = object(value) ?? {};
+  const team = (entry: unknown): IosSigningTeamView | undefined => { const item = object(entry); return item && text(item.id) ? { id: text(item.id), ...(text(item.name) ? { name: text(item.name) } : {}) } : undefined; };
+  const resolved = object(data.resolved);
+  const source = text(resolved?.source);
+  return {
+    teams: (Array.isArray(data.teams) ? data.teams : []).map(team).filter((entry): entry is IosSigningTeamView => Boolean(entry)),
+    ...(resolved && team(resolved) && ["env", "user", "project", "keychain"].includes(source) ? { resolved: { ...team(resolved)!, source: source as "env", ...(source === "env" && ["MOBILE_DEV_IOS_TEAM_ID", "AGENT_DEVICE_IOS_TEAM_ID"].includes(text(resolved.envVar)) ? { envVar: text(resolved.envVar) } : {}) } } : {}),
+    ...(text(data.saved) ? { saved: text(data.saved) } : {}),
+    ...(text(data.error) ? { error: text(data.error) } : {}),
+  };
+}
 /** How a platform reads in the panel. */
+export type IosSigningTeamView = { id: string; name?: string };
+export type IosSigningView = {
+  teams: IosSigningTeamView[];
+  resolved?: IosSigningTeamView & { source: "env" | "user" | "project" | "keychain"; envVar?: string };
+  saved?: string;
+  error?: string;
+};
+
 export function platformLabel(platform: "ios" | "android"): string { return platform === "ios" ? "iOS" : "Android"; }
 
 /**
@@ -1653,6 +1679,7 @@ export class TestingPanel {
     const untilSource = untilLine === undefined ? source : storedTestUntilSource(source, untilLine);
     if (untilSource === undefined) return;
     if (!this.hasBundledModel(untilSource, { kind: "stored", ...(untilLine === undefined ? {} : { untilLine }) })) return;
+    if (!await this.ensureIosTeam()) return;
     // A Testing Studio test runs against the app it is pinned to, never whichever app is in front. A test
     // with no app yet takes the one in front and keeps it, so later runs are pinned.
     // A test with an app on both platforms runs the one for the mirrored device's platform.
@@ -1743,6 +1770,7 @@ export class TestingPanel {
     if (options.untilStepId && !until) return;
     const previewSource = until?.source ?? testRecorder.source;
     if (!this.hasBundledModel(previewSource, { kind: "recording", options })) return;
+    if (!await this.ensureIosTeam()) return;
     const relativePath = this.relativePath;
     if (this.runsOnMatrix) { await this.runMatrix({ relativePath, source: previewSource, ...(until ? { untilLine: until.untilLine } : {}) }); return; }
     this.update({ running: true, error: null, pendingRun: false });
@@ -1908,6 +1936,79 @@ export class TestingPanel {
       if (!this.disposed) this.update({ matrixDevices: checked });
     } finally {
       if (!this.disposed) this.update({ matrixLoading: false });
+    }
+  }
+
+  /** Reads the keychain's signing teams and the one in effect for physical iPhones. */
+  async loadIosSigning() {
+    if (!this.snapshot.available) return;
+    try {
+      const result = await this.call("mobile_testing_ios_signing", this.snapshot.projectPath ? { projectPath: this.snapshot.projectPath } : {}, 30_000);
+      if (!this.disposed) this.update({ iosSigning: parseIosSigning(result.structuredContent) });
+    } catch (error) {
+      if (!this.disposed) this.update({ error: `Could not read the signing team: ${error instanceof Error ? error.message : String(error)}` });
+    }
+  }
+
+  /** Whether the signing team is relevant: a physical iPhone is mirrored or listed for the matrix. */
+  get showsSigningTeam(): boolean {
+    const mirror = this.deviceApps.getSnapshot().device;
+    return (mirror?.kind === "physical" && mirror.platform === "ios") || this.snapshot.matrixDevices.some(device => device.kind === "physical" && device.platform === "ios");
+  }
+
+  private get usesPhysicalIos(): boolean {
+    const mirror = this.deviceApps.getSnapshot().device;
+    const mirrorPhysical = mirror?.kind === "physical" && mirror.platform === "ios";
+    if (!this.runsOnMatrix) return mirrorPhysical;
+    return this.matrixSelection.some(device => device.kind === "physical" && device.platform === "ios");
+  }
+
+  private signingWaiter?: (chosen: boolean) => void;
+
+  /**
+   * Resolves once a physical iPhone has a signing team, asking the user to pick one when none
+   * resolves. False means the user declined; true also when no iPhone is involved or the server
+   * cannot say (the run then reports the real error).
+   */
+  async ensureIosTeam(physicalIos: boolean = this.usesPhysicalIos): Promise<boolean> {
+    if (!physicalIos || !this.snapshot.available) return true;
+    let view: IosSigningView;
+    try { view = parseIosSigning((await this.call("mobile_testing_ios_signing", this.snapshot.projectPath ? { projectPath: this.snapshot.projectPath } : {}, 30_000)).structuredContent); }
+    catch { return true; }
+    if (view.resolved || this.disposed) { if (!this.disposed) this.update({ iosSigning: view }); return true; }
+    this.signingWaiter?.(false);
+    countUiEvent("ui.testing.ios_signing_prompt");
+    return new Promise<boolean>(resolve => {
+      this.signingWaiter = resolve;
+      this.update({ iosSigning: view, signingPrompt: { teams: view.teams } });
+    });
+  }
+
+  dismissSigningPrompt() {
+    const waiter = this.signingWaiter;
+    this.signingWaiter = undefined;
+    this.update({ signingPrompt: undefined });
+    waiter?.(false);
+  }
+
+  /** Starts recording, first making sure a physical iPhone has a team to sign the runner with. */
+  async startRecording(deviceId: string, platform: DevicePlatform, keepSteps?: boolean) {
+    const mirror = this.deviceApps.getSnapshot().device;
+    if (!await this.ensureIosTeam(mirror?.kind === "physical" && mirror.platform === "ios")) return;
+    testRecorder.start(deviceId, platform, keepSteps);
+  }
+
+  /** Saves the team that signs the runner on physical iPhones; undefined goes back to the automatic choice. */
+  async chooseIosTeam(teamId?: string) {
+    try {
+      const result = await this.call("mobile_testing_ios_signing_team", { ...(teamId ? { teamId } : {}), ...(this.snapshot.projectPath ? { projectPath: this.snapshot.projectPath } : {}) }, 60_000);
+      if (this.disposed) return;
+      const iosSigning = parseIosSigning(result.structuredContent);
+      this.update({ iosSigning, error: null, ...(iosSigning.resolved && this.signingWaiter ? { signingPrompt: undefined } : {}) });
+      countUiEvent("ui.testing.ios_signing_team");
+      if (iosSigning.resolved) { const waiter = this.signingWaiter; this.signingWaiter = undefined; waiter?.(true); }
+    } catch (error) {
+      if (!this.disposed) this.update({ error: `Could not save the signing team: ${error instanceof Error ? error.message : String(error)}` });
     }
   }
 
