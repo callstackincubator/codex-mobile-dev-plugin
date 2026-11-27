@@ -183,3 +183,32 @@ test("the team API lists names, the saved choice and the team in effect, or why 
     assert.equal(pinned.saved, "ABCDE12345");
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test("the team this process exported is not mistaken for the user's environment, so a chosen team can change", async () => {
+  const root = await mkdtemp(join(tmpdir(), "signing-self-"));
+  const before = { mobile: process.env.MOBILE_DEV_IOS_TEAM_ID, agent: process.env.AGENT_DEVICE_IOS_TEAM_ID, bundle: process.env.AGENT_DEVICE_IOS_BUNDLE_ID };
+  try {
+    delete process.env.MOBILE_DEV_IOS_TEAM_ID; delete process.env.AGENT_DEVICE_IOS_TEAM_ID; delete process.env.AGENT_DEVICE_IOS_BUNDLE_ID;
+    resetIosSigning();
+    const savedTeamFile = join(root, "team.json");
+    const options = { run: none, savedTeamFile, daemons: { stateDirs: [] } };
+    await saveIosTeam("FIRSTTEAM1", savedTeamFile);
+    assert.equal(await ensureIosSigning(options), "FIRSTTEAM1");
+    assert.equal(process.env.AGENT_DEVICE_IOS_TEAM_ID, "FIRSTTEAM1");
+    // The export is ours: the status still says "user", and a new choice takes effect.
+    assert.equal((await iosSigningStatus(options)).resolved?.source, "user");
+    await saveIosTeam("SECONDTEA2", savedTeamFile);
+    assert.equal(await ensureIosSigning(options), "SECONDTEA2");
+    await saveIosTeam(undefined, savedTeamFile);
+    await assert.rejects(resolveIosTeam(options), ExpectedOperationError);
+    // A team the user's own environment names is never treated as our export.
+    process.env.AGENT_DEVICE_IOS_TEAM_ID = "USERENV123";
+    resetIosSigning();
+    assert.equal(await ensureIosSigning(options), "USERENV123");
+    assert.deepEqual((await iosSigningStatus(options)).resolved, { id: "USERENV123", source: "env", envVar: "AGENT_DEVICE_IOS_TEAM_ID" });
+  } finally {
+    for (const [key, value] of [["MOBILE_DEV_IOS_TEAM_ID", before.mobile], ["AGENT_DEVICE_IOS_TEAM_ID", before.agent], ["AGENT_DEVICE_IOS_BUNDLE_ID", before.bundle]] as const) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+    resetIosSigning();
+    await rm(root, { recursive: true, force: true });
+  }
+});

@@ -142,9 +142,19 @@ export function runnerBundleId(teamId: string): string {
 
 export interface ResolveOptions { env?: NodeJS.ProcessEnv; projectPath?: string; run?: SigningCommand; daemons?: DaemonRestartOptions; /** The saved-choice file; tests only. */ savedTeamFile?: string }
 
+/** The team this process last exported to `AGENT_DEVICE_IOS_TEAM_ID` itself: Mobile Dev's own write, not the user's setting. */
+let exportedTeamId: string | undefined;
+
+/** The environment as the user set it: without the team this process exported on an earlier resolution, or that export would pin the team forever. */
+function userEnvironment(env: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv {
+  if (env) return env;
+  if (exportedTeamId && process.env.AGENT_DEVICE_IOS_TEAM_ID?.trim().toUpperCase() === exportedTeamId) return { ...process.env, AGENT_DEVICE_IOS_TEAM_ID: undefined };
+  return process.env;
+}
+
 /** The team and where it came from, or an error that says how to name one. */
 export async function resolveIosTeam(options: ResolveOptions = {}): Promise<{ teamId: string; source: SigningTeamSource; envVar?: TeamEnvVar }> {
-  const explicit = configuredTeam(options.env);
+  const explicit = configuredTeam(userEnvironment(options.env));
   if (explicit) return { ...explicit, source: "env" };
   const saved = await readSavedIosTeam(options.savedTeamFile);
   if (saved) return { teamId: saved, source: "user" };
@@ -204,8 +214,10 @@ let exportedBundleId: string | undefined;
  * client and the spawned e2e runner both read it. A failure is not cached.
  */
 export async function ensureIosSigning(options: ResolveOptions = {}): Promise<string> {
-  const teamId = await resolveIosTeamId(options);
+  const { teamId, source } = await resolveIosTeam(options);
   if (options.env) return teamId;
+  // Only a team Mobile Dev chose is its own export; one the user's environment named stays theirs.
+  exportedTeamId = source === "env" ? undefined : teamId;
   const current = process.env.AGENT_DEVICE_IOS_BUNDLE_ID;
   const user = current && current !== exportedBundleId ? current : undefined;
   const signing = iosSigningEnv(teamId, user);
@@ -282,7 +294,7 @@ async function mobileDevStateDirs(): Promise<string[]> {
 }
 
 /** Forgets what was exported; tests only. */
-export function resetIosSigning(): void { exportedBundleId = undefined; checkedSigning = undefined; }
+export function resetIosSigning(): void { exportedBundleId = undefined; exportedTeamId = undefined; checkedSigning = undefined; }
 
 /** Runner startup classes agent-device names in `details.reason` that the user fixes on their machine. */
 const USER_FIXABLE_REASONS = /^(?:signing_|bundle_identifier_already_registered|devtools_security_|developer_mode|device_locked|not_ready)/;

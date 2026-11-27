@@ -449,9 +449,13 @@ export function registerTestingTools(server: McpServer, projects: TestingProject
   }));
 
   registerAppTool(server, "mobile_testing_physical_app", {
-    title: "Check app on physical iOS device", description: "Check whether a selected app is installed on a connected iPhone or iPad.",
-    inputSchema: { platform: z.literal("ios"), deviceId: deviceIdSchema, bundleId: z.string().min(1).max(512) }, annotations: read, _meta: appVisibility,
-  }, safe(async ({ deviceId, bundleId }: { deviceId: string; bundleId: string }) => {
+    title: "Check app on physical device", description: "Check whether a selected app is installed on a connected iPhone, iPad or Android phone.",
+    inputSchema: { platform: z.enum(["ios", "android"]), deviceId: deviceIdSchema, bundleId: z.string().min(1).max(512) }, annotations: read, _meta: appVisibility,
+  }, safe(async ({ platform, deviceId, bundleId }: { platform: "ios" | "android"; deviceId: string; bundleId: string }) => {
+    if (platform === "android") {
+      if (!matrix.ops?.physicalAndroid) throw new ExpectedOperationError("unsupported_platform", "Physical Android app discovery is unavailable.");
+      return dataResult({ installed: await matrix.ops.physicalAndroid.hasApp(deviceId, bundleId) });
+    }
     await connectedPhysicalIos(deviceId);
     if (!matrix.ops?.physicalIos) throw new ExpectedOperationError("unsupported_platform", "Physical iOS app discovery is unavailable.");
     return dataResult({ installed: await matrix.ops.physicalIos.hasApp(deviceId, bundleId) });

@@ -45,11 +45,12 @@ export function SigningTeam({ panel }: { panel: TestingPanel }) {
   const resolved = signing.resolved;
   if (resolved?.source === "env") return <div className="flex flex-col gap-1" data-ios-signing="env">
     <p className="text-sm">{label(resolved)} <span className="text-xs text-muted-foreground">· {resolved.envVar ? `set by ${resolved.envVar}` : SIGNING_SOURCE.env}</span></p>
+    <p className="text-xs text-muted-foreground">Fixed by the environment, so it can't be changed here. To choose another team, unset {resolved.envVar ?? "MOBILE_DEV_IOS_TEAM_ID"} and restart Mobile Dev.</p>
   </div>;
   const teams = signing.teams.some(team => team.id === signing.saved) || !signing.saved ? signing.teams : [...signing.teams, { id: signing.saved }];
   const items = [{ value: AUTOMATIC, label: resolved && resolved.source !== "user" ? `Automatic · ${label(resolved)}` : "Automatic" }, ...teams.map(team => ({ value: team.id, label: label(team) }))];
   return <div className="flex flex-col gap-1" data-ios-signing={resolved?.source ?? "unresolved"}>
-        <Select items={items} value={signing.saved ?? AUTOMATIC} onValueChange={value => { if (value) void panel.chooseIosTeam(value === AUTOMATIC ? undefined : value); }}>
+    <Select items={items} value={signing.saved ?? AUTOMATIC} onValueChange={value => { if (value) void panel.chooseIosTeam(value === AUTOMATIC ? undefined : value); }}>
       <SelectTrigger size="sm" className="w-full" aria-label="iPhone signing team"><SelectValue>{items.find(item => item.value === (signing.saved ?? AUTOMATIC))?.label}</SelectValue></SelectTrigger>
       <SelectContent>{items.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
     </Select>

@@ -1953,7 +1953,9 @@ export class TestingPanel {
   /** Whether the signing team is relevant: a physical iPhone is mirrored or listed for the matrix. */
   get showsSigningTeam(): boolean {
     const mirror = this.deviceApps.getSnapshot().device;
-    return (mirror?.kind === "physical" && mirror.platform === "ios") || this.snapshot.matrixDevices.some(device => device.kind === "physical" && device.platform === "ios");
+    if (mirror?.kind === "physical" && mirror.platform === "ios" && mirror.state === "connected") return true;
+    // `booted` is connected and paired: an iPhone that is only known to the Mac does not need a team yet.
+    return this.snapshot.matrixDevices.some(device => device.kind === "physical" && device.platform === "ios" && device.booted);
   }
 
   private get usesPhysicalIos(): boolean {
