@@ -544,6 +544,14 @@ test("a hardware UDID or phone serial is pinned through a provider the runner re
   assert.equal(devicePinSource("emulator-5554"), '"emulator-5554"');
 });
 
+test("generated device pins escape HTML delimiters and JavaScript line separators", () => {
+  const pin = devicePinSource('phone</script>"\u2028\u2029');
+  assert.ok(pin.includes('phone\\u003c/script\\u003e\\"\\u2028\\u2029'));
+  assert.ok(!pin.includes("</script>"));
+  assert.ok(!pin.includes("\u2028"));
+  assert.ok(!pin.includes("\u2029"));
+});
+
 function laneSpawner(seen: { args?: readonly string[]; cwd?: string; config?: string; existed?: string[]; env?: NodeJS.ProcessEnv }) {
   return ((command: string, args: readonly string[], options: { cwd?: string; env?: NodeJS.ProcessEnv }) => {
     seen.args = args; seen.cwd = options.cwd; seen.env = options.env;

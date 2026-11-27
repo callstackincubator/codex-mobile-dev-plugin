@@ -357,19 +357,25 @@ test("Testing Studio does not flash a mirror mismatch while the switched device'
 test("a Testing Studio test with no app pins the one in front on its first run, then runs against the pin", async () => {
   const calls: { name: string; arguments: Record<string, unknown> }[] = [];
   const source = 'test("stored", async ({ app }) => {\n  await app.open();\n});\n';
-  const panel = new TestingPanel(host({ mobile_testing_run_test: { status: "passed", exitCode: 0, steps: [] } }, calls), frontApps);
-  panel.setAvailable(true);
-  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ projectPath: PROJECT, runtimeMode: "bundled", selectedTestPath: "tests/stored.e2e.ts", selectedTestSource: source, tests: [{ relativePath: "tests/stored.e2e.ts", name: "stored.e2e.ts", updatedAt: "", sizeBytes: 1 }] });
-  await panel.runStoredTest();
-  const first = calls.find(call => call.name === "mobile_testing_run_test")!;
-  assert.deepEqual([first.arguments.platform, first.arguments.bundleId, first.arguments.pin], ["ios", "com.example.app", true]);
-  calls.length = 0;
-  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ tests: [{ relativePath: "tests/stored.e2e.ts", name: "stored.e2e.ts", updatedAt: "", sizeBytes: 1, target: { platform: "ios", bundleId: "com.pinned.app" } }] });
-  await panel.runStoredTest();
-  assert.ok(calls.some(call => call.name === "mobile_launch_app" && call.arguments.bundleId === "com.pinned.app"), "the pinned app is opened when it is not in front");
-  const second = calls.find(call => call.name === "mobile_testing_run_test")!;
-  assert.deepEqual([second.arguments.bundleId, second.arguments.pin], ["com.pinned.app", undefined]);
-  panel.dispose();
+  let foregroundBundleId = "com.example.app";
+  const apps = { subscribe: () => () => undefined, getSnapshot: () => ({ ...frontApps.getSnapshot(), foregroundApp: { bundleId: foregroundBundleId, pid: 1 } }) } as unknown as DeviceAppsStore;
+  const panel = new TestingPanel(host({ mobile_testing_run_test: { status: "passed", exitCode: 0, steps: [] },
+    mobile_testing_tests: { tests: [{ relativePath: "tests/stored.e2e.ts", name: "stored.e2e.ts", updatedAt: "", sizeBytes: 1 }] } }, calls), apps);
+  try {
+    panel.setAvailable(true);
+    (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ projectPath: PROJECT, runtimeMode: "bundled", selectedTestPath: "tests/stored.e2e.ts", selectedTestSource: source, tests: [{ relativePath: "tests/stored.e2e.ts", name: "stored.e2e.ts", updatedAt: "", sizeBytes: 1 }] });
+    await panel.runStoredTest();
+    const first = calls.find(call => call.name === "mobile_testing_run_test")!;
+    assert.deepEqual([first.arguments.platform, first.arguments.bundleId, first.arguments.pin], ["ios", "com.example.app", true]);
+    calls.length = 0;
+    foregroundBundleId = "com.other.app";
+    await panel.runStoredTest();
+    assert.ok(calls.some(call => call.name === "mobile_launch_app" && call.arguments.bundleId === "com.example.app"), "the pinned app is opened when it is not in front");
+    const second = calls.find(call => call.name === "mobile_testing_run_test")!;
+    assert.deepEqual([second.arguments.bundleId, second.arguments.pin], ["com.example.app", undefined]);
+  } finally {
+    panel.dispose();
+  }
 });
 
 test("a Testing Studio save pins the app in front, not a stale target from an earlier app", async () => {

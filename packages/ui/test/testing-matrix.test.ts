@@ -82,6 +82,7 @@ function matrixHost(calls: { name: string; arguments: Record<string, unknown> }[
     const structuredContent = name === "mobile_testing_run_matrix" ? { matrixId: "m1", limit: 2, startedAt: 1, lanes: lanes(["queued", "queued", "queued"]) }
       : name === "mobile_testing_run_progress" ? { matrixId: "m1", limit: 2, startedAt: 1, lanes: lanes(++polls < 2 ? ["running", "running", "queued"] : ["passed", "passed", "passed"]) }
       : name === "mobile_list_simulators" ? { devices: [0, 1, 2].map(i => ({ udid: `d${i}`, name: `Phone ${i}`, state: "Booted", runtime: "iOS 26" })) }
+      : name === "mobile_testing_ios_signing" ? { resolved: { id: "TEAM123", source: "user" }, teams: [{ id: "TEAM123" }] }
       : name === "mobile_list_apps" ? { apps: [{ bundleId: "com.example.app", name: "App" }] } : {};
     return { content: [], structuredContent };
   } } as unknown as HostBridge;
@@ -143,14 +144,17 @@ test("a mirrored physical iPhone is pinned to a physical matrix lane", async () 
   const mirrored = { subscribe: () => () => undefined, getSnapshot: () => ({ device: { udid: "phone", name: "Phone", platform: "ios", kind: "physical", state: "connected", pairingState: "paired", runtime: "iOS 27" } }) } as unknown as DeviceAppsStore;
   const panel = new TestingPanel(matrixHost(calls), mirrored);
   const set = (fields: Record<string, unknown>) => (panel as unknown as { update(fields: Record<string, unknown>): void }).update(fields);
-  panel.setAvailable(true);
-  set({ projectPath: PROJECT, runtimeMode: "bundled", targets: [{ name: "ios", platform: "ios", bundleId: "com.example.app" }], selectedTestPath: "tests/a.e2e.ts", selectedTestSource: 'test("x", async () => {});\n', tests: [{ relativePath: "tests/a.e2e.ts", name: "a", updatedAt: "", sizeBytes: 1, target: { platform: "ios", bundleId: "com.example.app" } }] });
-  assert.equal(panel.runsOnMatrix, true);
-  assert.equal(panel.matrixRunCount, 1);
-  await panel.runStoredTest();
-  const start = calls.find(call => call.name === "mobile_testing_run_matrix");
-  assert.deepEqual(start?.arguments.devices, [{ deviceId: "phone", platform: "ios", kind: "physical", name: "Phone" }]);
-  panel.dispose();
+  try {
+    panel.setAvailable(true);
+    set({ projectPath: PROJECT, runtimeMode: "bundled", targets: [{ name: "ios", platform: "ios", bundleId: "com.example.app" }], selectedTestPath: "tests/a.e2e.ts", selectedTestSource: 'test("x", async () => {});\n', tests: [{ relativePath: "tests/a.e2e.ts", name: "a", updatedAt: "", sizeBytes: 1, target: { platform: "ios", bundleId: "com.example.app" } }] });
+    assert.equal(panel.runsOnMatrix, true);
+    assert.equal(panel.matrixRunCount, 1);
+    await panel.runStoredTest();
+    const start = calls.find(call => call.name === "mobile_testing_run_matrix");
+    assert.deepEqual(start?.arguments.devices, [{ deviceId: "phone", platform: "ios", kind: "physical", name: "Phone" }]);
+  } finally {
+    panel.dispose();
+  }
 });
 
 test("the concurrency limit is saved per project but device choices are not", () => {

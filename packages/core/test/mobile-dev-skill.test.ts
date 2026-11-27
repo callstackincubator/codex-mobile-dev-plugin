@@ -87,7 +87,7 @@ test("the testing skill teaches Testing Studio mode: record saves, run, add the 
   assert.match(skill, /`mobile_testing_agent_finish` \*\*writes the test\*\*.*`relativePath`/s);
   // Run: one device or several, and devices that are off are the matrix's to boot.
   assert.match(skill, /`mobile_testing_run_matrix/);
-  assert.match(skill, /\*\*Devices that are off are booted by the matrix\*\*/);
+  assert.match(skill, /\*\*Simulators and emulators that are off are booted by the matrix\*\*/);
   // A platform with no app: ask, wait, add without asking, report the id, run again.
   assert.match(skill, /mobile_testing_wait_for_app.*mobile_testing_set_target.*mode: "add".*\*\*without asking\*\*.*which id you added/s);
   // Failure: branch that platform's line only, two tries, then report; never touch an assertion.

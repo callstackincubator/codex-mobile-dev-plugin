@@ -496,7 +496,13 @@ async function runProjectPreview(request: TestRunRequest, deps: TestRunDeps): Pr
   }
 }
 
-function quoted(value: string): string { return JSON.stringify(value); }
+function quoted(value: string): string {
+  // These strings become JavaScript source in generated e2e configs. Keep HTML and line separators
+  // escaped as well as quotes and backslashes so the source is safe in every embedding context.
+  return JSON.stringify(value).replace(/[<>\u2028\u2029]/g, char => ({
+    "<": "\\u003c", ">": "\\u003e", "\u2028": "\\u2028", "\u2029": "\\u2029",
+  })[char]!);
+}
 
 /** The ids `@e2e-dev/mobile` treats as an id rather than a device name: a simulator UDID or an emulator serial. */
 const POOL_DEVICE_ID = /^(?:[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}|emulator-\d+)$/i;
