@@ -3,7 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport, StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { PLUGIN_VERSION } from "@mobile-dev/shared/version.ts";
-import { BROWSER_PANEL_CAPABILITY, PANEL_PAGE_META } from "@mobile-dev/shared/panel-target.ts";
+import { PANEL_PAGE_META } from "@mobile-dev/shared/panel-target.ts";
 
 const dark = matchMedia("(prefers-color-scheme: dark)");
 const DISCONNECTED = "Mobile Dev disconnected from its chat session. Ask the agent to open Mobile Dev again.";
@@ -102,11 +102,7 @@ async function open() {
     // Advertise only capabilities this browser can fulfill. Chat messages need a
     // host-owned bridge; model context goes to the server, where the agent reads it.
     const hostContext = context();
-    const capabilities = {
-      serverTools: {}, serverResources: {}, openLinks: {},
-      updateModelContext: { text: {}, image: {} },
-      experimental: { [BROWSER_PANEL_CAPABILITY]: {} },
-    };
+    const capabilities = { serverTools: {}, serverResources: {}, openLinks: {}, updateModelContext: { text: {}, image: {} } };
     bridge = new AppBridge(client, { name: host, version: PLUGIN_VERSION }, capabilities, { hostContext });
     bridge.onupdatemodelcontext = async ({ content }) => {
       const sessionId = transport.sessionId;

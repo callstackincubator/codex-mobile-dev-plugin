@@ -41,11 +41,5 @@ export function panelTargetPlatform(target: PanelTarget): "ios" | "android" | un
  */
 export const PANEL_PAGE_META = "mobile-dev/panel";
 
-/**
- * Host capability the loopback browser page advertises so the in-chat panel can
- * hide Open in browser when it is already that page.
- */
-export const BROWSER_PANEL_CAPABILITY = "dev.mobile/browserPanel";
-
 /** How often the open Testing Studio tab re-sends its selection, so the server can tell a closed tab from an idle one. */
 export const PANEL_HEARTBEAT_MS = 5_000;

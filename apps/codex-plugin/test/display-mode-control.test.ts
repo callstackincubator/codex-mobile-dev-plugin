@@ -54,5 +54,4 @@ for (const [host, entry, shown] of [
   await setTimeout(20);
   const buttons = [...window.document.querySelectorAll(".workspace-toolbar button")].map(button => button.textContent);
   assert.equal(buttons.includes("Back to chat"), shown, buttons.join(", "));
-  assert.equal(buttons.some(text => text?.includes("Open in browser")) === true, host === "shared MCP Apps panel", buttons.join(", "));
 });

@@ -6,7 +6,6 @@
 | --- | --- |
 | `mobile_open_simulator` | Open the native panel, optionally targeting a platform, device kind, or discovered device ID |
 | `mobile_open_workspace` | Open fullscreen with the same optional device targeting |
-| `mobile_open_browser_panel` | Start the loopback panel page and return its URL, app-only |
 | `mobile_open_app_intel` | Open App Intelligence, optionally focused on an exact screen ID from `mobile_app_intel` |
 | `mobile_list_simulators` | Start the bundled backend if needed and list devices |
 | `mobile_choose_devices` | Ask the user to choose task targets in the host's native form; listed only for hosts with one (Codex, Claude Code) |

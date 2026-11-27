@@ -34,13 +34,7 @@ Behavior never depends on this value; it only attributes measurements and errors
   and honors telemetry opt-out. `browser_panel.context_update` counts the page's
   model context updates by `outcome` (`stored`, `invalid` or `too_large`), and
   `browser_panel.context_bytes` records the size of stored updates in bytes; the
-  context's text and images are never sent. Since 0.1.197, the in-chat **Open in
-  browser** control counts `ui.workspace.open_in_browser` when the host opens the
-  returned loopback URL. Failures of that round trip or of `openLink` are handled
-  as `workspace.open_in_browser`. The URL, token and query are never sent. The
-  loopback page still hides the control by advertising `dev.mobile/browserPanel`.
-  Unexpected page-start failures besides a host with no shared transport are
-  captured as `browser_panel.open`.
+  context's text and images are never sent.
 - Codex measures its Testing Studio runtime download. Claude measures its combined
   device and Testing Studio runtime download. `panel_runtime.ready` records, in milliseconds, how long the runtime took to be
   ready on its first use in a server, by `outcome`: `cached` when a

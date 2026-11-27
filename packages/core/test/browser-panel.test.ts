@@ -160,55 +160,6 @@ test("opening the panel links the browser page only for hosts without MCP Apps",
   }
 });
 
-test("an in-chat panel can open the loopback page without the agent receiving a link", async t => {
-  const directory = await mkdtemp(join(tmpdir(), "browser-panel-"));
-  const page = join(directory, "browser-panel.html");
-  await writeFile(page, "<html></html>");
-  t.after(() => rm(directory, { recursive: true, force: true }));
-  const fake = await fakeBaguette();
-  t.after(() => fake.close());
-  const [hostSide, serverSide] = InMemoryTransport.createLinkedPair();
-  const shared = new SharedTransport(serverSide);
-  const plugin = await createTestPlugin("<html></html>", {
-    panel: createPanel({ baguette: new Baguette(fake.url), simulatorInput: fakeSimulatorInput() }),
-    features: [browserPanel({ template: pathToFileURL(page) })],
-    connections: shared,
-  });
-  const host = new Client({ name: "cursor", version: "1" }, { capabilities: { extensions: { [EXTENSION_ID]: { mimeTypes: [RESOURCE_MIME_TYPE] } } } });
-  await plugin.server.connect(shared);
-  await host.connect(hostSide);
-  t.after(async () => { await host.close(); await plugin.close(); });
-  const { tools } = await host.listTools();
-  const openInBrowser = tools.find(tool => tool.name === "mobile_open_browser_panel");
-  assert.deepEqual(openInBrowser?._meta?.ui, { visibility: ["app"] });
-  const opened = await host.callTool({ name: "mobile_open_simulator", arguments: { platform: "ios" } });
-  assert.equal((opened.structuredContent as { browserPanel?: unknown }).browserPanel, undefined);
-  const result = await host.callTool({
-    name: "mobile_open_browser_panel",
-    arguments: { tool: "mobile_open_simulator", platform: "ios", workspaceTool: "testing" },
-  });
-  assert.equal(result.isError, undefined);
-  const url = (result.structuredContent as { url: string }).url;
-  const link = new URL(url);
-  assert.equal(link.hostname, "127.0.0.1");
-  assert.equal(link.searchParams.get("tool"), "mobile_open_simulator");
-  assert.equal(link.searchParams.get("platform"), "ios");
-  assert.equal(link.searchParams.get("workspaceTool"), "testing");
-  assert.equal((await fetch(link)).status, 200);
-});
-
-test("opening in a browser without a shared transport is refused", async t => {
-  const plugin = await createTestPlugin("<html></html>", { panel: createPanel(), features: [browserPanel()] });
-  const [hostSide, serverSide] = InMemoryTransport.createLinkedPair();
-  const host = new Client({ name: "cursor", version: "1" });
-  await plugin.server.connect(serverSide);
-  await host.connect(hostSide);
-  t.after(async () => { await host.close(); await plugin.close(); });
-  const result = await host.callTool({ name: "mobile_open_browser_panel", arguments: { tool: "mobile_open_simulator" } });
-  assert.equal(result.isError, true);
-  assert.match((result.content as Array<{ text: string }>)[0].text, /cannot open Mobile Dev in a browser/);
-});
-
 test("a panel that never renders inline links the browser page for MCP Apps hosts too", async t => {
   const directory = await mkdtemp(join(tmpdir(), "browser-panel-"));
   const page = join(directory, "browser-panel.html");
