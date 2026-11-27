@@ -590,3 +590,21 @@ test("an Apple app in front replaces the last app's target in No project mode in
     assert.equal(calls.filter(call => call.name === "mobile_testing_project_config").length, 1, "the same unnamed app is read once");
   } finally { panel.dispose(); }
 });
+
+test("a physical iPhone's front app known only by its pid is resolved as a physical device", async () => {
+  const listeners = new Set<() => void>();
+  let snapshot: Record<string, unknown> = { device: { udid: "00008150-000A5C3421B8C01C", name: "iPhone", state: "connected", pairingState: "paired", runtime: "", platform: "ios", kind: "physical" }, apps: [], foregroundApp: { bundleId: "com.bare.rn", pid: 2 }, ready: true };
+  const apps = { subscribe: (listener: () => void) => { listeners.add(listener); return () => listeners.delete(listener); }, getSnapshot: () => snapshot } as unknown as DeviceAppsStore;
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const panel = new TestingPanel(host({ mobile_testing_project_config: { runtimeMode: "bundled", targetSource: "foreground", targets: [{ name: "ios", platform: "ios", bundleId: "com.apple.Preferences" }] } }, calls), apps);
+  panel.setAvailable(true);
+  (panel as unknown as { update(fields: Record<string, unknown>): void }).update({ projectPath: PROJECT, studioPath: PROJECT, runtimeMode: "bundled", targetSource: "foreground", targets: [{ name: "ios", platform: "ios", bundleId: "com.bare.rn" }] });
+  snapshot = { ...snapshot, foregroundApp: { bundleId: null, pid: 9 } };
+  for (const listener of listeners) listener();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  try {
+    const read = calls.find(call => call.name === "mobile_testing_project_config");
+    assert.deepEqual(read?.arguments, { projectPath: PROJECT, foregroundPlatform: "ios", foregroundDeviceId: "00008150-000A5C3421B8C01C", foregroundPid: 9, foregroundKind: "physical" });
+    assert.equal(panel.target?.bundleId, "com.apple.Preferences");
+  } finally { panel.dispose(); }
+});

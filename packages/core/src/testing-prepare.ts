@@ -10,6 +10,7 @@ import type { Lane, LaneExecutor, MatrixPlatform } from "./testing-matrix.ts";
 import type { TestRunProgress, TestRunResult } from "./testing-run.ts";
 import { listIosDevices } from "./ios-devices.ts";
 import { ensureIosSigning } from "./ios-signing.ts";
+import { coreDeviceLaunchCode, coreDeviceLaunchHint } from "./coredevice-errors.ts";
 import { findDeviceBuild } from "./ios-device-build.ts";
 
 /** Home screens and system UI, which are never the app to record. */
@@ -203,7 +204,12 @@ export function physicalIosError(error: unknown, action: string, appId?: string)
     return new ExpectedOperationError("app_unavailable", `${action} failed: ${appId ?? "the app"} is not installed on the device. Build and install it (for an Expo app, \`npx expo run:ios --device\`), then try again.`);
   if (/no devices matched|device not found|unavailable|not connected|tunnel/i.test(output))
     return new ExpectedOperationError("device_unavailable", `${action} failed: the device is not reachable. Reconnect it, unlock it, and refresh Devices.`);
-  return commandError(error, action, "devicectl");
+  const launch = coreDeviceLaunchCode(output);
+  if (launch === "10002") return new ExpectedOperationError("device_unavailable", `${action} failed: ${coreDeviceLaunchHint(launch, appId)}`);
+  const failure = commandError(error, action, "devicectl");
+  // A launch that raced the app's own shutdown is retried by the user, so it stays a reported failure with its real explanation.
+  if (launch === "10004" && !(failure instanceof ExpectedOperationError)) failure.message = `${failure.message} ${coreDeviceLaunchHint(launch, appId)}`;
+  return failure;
 }
 
 const APK_PATH = /^\/[\w\-./=+@~]+\.apk$/;

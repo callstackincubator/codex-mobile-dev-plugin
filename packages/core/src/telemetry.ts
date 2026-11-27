@@ -107,6 +107,23 @@ export function recordTestingAgentRead(outcome: "success" | "failed", duration: 
 }
 
 /**
+ * How long a physical iPhone took to let go of the recorder's runner after its session closed, and
+ * whether it did within the bound. Outcome and duration only: no device or app identifiers.
+ */
+export function recordTestingDeviceSettle(outcome: "settled" | "timeout" | "unavailable", duration: number) {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  const attributes = { component: "server", surface: "testing", platform: "ios", outcome };
+  Sentry.metrics.count("testing.device.settle.samples", 1, { attributes });
+  Sentry.metrics.distribution("testing.device.settle.duration", Math.max(0, duration), { unit: "millisecond", attributes });
+}
+
+/** A physical-iPhone run that was started again once after CoreDevice reported the app's process gone (error 10004). */
+export function countTestingLaunchRetry(outcome: "recovered" | "failed") {
+  if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
+  Sentry.metrics.count("testing.run.launch_retry", 1, { attributes: { component: "server", surface: "testing", platform: "ios", outcome } });
+}
+
+/**
  * Setup telemetry is deliberately structural: operation, bounded outcome and provider id only.
  * It never includes prompts, source, project paths, app identifiers, model ids, URLs or tokens.
  */

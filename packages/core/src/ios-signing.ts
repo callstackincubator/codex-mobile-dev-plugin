@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { ExpectedOperationError } from "@mobile-dev/shared/error-reporting.ts";
 import { APP_FLOW_DIRECTORY } from "./app-flow-host.ts";
 import { TESTING_DIRECTORY } from "./testing-projects.ts";
+import { coreDeviceLaunchCode, rewriteCoreDeviceHint } from "./coredevice-errors.ts";
 
 /**
  * Code signing for the XCTest runner agent-device builds for a physical iPhone.
@@ -306,8 +307,28 @@ const USER_FIXABLE_REASONS = /^(?:signing_|bundle_identifier_already_registered|
  */
 export function withAgentDeviceHint(error: unknown, hint: (error: unknown) => string | undefined, message: (error: unknown) => string): unknown {
   if (error instanceof ExpectedOperationError || error === null || typeof error !== "object") return error;
+  const explained = explainCoreDeviceLaunch(error, message);
+  if (explained !== undefined) return explained;
   const details = (error as { details?: { reason?: unknown } }).details;
   const reason = typeof details?.reason === "string" ? details.reason : "";
   if (!USER_FIXABLE_REASONS.test(reason) || !hint(error)) return error;
   return new ExpectedOperationError(reason.startsWith("signing_") || reason.startsWith("bundle_") ? "invalid_input" : "device_unavailable", message(error));
+}
+
+/**
+ * agent-device's launch failures 10002 and 10004 end in its generic "unlocked, trusted" hint, which is
+ * wrong for both. Returns the same failure with an accurate explanation, or undefined for any other
+ * error. 10002 is something the user sorts out on the phone (expected); 10004 is a launch racing the
+ * app's own shutdown, which stays a reported error so the race remains visible.
+ */
+function explainCoreDeviceLaunch(error: object, message: (error: unknown) => string): Error | undefined {
+  const details = (error as { details?: { reason?: unknown; appBundleId?: unknown } }).details;
+  // A classified failure (locked, Developer Mode, signing) already carries its own accurate hint.
+  if (typeof details?.reason === "string" && USER_FIXABLE_REASONS.test(details.reason)) return undefined;
+  const text = message(error);
+  const code = coreDeviceLaunchCode(`${text}\n${JSON.stringify(details ?? "")}`);
+  const appId = typeof details?.appBundleId === "string" ? details.appBundleId : undefined;
+  const rewritten = code === undefined ? text : rewriteCoreDeviceHint(text, appId, code);
+  if (code === undefined || rewritten === text) return undefined;
+  return code === "10002" ? new ExpectedOperationError("device_unavailable", rewritten) : new Error(rewritten, { cause: error });
 }

@@ -598,6 +598,14 @@ device go through `captureServerError` as `testing.tool` and `testing.release`. 
 labels, placeholders, testIDs, roles, bounds, bundle ids, project paths, device identifiers or
 emitted test source are attached to any of these.
 
+Physical-iPhone runs add two bounded server metrics. `testing.device.settle.samples` and
+`testing.device.settle.duration` (milliseconds) measure how long the phone took to let go of the
+recorder's XCTest runner after its session closed, with `outcome` `settled`, `timeout` or
+`unavailable`. `testing.run.launch_retry` counts the single retry of a run whose first launch failed
+with CoreDevice error 10004, with `outcome` `recovered` or `failed`. Both carry only `component`,
+`surface`, `platform` and `outcome`: no device or app identifiers. The 10004 failure itself is still
+reported through `captureServerError` as `testing.tool`.
+
 An **agent recording** — the user's own coding agent writing the flow through
 `mobile_testing_agent_*`, see [docs/agent-recording.md](agent-recording.md) — is measured on both
 sides of the one boundary it crosses. In the server, `testing.agent.screen.duration` times the
