@@ -39,9 +39,7 @@ A host adds to the shared pieces without changing them:
   a separate module, so esbuild splits it into chunks beside `server.mjs`, keeping
   every file under the Claude plugin directory's 5 MiB limit.
 - **Panel:** a host's page entry calls `startMcpApp` with its chrome. Codex adds the
-  update banner and leaves out Open in browser (its host blocks localhost). The shared
-  Cursor entry keeps that control, which starts the loopback page and asks the host to
-  open the link; Claude uses the shared entry, for its cards.
+  update banner; Claude uses the shared entry, for its cards.
 - **Views:** shared views depend only on `HostBridge`, the subset of `App` they use,
   plus optional host context attachments. `DeviceWorkspace` keeps the iOS and Android
   panels, their selection and layout identical in every host.

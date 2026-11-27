@@ -11,8 +11,6 @@ import { TraceSiftView } from "@mobile-dev/ui/components/tracesift-view.tsx";
 import { AppIntelligenceView } from "@mobile-dev/ui/components/app-intelligence-view.tsx";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@mobile-dev/ui/components/ui/base-select.tsx";
 import { Button } from "@mobile-dev/ui/components/ui/button.tsx";
-import type { App } from "@modelcontextprotocol/ext-apps";
-import { OpenInBrowserButton, type BrowserPanelOpen } from "./open-in-browser-button";
 
 import { usePanelRef, useGroupRef, type Layout } from "react-resizable-panels";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@mobile-dev/ui/components/ui/resizable.tsx";
@@ -38,7 +36,7 @@ const tools = {
 type Tool = keyof typeof tools;
 const isTool = (value: string): value is Tool => value in tools;
 
-export function Workspace({ panels, recordingController, banner, displayModeControl, openInBrowserControl, app, contextControl, automaticTool, automaticToolRevision = 0, devices }: { panels: WorkspaceTools; recordingController: RecordingController; banner?: ReactNode; displayModeControl?: ReactNode; openInBrowserControl?: boolean; app?: App; contextControl?: ReactNode; automaticTool?: ToolName; automaticToolRevision?: number; devices: DeviceWorkspace }) {
+export function Workspace({ panels, recordingController, banner, displayModeControl, contextControl, automaticTool, automaticToolRevision = 0, devices }: { panels: WorkspaceTools; recordingController: RecordingController; banner?: ReactNode; displayModeControl?: ReactNode; contextControl?: ReactNode; automaticTool?: ToolName; automaticToolRevision?: number; devices: DeviceWorkspace }) {
   const { logs, performance, storage, tracesift } = panels;
   const appIntel = panels["app-intel"];
   const appFlow = panels["app-flow"];
@@ -144,8 +142,6 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
   const menuSide = bottomToolbar ? "top" : "bottom";
   const ToolIcon = tools[tool].icon;
   const toolbar = <nav className={`workspace-toolbar @container flex h-12 shrink-0 items-center justify-between gap-2 px-2 ${bottomToolbar ? "order-last border-t" : "border-y"}`} aria-label="Developer tools">
-    {displayModeControl}
-    {openInBrowserControl !== false && app ? <OpenInBrowserButton app={app} target={() => browserPanelOpen(tool, open === true, deviceState, appIntelState.selectedScreen)} onError={message => devices.notice(message)} /> : undefined}
     <Select items={[{ value: "none", label: "Tools" }, ...Object.entries(tools).map(([value, { label }]) => ({ value, label }))]} value={open ? tool : "none"} onValueChange={value => {
       if (value === "none") closeTools();
       else if (value && isTool(value)) showTool(value);
@@ -156,6 +152,7 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
         {Object.entries(tools).map(([value, { id, label, icon: Icon }]) => <SelectItem key={value} id={id} value={value}><Icon />{label}</SelectItem>)}
       </SelectGroup></SelectContent>
     </Select>
+    {displayModeControl}
   </nav>;
   const simulatorPanel = <ResizablePanel key="simulators" id="simulators-resizable" panelRef={simulatorsRef} minSize="0%" maxSize="100%" collapsible collapsedSize="0px" defaultSize={testingOpen ? "25%" : split ? "36%" : "60%"} onResize={size => setSimulatorsCollapsed(size.inPixels < 1)}>
     <DevicePanes workspace={devices} />
@@ -178,20 +175,4 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
       {sideBySide && !testingOpen ? [toolPanel, divider, simulatorPanel] : [simulatorPanel, divider, toolPanel]}
     </ResizablePanelGroup>
   </main></DevicePicker>;
-}
-
-function browserPanelOpen(tool: Tool, toolOpen: boolean, devices: ReturnType<DeviceWorkspace["getSnapshot"]>, selectedScreen: string | null): BrowserPanelOpen {
-  const view = document.documentElement.dataset.view;
-  const opening: BrowserPanelOpen["tool"] = tool === "app-intel" && toolOpen ? "mobile_open_app_intel" : view === "workspace" ? "mobile_open_workspace" : "mobile_open_simulator";
-  const target: BrowserPanelOpen = { tool: opening };
-  if (toolOpen && tool !== "app-flow") target.workspaceTool = tool;
-  if (tool === "app-intel" && selectedScreen) target.appIntelScreen = selectedScreen;
-  const pane = devices.panes.find(item => item.key === devices.active);
-  const device = pane?.device;
-  if (device && pane) {
-    target.platform = pane.platform;
-    target.deviceId = device.udid;
-    if (device.kind === "simulator" || device.kind === "emulator" || device.kind === "physical") target.kind = device.kind;
-  }
-  return target;
 }
