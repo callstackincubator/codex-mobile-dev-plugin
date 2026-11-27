@@ -643,6 +643,7 @@ test("an iOS profiling build refreshes stale profiler pods with the project's Bu
   await mkdir(join(root, "ios"));
   await writeFile(join(root, "ios", "Podfile"), "platform :ios, '15.0'");
   await mkdir(join(root, "node_modules", "@callstack", "tracesift-profiler"), { recursive: true });
+  await writeFile(join(root, "node_modules", "@callstack", "tracesift-profiler", "package.json"), '{"version":"0.7.0"}');
   await writeFile(join(root, "package.json"), "{}");
   await writeFile(join(root, "Gemfile"), "gem 'cocoapods'");
   await writeFile(join(root, "ios", "Podfile.lock"), "PODS:\n  - TracesiftProfiler (0.1.0)\nEXTERNAL SOURCES:\n  TracesiftProfiler:\n    :path: ../node_modules/@callstack/tracesift-rn-profiler\n");
@@ -652,7 +653,13 @@ test("an iOS profiling build refreshes stale profiler pods with the project's Bu
   let bundled: { command: string; args: string[]; cwd: string | undefined; path: string | undefined } | undefined;
   (client as unknown as { runSetupCommand: (command: string, args: string[], label: string, signal: AbortSignal | undefined, env: NodeJS.ProcessEnv, cwd: string) => Promise<void> }).runSetupCommand = async (command, args, _label, _signal, env, cwd) => {
     bundled = { command, args, cwd, path: env.PATH };
-    await writeFile(join(root, "ios", "Podfile.lock"), "TracesiftProfiler: ../node_modules/@callstack/tracesift-profiler\n");
+    const lock = 'EXTERNAL SOURCES:\n  TracesiftProfiler:\n    :path: "../node_modules/@callstack/tracesift-profiler"\n';
+    await writeFile(join(root, "ios", "Podfile.lock"), lock);
+    await mkdir(join(root, "ios", "Pods", "Local Podspecs"), { recursive: true });
+    await mkdir(join(root, "ios", "Pods", "Pods.xcodeproj"), { recursive: true });
+    await writeFile(join(root, "ios", "Pods", "Manifest.lock"), lock);
+    await writeFile(join(root, "ios", "Pods", "Pods.xcodeproj", "project.pbxproj"), 'path = "../../node_modules/@callstack/tracesift-profiler";');
+    await writeFile(join(root, "ios", "Pods", "Local Podspecs", "TracesiftProfiler.podspec.json"), '{"version":"0.7.0"}');
   };
   assert.deepEqual(await client.profileBuild({ projectPath: root, platform: "ios" }), { log: "built\n" });
   assert.deepEqual(bundled?.command, "bundle");
@@ -661,7 +668,10 @@ test("an iOS profiling build refreshes stale profiler pods with the project's Bu
   assert.match(bundled?.path ?? "", /\.rbenv\/shims/);
   bundled = undefined;
   await client.profileBuild({ projectPath: root, platform: "ios" });
-  assert.equal(bundled?.command, "bundle");
+  assert.equal(bundled, undefined, "an unchanged profiler pod must leave Xcode's incremental build intact");
+  await writeFile(join(root, "ios", "Pods", "Pods.xcodeproj", "project.pbxproj"), 'path = "../../node_modules/@callstack/tracesift-rn-profiler";');
+  await client.profileBuild({ projectPath: root, platform: "ios" });
+  assert.equal(bundled?.command, "bundle", "a stale generated project must relink the pod");
 });
 
 test("an iOS profiling build links a GUI-installed profiler without a Gemfile", async t => {

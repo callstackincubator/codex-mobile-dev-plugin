@@ -161,6 +161,27 @@ function profilerInstallArgs(manager: PackageManager, source = PROFILER_INSTALL_
   return [manager === "npm" ? "install" : "add", flag, source];
 }
 
+/** CocoaPods can retain a lockfile entry after its generated project points at an old package. */
+async function profilerPodLinked(root: string): Promise<boolean> {
+  const ios = join(root, "ios");
+  try {
+    const [lock, manifest, project, installedSpec, packageJson] = await Promise.all([
+      readFileAsync(join(ios, "Podfile.lock"), "utf8"),
+      readFileAsync(join(ios, "Pods", "Manifest.lock"), "utf8"),
+      readFileAsync(join(ios, "Pods", "Pods.xcodeproj", "project.pbxproj"), "utf8"),
+      readFileAsync(join(ios, "Pods", "Local Podspecs", "TracesiftProfiler.podspec.json"), "utf8"),
+      readFileAsync(join(root, "node_modules", "@callstack", "tracesift-profiler", "package.json"), "utf8"),
+    ]);
+    const podPath = ':path: "../node_modules/@callstack/tracesift-profiler"';
+    const version = (JSON.parse(packageJson) as { version?: unknown }).version;
+    const specVersion = (JSON.parse(installedSpec) as { version?: unknown }).version;
+    return lock.trim() === manifest.trim()
+      && lock.includes(`TracesiftProfiler:\n    ${podPath}`)
+      && project.includes('path = "../../node_modules/@callstack/tracesift-profiler";')
+      && typeof version === "string" && version === specVersion;
+  } catch { return false; }
+}
+
 export class TraceSiftClient {
   private ready?: Promise<Descriptor>;
   private child?: ChildProcess;
@@ -884,10 +905,10 @@ export class TraceSiftClient {
         const podfile = await stat(join(cwd, "ios", "Podfile")).catch(() => undefined);
         const rootGemfile = await stat(join(cwd, "Gemfile")).catch(() => undefined);
         const iosGemfile = await stat(join(cwd, "ios", "Gemfile")).catch(() => undefined);
-        // The lockfile can still name TracesiftProfiler while Pods.xcodeproj
-        // points at a removed package directory. Refresh CocoaPods before
-        // Xcode builds, including when npm was the only setup step.
-        if (profiler?.isDirectory() && podfile?.isFile()) {
+        // Relink only when the generated pod state is absent or stale. An
+        // unconditional pod install rewrites the Xcode project and invalidates
+        // the incremental build on every Run with TraceSift press.
+        if (profiler?.isDirectory() && podfile?.isFile() && !await profilerPodLinked(cwd)) {
           const gemfile = rootGemfile?.isFile() ? join(cwd, "Gemfile") : iosGemfile?.isFile() ? join(cwd, "ios", "Gemfile") : undefined;
           await this.runSetupCommand(gemfile ? "bundle" : "pod", gemfile ? ["exec", "pod", "install"] : ["install"], "Linking the TraceSift profiler pod", signal,
             { ...process.env, PATH: iosPath, LANG: "en_US.UTF-8", LC_ALL: "en_US.UTF-8", ...(gemfile ? { BUNDLE_GEMFILE: gemfile } : {}) }, join(cwd, "ios"), PROFILE_BUILD_TIMEOUT_MS);
