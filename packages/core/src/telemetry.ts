@@ -110,7 +110,7 @@ export function recordTestingAgentRead(outcome: "success" | "failed", duration: 
  * Setup telemetry is deliberately structural: operation, bounded outcome and provider id only.
  * It never includes prompts, source, project paths, app identifiers, model ids, URLs or tokens.
  */
-export function recordTestingSetupOperation(operation: "plan" | "apply" | "login" | "preference", outcome: "started" | "succeeded" | "failed" | "cancelled", provider: string = "none") {
+export function recordTestingSetupOperation(operation: "plan" | "apply" | "login" | "preference" | "signing", outcome: "started" | "succeeded" | "failed" | "cancelled", provider: string = "none") {
   if (process.env.MOBILE_DEV_TELEMETRY === "off") return;
   const allowed = ["none", "vercel", "openrouter", "openai-compatible", "chatgpt", "copilot", "opencode-console", "grok"];
   const attributes = { component: "server", surface: "testing", operation, outcome, provider: allowed.includes(provider) ? provider : "other" };

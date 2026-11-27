@@ -4,7 +4,7 @@ import type { HostBridge } from "../src/host-bridge.ts";
 import type { DeviceAppsStore } from "../src/device-apps.ts";
 import { TestingPanel } from "../src/testing-panel.ts";
 import { testRecorder } from "../src/test-recorder.ts";
-import { clampLimit, laneLabel, matrixFinished, matrixSummary, parseMatrix, parseMatrixDevices } from "../src/testing-matrix.ts";
+import { clampLimit, laneLabel, matrixFinished, matrixSummary, parseMatrix, parseMatrixDevices, parsePhysicalIosMatrixDevices } from "../src/testing-matrix.ts";
 import type { MatrixLane, MatrixView } from "../src/testing-matrix.ts";
 
 const PROJECT = "/Users/someone/app";
@@ -51,6 +51,27 @@ test("the checklist reads simulators and emulators and skips physical iPhones", 
   assert.deepEqual(android.map(device => [device.deviceId, device.booted]), [["emulator-5554", true], ["avd:Old", false]]);
 });
 
+test("the Android checklist keeps authorized phones as physical rows and marks unauthorized ones unavailable", () => {
+  const android = parseMatrixDevices("android", { devices: [
+    { udid: "emulator-5554", name: "Pixel", state: "Booted", kind: "emulator" },
+    { udid: "R5CT1", name: "Galaxy", state: "Booted", kind: "physical" },
+    { udid: "R5CT2", name: "Other", state: "unauthorized", kind: "physical" },
+  ] });
+  assert.deepEqual(android.map(device => [device.deviceId, device.kind, device.booted, device.connectionState]), [
+    ["emulator-5554", "emulator", true, undefined], ["R5CT1", "physical", true, undefined], ["R5CT2", "physical", false, "Authorize USB debugging"]]);
+});
+
+test("physical iOS checklist distinguishes connected, unpaired and disconnected devices", () => {
+  const devices = parsePhysicalIosMatrixDevices({ physicalDevices: [
+    { udid: "P", name: "Phone", state: "connected", pairingState: "paired", runtime: "iOS 27" },
+    { udid: "U", name: "Unpaired", state: "connected", pairingState: "unpaired" },
+    { udid: "D", name: "Disconnected", state: "disconnected", pairingState: "paired" },
+  ] });
+  assert.deepEqual(devices.map(device => [device.kind, device.booted, device.connectionState]), [
+    ["physical", true, "Connected"], ["physical", false, "Pair this device"], ["physical", false, "Disconnected"],
+  ]);
+});
+
 /** A host that plays a matrix: the first poll shows two lanes running and a third queued, the next ends them. */
 function matrixHost(calls: { name: string; arguments: Record<string, unknown> }[]) {
   let polls = 0;
@@ -61,6 +82,7 @@ function matrixHost(calls: { name: string; arguments: Record<string, unknown> }[
     const structuredContent = name === "mobile_testing_run_matrix" ? { matrixId: "m1", limit: 2, startedAt: 1, lanes: lanes(["queued", "queued", "queued"]) }
       : name === "mobile_testing_run_progress" ? { matrixId: "m1", limit: 2, startedAt: 1, lanes: lanes(++polls < 2 ? ["running", "running", "queued"] : ["passed", "passed", "passed"]) }
       : name === "mobile_list_simulators" ? { devices: [0, 1, 2].map(i => ({ udid: `d${i}`, name: `Phone ${i}`, state: "Booted", runtime: "iOS 26" })) }
+      : name === "mobile_testing_ios_signing" ? { resolved: { id: "TEAM123", source: "user" }, teams: [{ id: "TEAM123" }] }
       : name === "mobile_list_apps" ? { apps: [{ bundleId: "com.example.app", name: "App" }] } : {};
     return { content: [], structuredContent };
   } } as unknown as HostBridge;
@@ -115,6 +137,24 @@ test("one selected device runs as a lane unless it is the mirrored device, and a
   assert.equal(panel.matrixEnabled, true);
   assert.equal(panel.matrixRunCount, 2, "a project's lanes run its config's targets on each device");
   panel.dispose();
+});
+
+test("a mirrored physical iPhone is pinned to a physical matrix lane", async () => {
+  const calls: { name: string; arguments: Record<string, unknown> }[] = [];
+  const mirrored = { subscribe: () => () => undefined, getSnapshot: () => ({ device: { udid: "phone", name: "Phone", platform: "ios", kind: "physical", state: "connected", pairingState: "paired", runtime: "iOS 27" } }) } as unknown as DeviceAppsStore;
+  const panel = new TestingPanel(matrixHost(calls), mirrored);
+  const set = (fields: Record<string, unknown>) => (panel as unknown as { update(fields: Record<string, unknown>): void }).update(fields);
+  try {
+    panel.setAvailable(true);
+    set({ projectPath: PROJECT, runtimeMode: "bundled", targets: [{ name: "ios", platform: "ios", bundleId: "com.example.app" }], selectedTestPath: "tests/a.e2e.ts", selectedTestSource: 'test("x", async () => {});\n', tests: [{ relativePath: "tests/a.e2e.ts", name: "a", updatedAt: "", sizeBytes: 1, target: { platform: "ios", bundleId: "com.example.app" } }] });
+    assert.equal(panel.runsOnMatrix, true);
+    assert.equal(panel.matrixRunCount, 1);
+    await panel.runStoredTest();
+    const start = calls.find(call => call.name === "mobile_testing_run_matrix");
+    assert.deepEqual(start?.arguments.devices, [{ deviceId: "phone", platform: "ios", kind: "physical", name: "Phone" }]);
+  } finally {
+    panel.dispose();
+  }
 });
 
 test("the concurrency limit is saved per project but device choices are not", () => {

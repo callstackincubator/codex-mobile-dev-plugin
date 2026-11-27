@@ -47,6 +47,16 @@ test("a tap row records the step and takes it on the device", async () => {
   assert.deepEqual(done, [{ kind: "tap", point: { x: 50, y: 820 } }]);
 });
 
+test("physical iOS text entry uses the runner field ref without a mirror tap", async () => {
+  const recorder = new TestRecorder();
+  const done: unknown[] = [];
+  const field: ScreenComponent = { ...tab("Search", 300), role: "textbox", value: "Paris" };
+  recorder.attach(UDID, "ios", { ...reader([field], { count: 0 }), fillOnly: true, perform: action => { done.push(action); } });
+  recorder.start(UDID, "ios");
+  await pick(recorder, { x: 50, y: 320 }, "fill", "Berlin");
+  assert.deepEqual(done, [{ kind: "type", text: "Berlin", nodeId: "Search" }]);
+});
+
 test("picking an element offers its locator to insert, hands it back on Insert, and records nothing", async () => {
   const reads = { count: 0 };
   const recorder = new TestRecorder();
@@ -812,9 +822,23 @@ test("recording an Android emulator reads the tree with its serial and platform"
   recorder.stop();
 });
 
+test("a missing app target is reported separately from an empty accessibility tree", async () => {
+  const recorder = new TestRecorder();
+  await assert.rejects(recorder.readTree("sim", "ios"), /no app target to read/);
+});
+
 test("only the mirror of the platform being recorded or picked draws the recorder's overlay", () => {
   assert.equal(recorderShowsOn("android", "android"), true);
   assert.equal(recorderShowsOn("android", "ios"), false, "a re-record on Android must not paint the iOS mirror");
   assert.equal(recorderShowsOn("ios", "android"), false);
   assert.equal(recorderShowsOn("", "ios"), true, "nothing recording: nothing to hide");
+});
+
+test("a failed first screen read after Record says why instead of silently dropping the overlay", async () => {
+  const recorder = new TestRecorder();
+  recorder.attach(UDID, "ios", { readComponents: async () => { throw new Error("Choose your signing team in E2E setup → Devices"); }, screen: () => SCREEN, release() {} });
+  recorder.start(UDID, "ios");
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(recorder.getSnapshot().preparing, false);
+  assert.match(recorder.getSnapshot().error, /signing team/);
 });

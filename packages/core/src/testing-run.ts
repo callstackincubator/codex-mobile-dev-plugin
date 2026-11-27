@@ -302,13 +302,14 @@ export interface TestRunRequest {
    * A project-mode matrix lane: run the project's own config on one chosen device. See `runProjectLane`.
    * `target` is the config's target name (its engine must be a direct `mobile(...)` call).
    */
-  projectLane?: { target: string; device: string };
+  /** `stateDir` gives the lane's runner its own agent-device state; see `projectStateDir`. */
+  projectLane?: { target: string; device: string; stateDir?: string };
   /** Non-secret preference for a bundled test containing agent.* calls. */
   model?: { provider: BundledModelProvider; model: string; endpoint?: string };
 }
 
 /**
- * The app a bundled run drives. `device` pins the run to one simulator UDID or emulator serial, which is
+ * The app a bundled run drives. `device` pins the run to one iOS UDID or Android emulator serial, which is
  * what lets a test matrix run the same test on several devices at once; without it the runner takes
  * whichever booted device it finds, as a single run always has.
  */
@@ -495,7 +496,31 @@ async function runProjectPreview(request: TestRunRequest, deps: TestRunDeps): Pr
   }
 }
 
-function quoted(value: string): string { return JSON.stringify(value); }
+function quoted(value: string): string {
+  // These strings become JavaScript source in generated e2e configs. Keep HTML and line separators
+  // escaped as well as quotes and backslashes so the source is safe in every embedding context.
+  return JSON.stringify(value).replace(/[<>\u2028\u2029]/g, char => ({
+    "<": "\\u003c", ">": "\\u003e", "\u2028": "\\u2028", "\u2029": "\\u2029",
+  })[char]!);
+}
+
+/** The ids `@e2e-dev/mobile` treats as an id rather than a device name: a simulator UDID or an emulator serial. */
+const POOL_DEVICE_ID = /^(?:[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}|emulator-\d+)$/i;
+
+/**
+ * The `device` option text that pins a run to one device.
+ *
+ * `@e2e-dev/mobile` reads a configured string as an id only when it is a simulator UDID or an
+ * emulator serial; a hardware UDID (`00008110-…`) or a phone's adb serial is treated as a device
+ * *name* and fails with "No device named …". A `DeviceProvider` that leases the id goes through the
+ * same selection as `udid`/`serial`, so hardware is pinned by one. Simulators and emulators keep the
+ * plain string, which is what their configs have always carried.
+ */
+export function devicePinSource(device: string): string {
+  if (POOL_DEVICE_ID.test(device)) return quoted(device);
+  const id = quoted(device);
+  return `{ name: "mobile-dev-pinned-device", acquire: async () => ({ id: ${id}, deviceId: ${id}, client: {} }), release: async () => {} }`;
+}
 
 /*
  * TODO(e2e-device-flag): everything from here to `runProjectLane` is a workaround and gets replaced
@@ -570,7 +595,7 @@ export function rewriteLaneConfig(source: string, targetName: string, device: st
     const close = closingBracket(source, open);
     if (close < 0) throw refuse("its mobile(...) call could not be read.");
     const original = source.slice(open + 1, close).trim();
-    const pinned = `device: ${quoted(device)}, session: ${quoted(session)}`;
+    const pinned = `device: ${devicePinSource(device)}, session: ${quoted(session)}`;
     return `${source.slice(0, open + 1)}{ ${original ? `...(${original}), ` : ""}${pinned} }${source.slice(close)}`;
   }
   throw refuse(`the config has no target with that name.`);
@@ -628,7 +653,7 @@ async function runProjectLane(request: TestRunRequest, deps: TestRunDeps): Promi
   if (!mirror) await sweepLaneFiles(configDir);
   const run = (config: string, onProgress?: TestRunDeps["onProgress"]) => spawnRun({
     command: bin, cwd: root, runPath: request.relativePath, configName: config, output,
-    target: lane.target, timeoutMs: request.timeoutMs, spawner: deps.spawner ?? spawn, onProgress, signal: deps.signal,
+    target: lane.target, ...(lane.stateDir ? { stateDir: lane.stateDir } : {}), timeoutMs: request.timeoutMs, spawner: deps.spawner ?? spawn, onProgress, signal: deps.signal,
   });
   try {
     if (mirror) {
@@ -688,7 +713,7 @@ export function bundledConfigSource(target: BundledTarget, model?: TestRunReques
     "",
     "export default {",
     ...(selected ? ["  agents: { default: {", `    model: ${selected.field},`, "    system: 'You are a thorough QA agent. Verify every outcome.',", "  } },"] : []),
-    `  targets: [{ name: ${quoted(bundledTargetName(target))}, engine: mobile({ platform: ${quoted(target.platform)}${target.device ? `, device: ${quoted(target.device)}` : ""} }), app: { bundleId: ${quoted(target.bundleId)} } }],`,
+    `  targets: [{ name: ${quoted(bundledTargetName(target))}, engine: mobile({ platform: ${quoted(target.platform)}${target.device ? `, device: ${devicePinSource(target.device)}` : ""} }), app: { bundleId: ${quoted(target.bundleId)} } }],`,
     "  workers: 1,",
     "};",
     "",

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -20,8 +21,8 @@ import { captureServerError } from "./telemetry.ts";
  * `@e2e-dev/mobile` build. Role vocabulary and name sources then agree by construction, because
  * there is only one of each.
  *
- * Baguette still owns the mirror. Only the recorder's *read* path moves, and the two hold the
- * same simulator at once: a snapshot taken while the mirror streams leaves the stream running and
+ * Baguette or the native iOS mirror still owns the video. The recorder and mirror hold the
+ * same selected device at once: a snapshot taken while the mirror streams leaves the stream running and
  * returns in about a tenth of a second.
  */
 
@@ -50,7 +51,7 @@ interface EngineProjection {
 
 /** What one device's recording session needs to attach to the app the user is already tapping. */
 export interface TestingDeviceTarget {
-  /** An iOS simulator UDID or an Android emulator's adb serial. */
+  /** An iOS simulator or hardware UDID, or an Android emulator's adb serial. */
   deviceId: string;
   platform: "ios" | "android";
   /** The e2e project whose `@e2e-dev/mobile` projects the snapshot; its build, not ours. */
@@ -196,19 +197,46 @@ function depthOf(entry: ProjectedNode): number {
   return depth;
 }
 
+/**
+ * An id for a component that follows the element, not its position in one read.
+ *
+ * The projection mints `n1…nK` per read, so the same field has a different id after the screen
+ * re-reads, and a fill that arrives after a queued read would land on whichever element now holds
+ * that number. Derived from what identifies the element (role, names, box), the id is the same
+ * across reads while the element is, and simply absent when it is not. The typed `value` is left
+ * out so a field keeps its id while it is being filled. Identical siblings are told apart by order.
+ */
+function stableId(component: ScreenComponent, seen: Map<string, number>): string {
+  const { x, y, width, height } = component.bounds;
+  const key = [component.role, component.label, component.text, component.identifier, component.placeholder, Math.round(x), Math.round(y), Math.round(width), Math.round(height)].join("\u0000");
+  const occurrence = seen.get(key) ?? 0;
+  seen.set(key, occurrence + 1);
+  return `s${createHash("sha1").update(key).digest("hex").slice(0, 10)}${occurrence ? `-${occurrence}` : ""}`;
+}
+
 export function projectedComponents(projection: EngineProjection, nodes: readonly unknown[]): TestingDeviceTree {
   let minted = 0;
   const snapshot = projection.projectSnapshot(nodes, { mintId: () => `n${++minted}` });
   const tree: ScreenComponent[] = [];
   const refs: Record<string, string> = {};
+  const ids = new Map<string, string>();
+  const seen = new Map<string, number>();
   for (const entry of snapshot.index) {
     const component = toComponent(entry, depthOf(entry));
     if (!component) continue;
+    const id = stableId(component, seen);
+    ids.set(entry.id, id);
+    component.nodeId = id;
+    // A parent without a box is not in the tree; the child then has no parent link, as before.
+    if (component.parentId !== undefined) {
+      const parent = ids.get(component.parentId);
+      if (parent) component.parentId = parent; else delete component.parentId;
+    }
     tree.push(component);
     // agent-device's own refs are `@e20`; the projection strips the `@` for its own use, and
     // `interactions.click({ ref })` parses a bare `e20` as a selector and refuses it. So the
     // sigil is put back here, at the one boundary that hands a ref to agent-device.
-    if (entry.ref) refs[entry.id] = entry.ref.startsWith("@") ? entry.ref : `@${entry.ref}`;
+    if (entry.ref) refs[id] = entry.ref.startsWith("@") ? entry.ref : `@${entry.ref}`;
   }
   return { tree, refs, ...(snapshot.viewport ? { screen: snapshot.viewport } : {}) };
 }
@@ -240,6 +268,7 @@ export class TestingDevices {
   private readonly projections = new Map<string, Promise<EngineProjection>>();
   /** The device an attached session is on, so a second read reuses it instead of reopening. */
   private attached?: string;
+  private lastRefs: Record<string, string> = {};
   /** Serialises reads: agent-device answers one command per session at a time. */
   private queue: Promise<unknown> = Promise.resolve();
 
@@ -273,6 +302,7 @@ export class TestingDevices {
    * every simulator anyone has been working on.
    */
   private async attach(client: AgentDeviceClient, target: TestingDeviceTarget): Promise<void> {
+    if (this.attached !== undefined && this.attached !== this.key(target)) await this.releaseOnce();
     await client.apps.open({
       ...this.selector(target), session: SESSION,
       app: target.bundleId, relaunch: false, noRecord: true, timeoutMs: 120_000,
@@ -318,7 +348,29 @@ export class TestingDevices {
       snapshot = await this.snapshot(client, target);
     }
     if (!Array.isArray(snapshot.nodes)) throw new Error("The device snapshot returned no nodes.");
-    return projectedComponents(projection, snapshot.nodes);
+    const projected = projectedComponents(projection, snapshot.nodes);
+    this.lastRefs = projected.refs;
+    return projected;
+  }
+
+  /**
+   * Enters the recorded text into the field the panel named.
+   *
+   * The panel's fill is fire-and-forget behind its own refresh, so a read can be queued ahead of
+   * it and the refs from the read the panel acted on are gone. The field is therefore found again
+   * on a fresh snapshot, by its stable id, and the fill waits its turn in the queue like any read.
+   * A field that moved or went away is refused, never filled on a neighbour.
+   */
+  async fillNode(target: TestingDeviceTarget, nodeId: string, text: string): Promise<void> {
+    const fill = async () => {
+      await this.readOnce(target);
+      const ref = this.lastRefs[nodeId];
+      if (!ref) throw new ExpectedOperationError("invalid_input", "The selected text field is no longer on the current screen. Read the screen and record the step again.");
+      await this.performOnce(target, { kind: "type", ref, text });
+    };
+    const run = this.queue.then(fill, fill);
+    this.queue = run.catch(() => undefined);
+    await run;
   }
 
   /**
@@ -328,7 +380,7 @@ export class TestingDevices {
    * better half of the trade anyway — agent-device places the action on the element's own ref, so
    * the tap lands where the runner's locator action will land rather than on a coordinate someone
    * computed from a rectangle. The mirror shows every change regardless, because the video stream
-   * and the snapshot hold the same simulator at once.
+   * and the snapshot hold the same device at once.
    *
    * Every action asks agent-device to **settle** afterwards. The step the agent records next is
    * resolved against the screen this one produced, and a screen mid-transition answers with refs
@@ -381,13 +433,19 @@ export class TestingDevices {
    * devices, so a recorder on some other device keeps its session.
    */
   async releaseOn(deviceIds: readonly string[]): Promise<void> {
-    const held = this.attached?.split("\u0000")[1];
-    if (held !== undefined && deviceIds.includes(held)) await this.release();
+    const close = async () => {
+      const held = this.attached?.split("\u0000")[1];
+      if (held !== undefined && deviceIds.includes(held)) await this.releaseOnce();
+    };
+    const run = this.queue.then(close, close);
+    this.queue = run.catch(() => undefined);
+    await run;
   }
 
   private async releaseOnce(): Promise<void> {
     if (this.attached === undefined || this.client === undefined) return;
     this.attached = undefined;
+    this.lastRefs = {};
     try {
       await (await this.client).sessions.close({ session: SESSION });
     } catch (error) {

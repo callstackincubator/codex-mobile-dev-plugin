@@ -8,6 +8,8 @@ import { countUiEvent, recordUiTiming, setUiGauge } from "./telemetry.ts";
  * connection, so it supplies this; the recorder never talks to the host itself.
  */
 export type RecorderReader = {
+  /** Filling through agent-device focuses the field itself, without a preceding mirror tap. */
+  fillOnly?: boolean;
   /** The runner's element tree as flat components, in the same coordinate space as `screen`. */
   readComponents: () => Promise<ScreenComponent[]>;
   /** The screen size the mirror maps pointer events into. */
@@ -21,7 +23,7 @@ export type RecorderReader = {
    */
   perform?: (action:
     | { kind: "tap"; point: ScreenPoint }
-    | { kind: "type"; text: string }
+    | { kind: "type"; text: string; nodeId?: string }
     // Start and end in screen space, as every other point here is; the panel's own stream carries
     // a swipe, so the gesture a recorded step emits is one the mirror can also take.
     | { kind: "swipe"; from: ScreenPoint; to: ScreenPoint }) => void;
@@ -53,7 +55,8 @@ export type RecorderTreeSource = {
    * The screen is the runner's, not the mirror's: on Android the two differ, and the panel that
    * owns the mirror converts between them. See `scaledComponents`.
    */
-  read: (deviceId: string, platform: DevicePlatform) => Promise<{ tree: ScreenComponent[]; screen?: ScreenSize }>;
+  read: (deviceId: string, platform: DevicePlatform, kind?: "physical") => Promise<{ tree: ScreenComponent[]; screen?: ScreenSize }>;
+  fill?: (deviceId: string, nodeId: string, text: string) => Promise<void>;
   release: () => void;
 };
 
@@ -277,6 +280,7 @@ export class TestRecorder {
   private menuToken = 0;
   /** The centre of the element the last step named, which is where its action lands. */
   private lastTarget?: ScreenPoint;
+  private lastNodeId?: string;
   /** That element's rectangle, which is the box a scoped swipe is drawn inside. */
   private lastBounds?: ScreenBounds;
   private snapshot: TestRecorderSnapshot = {
@@ -299,9 +303,14 @@ export class TestRecorder {
     this.invalidate();
   }
 
-  /** What a panel's `readComponents` forwards to. Without a source there is nothing to record from. */
-  readTree(deviceId: string, platform: DevicePlatform): Promise<{ tree: ScreenComponent[]; screen?: ScreenSize }> {
-    return this.treeSource ? this.treeSource.read(deviceId, platform) : Promise.resolve({ tree: [] });
+  /** What a panel's `readComponents` forwards to. Missing setup is not an empty app tree. */
+  readTree(deviceId: string, platform: DevicePlatform, kind?: "physical"): Promise<{ tree: ScreenComponent[]; screen?: ScreenSize }> {
+    return this.treeSource ? this.treeSource.read(deviceId, platform, kind)
+      : Promise.reject(new Error("Testing Studio has no app target to read. Wait for the foreground app to appear in Testing Studio, then record again."));
+  }
+
+  fillTree(deviceId: string, nodeId: string, text: string): Promise<void> {
+    return this.treeSource?.fill?.(deviceId, nodeId, text) ?? Promise.reject(new Error("Testing Studio cannot enter text on this device."));
   }
 
   releaseTree() { this.treeSource?.release(); }
@@ -477,14 +486,16 @@ export class TestRecorder {
    * Measured as its own timing: how long Record is unusable for is a number the panel is judged on,
    * and it is not the same as `ui.testing.tree_read`, which also covers the warm reads during a
    * recording. A read that fails leaves `preparing` false — the overlay must never outlive the
-   * thing it is explaining — and the next hover retries as it always did.
+   * thing it is explaining — and reports why in the recorder's alert; the next hover retries.
    */
   private async prepare(deviceId: string, platform: DevicePlatform): Promise<void> {
     const startedAt = performance.now();
     try {
       await this.currentComponents();
-    } catch {
-      // Silent: a failed warm read is not an error the user asked for. The first hover says so.
+    } catch (error) {
+      // Shown, not swallowed: a recording that cannot read the device (a missing signing team, a
+      // locked phone) would otherwise just lose its overlay and look like Record did nothing.
+      if (this.isRecordingDevice(deviceId, platform)) this.update({ error: error instanceof Error ? error.message : String(error) });
     } finally {
       recordUiTiming("ui.testing.record_prepare", performance.now() - startedAt, platform);
       // Only the recording this prepared for: Stop, or a second Record, owns the flag after that.
@@ -764,6 +775,7 @@ export class TestRecorder {
     this.lastTarget = owner
       ? { x: owner.bounds.x + owner.bounds.width / 2, y: owner.bounds.y + owner.bounds.height / 2 }
       : point;
+    this.lastNodeId = owner?.nodeId;
     this.update({ steps: [...this.snapshot.steps, step] });
     countUiEvent(kind === "tap" ? "ui.testing.step_tap" : stepIsAssertion(kind) ? "ui.testing.step_assert" : "ui.testing.step_action");
     if (selector.kind === "point") countUiEvent("ui.testing.step_unresolved");
@@ -904,8 +916,8 @@ export class TestRecorder {
         this.reader?.perform?.({ kind: "swipe", ...swipePath(span ?? { x: 0, y: 0, ...(this.reader?.screen() ?? { width: 0, height: 0 }) }, swipeDirection(value)) });
       }
       else if (effect === "type") {
-        this.reader?.perform?.({ kind: "tap", point: where });
-        this.reader?.perform?.({ kind: "type", text: value ?? "" });
+        if (!this.reader?.fillOnly) this.reader?.perform?.({ kind: "tap", point: where });
+        this.reader?.perform?.({ kind: "type", text: value ?? "", ...(this.lastNodeId ? { nodeId: this.lastNodeId } : {}) });
       }
       // Anything that touched the app leaves a screen the cached tree no longer describes.
       if (effect !== "none") this.invalidate();

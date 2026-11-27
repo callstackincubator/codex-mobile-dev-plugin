@@ -99,3 +99,81 @@ test("clicking a lane switches the layout and mirror to it, and a poll does not"
   await internals.readMatrix("m").catch(() => undefined);
   assert.equal(focused.length, before);
 });
+
+test("the iPhone signing team is read, then saved or cleared through the server", async t => {
+  storage();
+  const calls: { name: string; input: Record<string, unknown> }[] = [];
+  const status = { teams: [{ id: "ABCDE12345", name: "Acme" }, { id: "FGHIJ67890" }], resolved: { id: "ABCDE12345", name: "Acme", source: "keychain" } };
+  const bridge = { async callServerTool({ name, arguments: input }: { name: string; arguments: Record<string, unknown> }) {
+    calls.push({ name, input });
+    if (name === "mobile_testing_ios_signing") return { content: [], structuredContent: status };
+    if (name === "mobile_testing_ios_signing_team") return { content: [], structuredContent: input.teamId ? { ...status, saved: input.teamId, resolved: { id: input.teamId, source: "user" } } : status };
+    return { content: [], structuredContent: {} };
+  } } as unknown as HostBridge;
+  const panel = new TestingPanel(bridge, deviceApps, { heartbeatMs: 1e9 });
+  t.after(() => panel.dispose?.());
+  panel.setAvailable(true);
+  await panel.loadIosSigning();
+  assert.deepEqual(panel.getSnapshot().iosSigning?.resolved, { id: "ABCDE12345", name: "Acme", source: "keychain" });
+  assert.equal(panel.getSnapshot().iosSigning?.teams.length, 2);
+  await panel.chooseIosTeam("FGHIJ67890");
+  assert.equal(panel.getSnapshot().iosSigning?.resolved?.envVar, undefined);
+  assert.equal(panel.getSnapshot().iosSigning?.saved, "FGHIJ67890");
+  assert.equal(panel.getSnapshot().iosSigning?.resolved?.source, "user");
+  assert.equal(calls.filter(call => call.name === "mobile_testing_ios_signing_team").at(-1)?.input.teamId, "FGHIJ67890");
+  await panel.chooseIosTeam(undefined);
+  assert.equal(calls.filter(call => call.name === "mobile_testing_ios_signing_team").at(-1)?.input.teamId, undefined);
+  assert.equal(panel.getSnapshot().iosSigning?.saved, undefined);
+});
+
+test("the signing view keeps which environment variable pinned the team, and drops an unknown one", async t => {
+  storage();
+  let resolved: Record<string, unknown> = { id: "ENVTEAM123", source: "env", envVar: "AGENT_DEVICE_IOS_TEAM_ID" };
+  const bridge = { async callServerTool() { return { content: [], structuredContent: { teams: [], resolved } }; } } as unknown as HostBridge;
+  const panel = new TestingPanel(bridge, deviceApps, { heartbeatMs: 1e9 });
+  t.after(() => panel.dispose?.());
+  panel.setAvailable(true);
+  await panel.loadIosSigning();
+  assert.equal(panel.getSnapshot().iosSigning?.resolved?.envVar, "AGENT_DEVICE_IOS_TEAM_ID");
+  resolved = { id: "ENVTEAM123", source: "env", envVar: "SOMETHING_ELSE" };
+  await panel.loadIosSigning();
+  assert.equal(panel.getSnapshot().iosSigning?.resolved?.envVar, undefined);
+});
+
+test("with no signing team, a physical iPhone recording asks first and continues after the user picks", async t => {
+  storage();
+  const phone = { udid: "phone-1", name: "iPhone", state: "connected", runtime: "iOS", platform: "ios", kind: "physical" };
+  const phoneApps = { subscribe: () => () => undefined, getSnapshot: () => ({ device: phone }) } as unknown as DeviceAppsStore;
+  const teams = [{ id: "ABCDE12345", name: "Hur Ali" }, { id: "FGHIJ67890", name: "Callstack" }];
+  const calls: string[] = [];
+  let saved: string | undefined;
+  const bridge = { async callServerTool({ name, arguments: input }: { name: string; arguments: Record<string, unknown> }) {
+    calls.push(name);
+    if (name === "mobile_testing_ios_signing") return { content: [], structuredContent: { teams, error: "two teams" } };
+    if (name === "mobile_testing_ios_signing_team") { saved = String(input.teamId); return { content: [], structuredContent: { teams, saved, resolved: { id: saved, source: "user" } } }; }
+    return { content: [], structuredContent: {} };
+  } } as unknown as HostBridge;
+  const panel = new TestingPanel(bridge, phoneApps, { heartbeatMs: 1e9 });
+  t.after(() => panel.dispose?.());
+  panel.setAvailable(true);
+  let continued = false;
+  const waiting = panel.ensureIosTeam().then(chosen => { continued = chosen; });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.deepEqual(panel.getSnapshot().signingPrompt?.teams, teams);
+  assert.equal(continued, false);
+  await panel.chooseIosTeam("FGHIJ67890");
+  await waiting;
+  assert.equal(continued, true);
+  assert.equal(saved, "FGHIJ67890");
+  assert.equal(panel.getSnapshot().signingPrompt, undefined);
+  // Declining cancels the action.
+  const again = new TestingPanel({ async callServerTool() { return { content: [], structuredContent: { teams, error: "x" } }; } } as unknown as HostBridge, phoneApps, { heartbeatMs: 1e9 });
+  t.after(() => again.dispose?.());
+  again.setAvailable(true);
+  const declined = again.ensureIosTeam();
+  await new Promise(resolve => setTimeout(resolve, 20));
+  again.dismissSigningPrompt();
+  assert.equal(await declined, false);
+  // No iPhone, no question.
+  assert.equal(await panel.ensureIosTeam(false), true);
+});

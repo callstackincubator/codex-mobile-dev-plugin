@@ -8,7 +8,7 @@ import { basename, dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync, realpathSync } from "node:fs";
 import { readFileSync } from "node:fs";
-import { RUNNER_CWD, bundledConfigSource, bundledTargetName, parseProgressLine, parseReport, progressConfigSource, reportDuration, reportError, rewriteLaneConfig, sweepLaneFiles, LANE_FILE_PREFIX, reportSteps, reportStatus, runRecordedTest, runnerBin, runnerEnv, untilTestPath } from "../src/testing-run.ts";
+import { RUNNER_CWD, bundledConfigSource, devicePinSource, bundledTargetName, parseProgressLine, parseReport, progressConfigSource, reportDuration, reportError, rewriteLaneConfig, sweepLaneFiles, LANE_FILE_PREFIX, reportSteps, reportStatus, runRecordedTest, runnerBin, runnerEnv, untilTestPath } from "../src/testing-run.ts";
 import { bundledE2eRoot } from "../src/e2e-runtime.ts";
 
 const FILE = "tests/a-recorded-flow.e2e.ts";
@@ -418,9 +418,9 @@ test("bundled deterministic tests need no model and agent tests request one", as
 });
 
 test("a device-pinned bundled config names the device and gives the target its own name", () => {
-  const source = bundledConfigSource({ platform: "ios", bundleId: "com.example.app", device: "A1B2-C3" });
-  assert.match(source, /name: "ios-A1B2-C3"/);
-  assert.match(source, /mobile\(\{ platform: "ios", device: "A1B2-C3" \}\)/);
+  const source = bundledConfigSource({ platform: "ios", bundleId: "com.example.app", device: "3F2504E0-4F89-41D3-9A0C-0305E82C3301" });
+  assert.match(source, /name: "ios-3F2504E0-4F89-41D3-9A0C-0305E82C3301"/);
+  assert.match(source, /mobile\(\{ platform: "ios", device: "3F2504E0-4F89-41D3-9A0C-0305E82C3301" \}\)/);
   assert.match(source, /workers: 1/);
   assert.equal(bundledTargetName({ platform: "android", bundleId: "x", device: "emulator-5554" }), "android-emulator-5554");
   assert.equal(bundledTargetName({ platform: "android", bundleId: "x", device: "avd:Pixel 8" }), "android-avd-Pixel-8");
@@ -490,10 +490,10 @@ export default {
 `;
 
 test("a lane pins the device and session on its own target only, keeping the other options", () => {
-  const out = rewriteLaneConfig(LANE_CONFIG, "ios", "UDID-1", "lane-1");
-  assert.match(out, /engine: mobile\(\{ \.\.\.\(\{ platform: "ios", settle: 300 \}\), device: "UDID-1", session: "lane-1" \}\)/);
+  const out = rewriteLaneConfig(LANE_CONFIG, "ios", "3F2504E0-4F89-41D3-9A0C-0305E82C3301", "lane-1");
+  assert.match(out, /engine: mobile\(\{ \.\.\.\(\{ platform: "ios", settle: 300 \}\), device: "3F2504E0-4F89-41D3-9A0C-0305E82C3301", session: "lane-1" \}\)/);
   assert.match(out, /engine: mobile\(\{ platform: "android", transition: \{ mode: "fast" \} \}\)/, "the other target is untouched");
-  assert.equal(out, LANE_CONFIG.replace('mobile({ platform: "ios", settle: 300 })', 'mobile({ ...({ platform: "ios", settle: 300 }), device: "UDID-1", session: "lane-1" })'), "nothing else changes");
+  assert.equal(out, LANE_CONFIG.replace('mobile({ platform: "ios", settle: 300 })', 'mobile({ ...({ platform: "ios", settle: 300 }), device: "3F2504E0-4F89-41D3-9A0C-0305E82C3301", session: "lane-1" })'), "nothing else changes");
 });
 
 test("the second target is the one rewritten when it is the one named", () => {
@@ -503,24 +503,24 @@ test("the second target is the one rewritten when it is the one named", () => {
 });
 
 test("a variable argument and a spread are kept by spreading them", () => {
-  const variable = rewriteLaneConfig('const opts = { platform: "ios" };\nexport default { targets: [\n{ name: "ios", engine: mobile(opts), app: {} },\n] };', "ios", "D", "s");
-  assert.match(variable, /mobile\(\{ \.\.\.\(opts\), device: "D", session: "s" \}\)/);
-  const spread = rewriteLaneConfig('export default { targets: [\n{ name: "a", engine: mobile({ ...base, platform: "android" }) },\n] };', "a", "D", "s");
-  assert.match(spread, /mobile\(\{ \.\.\.\(\{ \.\.\.base, platform: "android" \}\), device: "D", session: "s" \}\)/);
-  const none = rewriteLaneConfig('export default { targets: [{ name: "a", engine: mobile() }] };', "a", "D", "s");
-  assert.match(none, /mobile\(\{ device: "D", session: "s" \}\)/);
+  const variable = rewriteLaneConfig('const opts = { platform: "ios" };\nexport default { targets: [\n{ name: "ios", engine: mobile(opts), app: {} },\n] };', "ios", "emulator-5554", "s");
+  assert.match(variable, /mobile\(\{ \.\.\.\(opts\), device: "emulator-5554", session: "s" \}\)/);
+  const spread = rewriteLaneConfig('export default { targets: [\n{ name: "a", engine: mobile({ ...base, platform: "android" }) },\n] };', "a", "emulator-5554", "s");
+  assert.match(spread, /mobile\(\{ \.\.\.\(\{ \.\.\.base, platform: "android" \}\), device: "emulator-5554", session: "s" \}\)/);
+  const none = rewriteLaneConfig('export default { targets: [{ name: "a", engine: mobile() }] };', "a", "emulator-5554", "s");
+  assert.match(none, /mobile\(\{ device: "emulator-5554", session: "s" \}\)/);
 });
 
 test("parentheses inside strings and comments do not end the call early", () => {
-  const out = rewriteLaneConfig('export default { targets: [{ name: "a", engine: mobile({ platform: "ios", label: ")(" /* ) */ }) }] };', "a", "D", "s");
+  const out = rewriteLaneConfig('export default { targets: [{ name: "a", engine: mobile({ platform: "ios", label: ")(" /* ) */ }) }] };', "a", "emulator-5554", "s");
   assert.match(out, /session: "s" \}\) \}\] \};$/);
 });
 
 test("a target whose engine is not a direct mobile call, or that does not exist, is refused with a reason", () => {
-  assert.throws(() => rewriteLaneConfig('export default { targets: [{ name: "web", engine: playwright({}) }] };', "web", "D", "s"), /not a direct mobile\(\.\.\.\) call/);
-  assert.throws(() => rewriteLaneConfig('export default { targets: [{ name: "ios", engine: makeEngine("ios") }] };', "ios", "D", "s"), /not a direct mobile/);
-  assert.throws(() => rewriteLaneConfig('const targets = []; export default { targets };', "ios", "D", "s"), /no literal `targets/);
-  assert.throws(() => rewriteLaneConfig(LANE_CONFIG, "tvos", "D", "s"), /no target with that name/);
+  assert.throws(() => rewriteLaneConfig('export default { targets: [{ name: "web", engine: playwright({}) }] };', "web", "emulator-5554", "s"), /not a direct mobile\(\.\.\.\) call/);
+  assert.throws(() => rewriteLaneConfig('export default { targets: [{ name: "ios", engine: makeEngine("ios") }] };', "ios", "emulator-5554", "s"), /not a direct mobile/);
+  assert.throws(() => rewriteLaneConfig('const targets = []; export default { targets };', "ios", "emulator-5554", "s"), /no literal `targets/);
+  assert.throws(() => rewriteLaneConfig(LANE_CONFIG, "tvos", "emulator-5554", "s"), /no target with that name/);
 });
 
 async function laneProject() {
@@ -531,9 +531,30 @@ async function laneProject() {
 }
 
 /** A spawn that records the lane config as it is while the run is alive, then answers. */
-function laneSpawner(seen: { args?: readonly string[]; cwd?: string; config?: string; existed?: string[] }) {
-  return ((command: string, args: readonly string[], options: { cwd?: string }) => {
-    seen.args = args; seen.cwd = options.cwd;
+test("a hardware UDID or phone serial is pinned through a provider the runner reads as an id, not a device name", () => {
+  for (const device of ["00008110-001A2B3C4D5E801E", "R58M123ABC"]) {
+    const pin = devicePinSource(device);
+    assert.match(pin, /acquire: async \(\) => \(\{ id: "[^"]+", deviceId: "[^"]+", client: \{\} \}\)/);
+    assert.ok(pin.includes(JSON.stringify(device)));
+    assert.match(bundledConfigSource({ platform: "ios", bundleId: "com.example.app", device }), /device: \{ name: "mobile-dev-pinned-device"/);
+    assert.match(rewriteLaneConfig('export default { targets: [{ name: "a", engine: mobile() }] };', "a", device, "s"), /device: \{ name: "mobile-dev-pinned-device"/);
+  }
+  // Simulators and emulators keep the plain string their configs have always carried.
+  assert.equal(devicePinSource("3F2504E0-4F89-41D3-9A0C-0305E82C3301"), '"3F2504E0-4F89-41D3-9A0C-0305E82C3301"');
+  assert.equal(devicePinSource("emulator-5554"), '"emulator-5554"');
+});
+
+test("generated device pins escape HTML delimiters and JavaScript line separators", () => {
+  const pin = devicePinSource('phone</script>"\u2028\u2029');
+  assert.ok(pin.includes('phone\\u003c/script\\u003e\\"\\u2028\\u2029'));
+  assert.ok(!pin.includes("</script>"));
+  assert.ok(!pin.includes("\u2028"));
+  assert.ok(!pin.includes("\u2029"));
+});
+
+function laneSpawner(seen: { args?: readonly string[]; cwd?: string; config?: string; existed?: string[]; env?: NodeJS.ProcessEnv }) {
+  return ((command: string, args: readonly string[], options: { cwd?: string; env?: NodeJS.ProcessEnv }) => {
+    seen.args = args; seen.cwd = options.cwd; seen.env = options.env;
     const config = args[args.indexOf("--config") + 1]!;
     const imported = config.endsWith(".progress.mts") ? readFileSync(config, "utf8").match(/file:\/\/[^"]+/)![0] : undefined;
     seen.config = readFileSync(imported ? fileURLToPath(imported) : config, "utf8");
@@ -545,7 +566,7 @@ test("a project lane runs a hidden rewritten copy beside the config, with its ow
   const root = await laneProject();
   const seen: { args?: readonly string[]; cwd?: string; config?: string } = {};
   const result = await runRecordedTest({ projectPath: root, relativePath: FILE, configPath: join(root, "e2e.config.ts"), target: "ios",
-    projectLane: { target: "ios", device: "UDID-1" }, runtime: { mode: "project", root } }, { spawner: laneSpawner(seen), onProgress: () => undefined });
+    projectLane: { target: "ios", device: "3F2504E0-4F89-41D3-9A0C-0305E82C3301" }, runtime: { mode: "project", root } }, { spawner: laneSpawner(seen), onProgress: () => undefined });
   assert.equal(result.status, "passed");
   const args = seen.args ?? [];
   assert.equal(seen.cwd, root);
@@ -553,12 +574,22 @@ test("a project lane runs a hidden rewritten copy beside the config, with its ow
   const config = args[args.indexOf("--config") + 1]!;
   assert.equal(dirname(config), root, "the lane's config sits beside the project's own");
   assert.ok(basename(config).startsWith(LANE_FILE_PREFIX));
-  assert.match(seen.config!, /device: "UDID-1", session: "mobile-dev-lane-/);
+  assert.match(seen.config!, /device: "3F2504E0-4F89-41D3-9A0C-0305E82C3301", session: "mobile-dev-lane-/);
   assert.notEqual(args[args.indexOf("--output") + 1], undefined);
   assert.equal(dirname(args[args.indexOf("--output") + 1]!), root, "the runner refuses an --output outside the root it runs from");
   assert.equal(existsSync(args[args.indexOf("--output") + 1]!), false, "the output directory is removed");
   assert.deepEqual((await readdir(root)).filter(name => name.startsWith(LANE_FILE_PREFIX)), [], "the lane files are removed");
   assert.equal(readFileSync(join(root, "e2e.config.ts"), "utf8"), LANE_CONFIG, "the project's own config is never touched");
+});
+
+test("a project lane on iOS hardware gets its own agent-device state; other lanes get the terminal's", async () => {
+  const root = await laneProject();
+  const hardware: { env?: NodeJS.ProcessEnv } = {}, simulator: { env?: NodeJS.ProcessEnv } = {};
+  const base = { projectPath: root, relativePath: FILE, configPath: join(root, "e2e.config.ts"), target: "ios" };
+  await runRecordedTest({ ...base, projectLane: { target: "ios", device: "00008110-001A2C3E0E12801E", stateDir: "/state/project-a" } }, { spawner: laneSpawner(hardware) });
+  await runRecordedTest({ ...base, projectLane: { target: "ios", device: "3F2504E0-4F89-41D3-9A0C-0305E82C3301" } }, { spawner: laneSpawner(simulator) });
+  assert.equal(hardware.env?.AGENT_DEVICE_STATE_DIR, "/state/project-a");
+  assert.equal(simulator.env?.AGENT_DEVICE_STATE_DIR, undefined, "a simulator lane keeps the state a terminal run would get");
 });
 
 test("two lanes at once use different files and different sessions, and one finishing removes only its own", async () => {
@@ -572,8 +603,8 @@ test("two lanes at once use different files and different sessions, and one fini
   assert.notEqual(a.args![a.args!.indexOf("--config") + 1], b.args![b.args!.indexOf("--config") + 1]);
   assert.notEqual(a.args![a.args!.indexOf("--output") + 1], b.args![b.args!.indexOf("--output") + 1]);
   assert.notEqual(a.config!.match(/session: "([^"]+)"/)![1], b.config!.match(/session: "([^"]+)"/)![1]);
-  assert.match(a.config!, /device: "A"/);
-  assert.match(b.config!, /device: "B"/);
+  assert.match(a.config!, /id: "A"/);
+  assert.match(b.config!, /id: "B"/);
 });
 
 test("a lane of the editor's own text runs in an isolated mirror and writes nothing into the project", async () => {

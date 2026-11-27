@@ -469,7 +469,9 @@ npm run cursor:config
    global file rather than a project's `.cursor/mcp.json`: the snippet uses absolute
    paths to this checkout and the Node executable running the generator.
 2. Reload Cursor, check that `mobile-dev` is enabled in the MCP section of Cursor Settings, and
-   ask **“Open Mobile Dev”** in a new agent chat.
+   ask **“Open Mobile Dev”** in a new agent chat. The panel shows **Expand** only when the host advertises `fullscreen` in
+   `availableDisplayModes`. Cursor documents no MCP Apps display modes, and its Agent window
+   has not advertised one, so the panel keeps the iframe size the host gives it there.
 
 After UI or server edits, run `npm run build` and reload Cursor. Regenerate the
 config if the checkout or Node path changes.

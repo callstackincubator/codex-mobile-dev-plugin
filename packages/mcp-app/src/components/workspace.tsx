@@ -142,7 +142,6 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
   const menuSide = bottomToolbar ? "top" : "bottom";
   const ToolIcon = tools[tool].icon;
   const toolbar = <nav className={`workspace-toolbar @container flex h-12 shrink-0 items-center justify-between gap-2 px-2 ${bottomToolbar ? "order-last border-t" : "border-y"}`} aria-label="Developer tools">
-    {displayModeControl}
     <Select items={[{ value: "none", label: "Tools" }, ...Object.entries(tools).map(([value, { label }]) => ({ value, label }))]} value={open ? tool : "none"} onValueChange={value => {
       if (value === "none") closeTools();
       else if (value && isTool(value)) showTool(value);
@@ -153,6 +152,7 @@ export function Workspace({ panels, recordingController, banner, displayModeCont
         {Object.entries(tools).map(([value, { id, label, icon: Icon }]) => <SelectItem key={value} id={id} value={value}><Icon />{label}</SelectItem>)}
       </SelectGroup></SelectContent>
     </Select>
+    {displayModeControl}
   </nav>;
   const simulatorPanel = <ResizablePanel key="simulators" id="simulators-resizable" panelRef={simulatorsRef} minSize="0%" maxSize="100%" collapsible collapsedSize="0px" defaultSize={testingOpen ? "25%" : split ? "36%" : "60%"} onResize={size => setSimulatorsCollapsed(size.inPixels < 1)}>
     <DevicePanes workspace={devices} />

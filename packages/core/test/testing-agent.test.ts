@@ -395,12 +395,15 @@ test("an adb serial is a valid device id where a uuid schema refuses it", () => 
   assert.equal(deviceIdSchema.safeParse(CONTEXT.deviceId).success, true);
 });
 
-test("only a booted simulator or emulator is recordable", () => {
+test("booted virtual devices and connected paired iOS hardware are recordable", () => {
   const base = { udid: "x", name: "d", runtime: "" };
   assert.equal(isRecordableDevice({ ...base, state: "Booted", platform: "ios", kind: "simulator" }), true);
   assert.equal(isRecordableDevice({ ...base, udid: "emulator-5554", state: "Booted", platform: "android", kind: "emulator" }), true);
   assert.equal(isRecordableDevice({ ...base, state: "Shutdown", platform: "android", kind: "emulator" }), false);
-  assert.equal(isRecordableDevice({ ...base, state: "connected", platform: "android", kind: "physical" } as never), false);
-  assert.equal(isRecordableDevice({ ...base, state: "connected", platform: "ios", kind: "physical" } as never), false);
+  assert.equal(isRecordableDevice({ ...base, state: "Booted", platform: "android", kind: "physical" } as never), true);
+  assert.equal(isRecordableDevice({ ...base, state: "unauthorized", platform: "android", kind: "physical" } as never), false);
+  assert.equal(isRecordableDevice({ ...base, state: "offline", platform: "android", kind: "physical" } as never), false);
+  assert.equal(isRecordableDevice({ ...base, state: "connected", platform: "ios", kind: "physical", pairingState: "paired" } as never), true);
+  assert.equal(isRecordableDevice({ ...base, state: "connected", platform: "ios", kind: "physical", pairingState: "unpaired" } as never), false);
   assert.equal(isRecordableDevice(undefined), false);
 });

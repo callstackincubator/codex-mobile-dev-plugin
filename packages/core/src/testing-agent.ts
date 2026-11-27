@@ -66,7 +66,7 @@ export const PANEL_OPEN_GRACE_MS = 15_000;
 export const PROJECT_REQUEST_TTL_MS = 60_000;
 
 /** What the panel's selection is, as the panel reports it. Nothing here is inferred. */
-export type TestingAgentContext = { projectPath: string; deviceId: string; platform: "ios" | "android"; bundleId: string };
+export type TestingAgentContext = { projectPath: string; deviceId: string; platform: "ios" | "android"; kind?: "physical"; bundleId: string };
 
 export type TestingAgentStatus = "idle" | "recording" | "finished" | "aborted";
 
@@ -388,7 +388,14 @@ export class TestingAgentRecordings {
     const problems: string[] = [];
 
     let device: { deviceId: string; platform: "ios" | "android"; name?: string } | undefined;
-    if (reported?.deviceId) device = { deviceId: reported.deviceId, platform: reported.platform };
+    if (reported?.deviceId) {
+      if (reported.kind === "physical") {
+        const physical = reported.platform === "ios" ? ops?.physicalIos : ops?.physicalAndroid;
+        if (!physical) refused("Physical device recording is unavailable on this server.");
+        await physical.ready(reported.deviceId);
+      }
+      device = { deviceId: reported.deviceId, platform: reported.platform };
+    }
     else if (ops?.bootedDevices) {
       const found = (await Promise.all((["ios", "android"] as const).map(async platform =>
         (await ops.bootedDevices!(platform).catch(() => [])).map(entry => ({ ...entry, platform }))))).flat();
@@ -399,7 +406,7 @@ export class TestingAgentRecordings {
 
     let bundleId = "";
     if (device) {
-      const front = ops?.foregroundApp ? await ops.foregroundApp(device.platform, device.deviceId).catch(() => null) : null;
+      const front = reported?.kind === "physical" && device.platform === "ios" ? null : ops?.foregroundApp ? await ops.foregroundApp(device.platform, device.deviceId).catch(() => null) : null;
       const foreground = front && !LAUNCHER_APP.test(front) ? front : "";
       if (bundled) {
         bundleId = foreground || reported?.bundleId || "";
@@ -419,7 +426,7 @@ export class TestingAgentRecordings {
     if (problems.length > 0 || !device) {
       refused(`Cannot start recording yet. ${problems.join(" ")} Then begin again.`);
     }
-    return { projectPath, deviceId: device.deviceId, platform: device.platform, bundleId, picked };
+    return { projectPath, deviceId: device.deviceId, platform: device.platform, ...(reported?.kind === "physical" ? { kind: "physical" as const } : {}), bundleId, picked };
   }
 
   /**
@@ -817,6 +824,7 @@ export function registerTestingAgentTools(server: McpServer, devices: TestingDev
       projectPath: z.string().max(4096),
       deviceId: deviceIdSchema.or(z.literal("")),
       platform: z.enum(["ios", "android"]).optional(),
+      kind: z.literal("physical").optional(),
       bundleId: z.string().max(512),
     },
     annotations: write,

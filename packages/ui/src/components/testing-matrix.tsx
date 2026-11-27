@@ -11,23 +11,52 @@ import { Badge } from "./ui/badge.tsx";
 import { Button } from "./ui/button.tsx";
 import { Input } from "./ui/input.tsx";
 import { Label } from "./ui/label.tsx";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/base-select.tsx";
 
 /** One row of the checklist: a checkbox, the device, and what is true of it right now. */
 function DeviceRow({ device, checked, busy, appMissing, onToggle }: { device: MatrixDeviceOption; checked: boolean; busy: boolean; appMissing: boolean; onToggle: (value: boolean) => void }) {
   const id = `matrix-${device.deviceId}`;
   return <li className="flex items-center gap-2 py-1.5" data-matrix-device={device.deviceId}>
-    <input id={id} type="checkbox" className="size-3.5 shrink-0 accent-primary" checked={checked} disabled={busy || (appMissing && !checked)} onChange={event => onToggle(event.target.checked)} />
+    <input id={id} type="checkbox" className="size-3.5 shrink-0 accent-primary" checked={checked} disabled={busy || (device.kind === "physical" && !device.booted && !checked) || (appMissing && !checked)} onChange={event => onToggle(event.target.checked)} />
     <Label htmlFor={id} className="flex min-w-0 flex-1 items-baseline gap-1.5 text-sm font-normal">
       <span className="truncate">{device.name}</span>
+      {device.kind === "physical" && <Badge variant="outline">Device</Badge>}
       {device.runtime && <span className="shrink-0 text-xs text-muted-foreground">{device.runtime}</span>}
     </Label>
     <span className="flex shrink-0 items-center gap-1">
       {busy && <Badge variant="outline">Busy</Badge>}
-      <Badge variant="ghost" className={device.booted ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-muted text-muted-foreground"}>{device.booted ? "Booted" : "Off"}</Badge>
-      {device.booted && device.installed !== undefined && <Badge variant="ghost" title={device.installed ? "The app is on this device." : "Not installed. It will be copied from another booted device that has it that has it."}
+      <Badge variant="ghost" className={device.booted ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-muted text-muted-foreground"}>{device.kind === "physical" ? device.connectionState : device.booted ? "Booted" : "Off"}</Badge>
+      {device.booted && device.installed !== undefined && <Badge variant="ghost" title={device.installed ? "The app is on this device." : device.kind === "physical" ? "Not installed. A device build already on this Mac is installed when the run starts; otherwise build it with `npx expo run:ios --device`." : "Not installed. It will be copied from another booted device that has it."}
         className={device.installed ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-amber-500/10 text-amber-600 dark:text-amber-400"}>{device.installed ? "Installed" : "App missing"}</Badge>}
     </span>
   </li>;
+}
+
+const SIGNING_SOURCE: Record<string, string> = { env: "set by the environment", user: "your choice", project: "from the project", keychain: "the only team in your keychain" };
+const AUTOMATIC = "__automatic__";
+
+/** The team that signs the test runner on a physical iPhone: read-only when the environment pins it, otherwise a picker. */
+export function SigningTeam({ panel }: { panel: TestingPanel }) {
+  const state = useSyncExternalStore(panel.subscribe, panel.getSnapshot);
+  const signing = state.iosSigning;
+  useEffect(() => { void panel.loadIosSigning(); }, [panel]);
+  if (!signing) return null;
+  const label = (team: { id: string; name?: string }) => team.name ? `${team.name} (${team.id})` : team.id;
+  const resolved = signing.resolved;
+  if (resolved?.source === "env") return <div className="flex flex-col gap-1" data-ios-signing="env">
+    <p className="text-sm">{label(resolved)} <span className="text-xs text-muted-foreground">· {resolved.envVar ? `set by ${resolved.envVar}` : SIGNING_SOURCE.env}</span></p>
+    <p className="text-xs text-muted-foreground">Fixed by the environment, so it can't be changed here. To choose another team, unset {resolved.envVar ?? "MOBILE_DEV_IOS_TEAM_ID"} and restart Mobile Dev.</p>
+  </div>;
+  const teams = signing.teams.some(team => team.id === signing.saved) || !signing.saved ? signing.teams : [...signing.teams, { id: signing.saved }];
+  const items = [{ value: AUTOMATIC, label: resolved && resolved.source !== "user" ? `Automatic · ${label(resolved)}` : "Automatic" }, ...teams.map(team => ({ value: team.id, label: label(team) }))];
+  return <div className="flex flex-col gap-1" data-ios-signing={resolved?.source ?? "unresolved"}>
+    <Select items={items} value={signing.saved ?? AUTOMATIC} onValueChange={value => { if (value) void panel.chooseIosTeam(value === AUTOMATIC ? undefined : value); }}>
+      <SelectTrigger size="sm" className="w-full" aria-label="iPhone signing team"><SelectValue>{items.find(item => item.value === (signing.saved ?? AUTOMATIC))?.label}</SelectValue></SelectTrigger>
+      <SelectContent>{items.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
+    </Select>
+    {resolved ? <p className="text-xs text-muted-foreground">Signs the test runner on iPhones: {SIGNING_SOURCE[resolved.source]}.</p>
+      : <TestingNote tone="warning">No signing team yet. Choose one{signing.teams.length === 0 ? ", after signing in to Xcode with your Apple ID" : ""} to record or run on an iPhone.</TestingNote>}
+  </div>;
 }
 
 /**
@@ -55,7 +84,7 @@ export function MatrixDevices({ panel }: { panel: TestingPanel }) {
       {!apps[devices[0]!.platform] && <div className="pt-1"><TestingNote tone="warning">No {label} app id for this test, so these devices cannot run it.</TestingNote></div>}
     </div>)}
     {only && <TestingNote tone="warning" data-matrix-platform-only>This test was recorded on {platformLabel(only)} and doesn't have an {platformLabel(only === "ios" ? "android" : "ios")} target. To add one, open the app on an {platformLabel(only === "ios" ? "android" : "ios")} device in the mirror and choose Add {platformLabel(only === "ios" ? "android" : "ios")} app.</TestingNote>}
-    {state.matrixDevices.length === 0 && <p className="text-xs text-muted-foreground">{state.matrixLoading ? "Looking for simulators and emulators…" : "No simulators or emulators found."}</p>}
+    {state.matrixDevices.length === 0 && <p className="text-xs text-muted-foreground">{state.matrixLoading ? "Looking for devices…" : "No devices found."}</p>}
     <div className="flex items-end justify-between gap-3">
       <div className="flex items-center gap-2"><Label htmlFor="testing-matrix-limit" className="text-xs text-muted-foreground">Run up to</Label>
         <Input id="testing-matrix-limit" type="number" min={1} max={MAX_MATRIX_LIMIT} className="h-8 w-16 text-xs" value={state.matrixLimit}
@@ -63,7 +92,7 @@ export function MatrixDevices({ panel }: { panel: TestingPanel }) {
         <span className="text-xs text-muted-foreground">at once</span></div>
       <Button type="button" size="xs" variant="ghost" disabled={state.matrixLoading} onClick={() => void panel.loadMatrixDevices()}>{state.matrixLoading ? <LoaderCircleIcon className="animate-spin" /> : <RefreshCwIcon />}Refresh</Button>
     </div>
-    <TestingNote>{count > state.matrixLimit ? `${count - state.matrixLimit} will queue until a slot frees. ` : ""}{state.runtimeMode === "project" ? "Devices that are off are booted, and a missing app is copied from another booted device that has it. Each device runs the config's target for its platform." : "Devices that are off are booted, and a missing app is copied from another booted device that has it."} Agent steps call the model once per device.</TestingNote>
+    <TestingNote>{count > state.matrixLimit ? `${count - state.matrixLimit} will queue until a slot frees. ` : ""}Simulators and emulators are booted when needed. A connected iPhone or iPad needs the app installed on the device before a run. Each device runs its platform's app; agent steps call the model once per device.</TestingNote>
   </div>;
 }
 
@@ -82,6 +111,7 @@ function LaneRow({ panel, lane, selected, mirrored, totalSteps }: { panel: Testi
       title="Show this device's steps and mirror it." onClick={() => panel.openLane(lane.runId)}>
       <SmartphoneIcon className={`size-3.5 shrink-0 ${mirrored ? "text-primary" : "text-muted-foreground"}`} />
       <span className="min-w-0 flex-1 truncate text-sm">{lane.deviceName}</span>
+      {lane.kind === "physical" && <Badge variant="outline">Device</Badge>}
       <Badge variant="ghost" className={LANE_TONE[lane.state]}>{active && lane.state !== "queued" && <LoaderCircleIcon className="animate-spin" />}{laneLabel(lane, totalSteps)}</Badge>
       <span className="w-12 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{duration === undefined ? "" : formatRunDuration(duration)}</span>
     </button>

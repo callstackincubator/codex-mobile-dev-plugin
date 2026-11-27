@@ -131,7 +131,7 @@ test("a row that needs a value asks for it instead of emitting an empty string",
   await act(async () => { await Promise.resolve(); });
   assert.match(testRecorder.source, /await screen\.getByPlaceholder\("Search transactions"\)\.fill\("Berlin"\);/);
   // Typing is taken as well as recorded: the field is tapped to focus it, then the text is sent.
-  assert.deepEqual(done, [{ kind: "tap", point: { x: 200, y: 422 } }, { kind: "type", text: "Berlin" }]);
+  assert.deepEqual(done, [{ kind: "tap", point: { x: 200, y: 422 } }, { kind: "type", text: "Berlin", nodeId: "field" }]);
 
   testRecorder.clearSteps();
   testRecorder.detach("udid", "ios");
@@ -843,6 +843,25 @@ test("with no project open the picker says so and setup offers no project files"
   assert.equal(chosen, 1);
   await act(async () => { root.render(createElement("div")); });
   await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
+  onTeardown(async () => { await act(async () => { root.unmount(); }); });
+});
+
+test("Record waits for the foreground app target in No project mode", async t => {
+  const { module: { TestingView }, dom, onTeardown } = await renderEnvironment<any>(t, {
+    exports: 'export { TestingView } from "./packages/ui/src/components/testing-view.tsx";', slug: "testing-no-project-record-target",
+  });
+  const { act, createElement } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+  const root = createRoot(dom.window.document.getElementById("root")!);
+  const deviceApps = { subscribe: () => () => undefined, getSnapshot: () => DEVICE_SNAPSHOT };
+  const panel = panelStub({ projectPath: "/studio", studioPath: "/studio", runtimeMode: "bundled", targets: [], targetName: "", targetSource: "none" });
+  await act(async () => { root.render(createElement(TestingView, { panel, deviceApps })); });
+  assert.equal((dom.window.document.querySelector("[data-testing-record]") as HTMLButtonElement).disabled, true);
+  assert.match(dom.window.document.querySelector("[data-testing-blocker]")?.textContent ?? "", /Open the app you want to record/);
+  const ready = panelStub({ projectPath: "/studio", studioPath: "/studio", runtimeMode: "bundled",
+    targets: [{ name: "ios", platform: "ios", bundleId: "com.app" }], targetName: "ios", targetSource: "foreground" });
+  await act(async () => { root.render(createElement(TestingView, { panel: ready, deviceApps })); });
+  assert.equal((dom.window.document.querySelector("[data-testing-record]") as HTMLButtonElement).disabled, false);
   onTeardown(async () => { await act(async () => { root.unmount(); }); });
 });
 
