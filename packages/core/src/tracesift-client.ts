@@ -882,12 +882,12 @@ export class TraceSiftClient {
       if (options.platform === "ios") {
         const profiler = await stat(join(cwd, "node_modules", "@callstack", "tracesift-profiler")).catch(() => undefined);
         const podfile = await stat(join(cwd, "ios", "Podfile")).catch(() => undefined);
-        const lock = await readFileAsync(join(cwd, "ios", "Podfile.lock"), "utf8").catch(() => "");
         const rootGemfile = await stat(join(cwd, "Gemfile")).catch(() => undefined);
         const iosGemfile = await stat(join(cwd, "ios", "Gemfile")).catch(() => undefined);
-        // A GUI package install does not link the native pod. Use the project's
-        // pinned CocoaPods when available, or the system pod command otherwise.
-        if (profiler?.isDirectory() && podfile?.isFile() && !lock.includes("TracesiftProfiler")) {
+        // The lockfile can still name TracesiftProfiler while Pods.xcodeproj
+        // points at a removed package directory. Refresh CocoaPods before
+        // Xcode builds, including when npm was the only setup step.
+        if (profiler?.isDirectory() && podfile?.isFile()) {
           const gemfile = rootGemfile?.isFile() ? join(cwd, "Gemfile") : iosGemfile?.isFile() ? join(cwd, "ios", "Gemfile") : undefined;
           await this.runSetupCommand(gemfile ? "bundle" : "pod", gemfile ? ["exec", "pod", "install"] : ["install"], "Linking the TraceSift profiler pod", signal,
             { ...process.env, PATH: iosPath, LANG: "en_US.UTF-8", LC_ALL: "en_US.UTF-8", ...(gemfile ? { BUNDLE_GEMFILE: gemfile } : {}) }, join(cwd, "ios"), PROFILE_BUILD_TIMEOUT_MS);

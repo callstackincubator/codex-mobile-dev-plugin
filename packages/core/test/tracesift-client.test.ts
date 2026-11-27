@@ -637,7 +637,7 @@ test("an iOS build exit 65 includes the Xcode error behind the CLI verdict", asy
       && /cannot find Widget in scope/.test(error.message));
 });
 
-test("an iOS profiling build links a manually installed profiler with the project's Bundler", async t => {
+test("an iOS profiling build refreshes stale profiler pods with the project's Bundler", async t => {
   const root = await mkdtemp(join(tmpdir(), "mobile-dev-bundled-pods-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, "ios"));
@@ -645,14 +645,14 @@ test("an iOS profiling build links a manually installed profiler with the projec
   await mkdir(join(root, "node_modules", "@callstack", "tracesift-profiler"), { recursive: true });
   await writeFile(join(root, "package.json"), "{}");
   await writeFile(join(root, "Gemfile"), "gem 'cocoapods'");
-  await writeFile(join(root, "ios", "Podfile.lock"), "PODS:\n");
+  await writeFile(join(root, "ios", "Podfile.lock"), "PODS:\n  - TracesiftProfiler (0.1.0)\nEXTERNAL SOURCES:\n  TracesiftProfiler:\n    :path: ../node_modules/@callstack/tracesift-rn-profiler\n");
   const cli = join(root, "tracesift");
-  await writeFile(cli, `#!/bin/sh\ngrep -q TracesiftProfiler ios/Podfile.lock || exit 127\nprintf 'built\\n'\n`, { mode: 0o755 });
+  await writeFile(cli, `#!/bin/sh\ngrep -q '@callstack/tracesift-profiler' ios/Podfile.lock || exit 127\nprintf 'built\\n'\n`, { mode: 0o755 });
   const client = new TraceSiftClient(cli, root);
   let bundled: { command: string; args: string[]; cwd: string | undefined; path: string | undefined } | undefined;
   (client as unknown as { runSetupCommand: (command: string, args: string[], label: string, signal: AbortSignal | undefined, env: NodeJS.ProcessEnv, cwd: string) => Promise<void> }).runSetupCommand = async (command, args, _label, _signal, env, cwd) => {
     bundled = { command, args, cwd, path: env.PATH };
-    await writeFile(join(root, "ios", "Podfile.lock"), "TracesiftProfiler\n");
+    await writeFile(join(root, "ios", "Podfile.lock"), "TracesiftProfiler: ../node_modules/@callstack/tracesift-profiler\n");
   };
   assert.deepEqual(await client.profileBuild({ projectPath: root, platform: "ios" }), { log: "built\n" });
   assert.deepEqual(bundled?.command, "bundle");
@@ -661,7 +661,7 @@ test("an iOS profiling build links a manually installed profiler with the projec
   assert.match(bundled?.path ?? "", /\.rbenv\/shims/);
   bundled = undefined;
   await client.profileBuild({ projectPath: root, platform: "ios" });
-  assert.equal(bundled, undefined);
+  assert.equal(bundled?.command, "bundle");
 });
 
 test("an iOS profiling build links a GUI-installed profiler without a Gemfile", async t => {
