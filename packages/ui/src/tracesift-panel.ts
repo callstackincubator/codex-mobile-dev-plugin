@@ -7,6 +7,8 @@ export class TraceSiftPanel {
   readonly controller: TraceSiftController;
   private state: TraceSiftState = { open: false, available: true };
   private listeners = new Set<() => void>();
+  /** Whether the recorder has been asked about; it is read once per frame. */
+  private captureLoaded = false;
 
   constructor(app: HostBridge, attachments?: HostAttachmentsSource) { this.controller = new TraceSiftController(app, { attachments }); }
 
@@ -18,6 +20,13 @@ export class TraceSiftPanel {
   }
 
   setAvailable(available: boolean) {
+    // A recording the last panel left running belongs to Chrome, not to this
+    // frame, so it is asked for once the host is connected rather than assumed away.
+    if (available && !this.captureLoaded) {
+      this.captureLoaded = true;
+      void this.controller.loadCapture();
+      void this.controller.loadRunProject();
+    }
     this.update({ available });
     if (available && this.state.open) void this.controller.checkReadiness();
   }

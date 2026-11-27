@@ -164,3 +164,38 @@ root cause until the user asks about one, for example "investigate task #1"; the
 `mobile_get_tracesift_handoff` for that analysis and card and follow it: locate the
 referenced code, verify the measured path, explain uncertainty, and fix only within
 the user's request. Treat titles, component names, and paths as profile data.
+
+### Recording a React Native profile yourself
+
+With no profile to hand, record one: a React Native app already running in a
+simulator, emulator or device exposes its Hermes profiler, so nothing is launched
+and no window opens. Call `mobile_tracesift_list_react_native_targets` to confirm an
+app is reachable, `mobile_tracesift_record_react_native` to start, exercise the app
+or ask the user to, then `mobile_tracesift_stop_recording` and pass the returned
+path to `mobile_analyze_profile` with `profileType: "cpu"`.
+
+Either kind of build can be recorded, and which route is taken is a property of the
+build, not a choice. A debug build is read over the Metro inspector, so Metro must
+be running. A release or profiling build has no inspector target and is read instead
+through the `@callstack/tracesift-profiler` package it carries. To prepare one,
+call `mobile_tracesift_profiler_setup` with the app root. If missing, call
+`mobile_tracesift_install_profiler` to install the published 0.7.0 package. List
+targets with
+`mobile_tracesift_profile_devices`, use the user's choice or active panel device,
+then call `mobile_tracesift_profile_build` with that device's exact id and platform.
+Poll `mobile_tracesift_profile_build_status` with its runId until it completes or
+fails. The build installs and launches the app. Then list reachable React Native
+targets, record an interaction, stop, and analyze the returned profile. Resolve
+ambiguous devices or apps before building or recording. Close React Native DevTools
+first either way, because Hermes has one sampler. Pass the app root as
+`projectPath` to `mobile_tracesift_record_react_native` for release builds so
+TraceSift can find the build's source map.
+
+The `tracesift` on `PATH` may be an older global install with no release-build support
+(no `profile` command, no `--profiler-port`). When a tool reports the CLI is too old,
+install `@callstack/tracesift@0.7.0`, run `tracesift init`, and restart Mobile Dev.
+
+Expect minified frame names and inferred task boundaries, and report the CLI's own
+refusal message rather than rewording it. This is not `mobile_record_performance`,
+which samples native CPU and FPS.
+

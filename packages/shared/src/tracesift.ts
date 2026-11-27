@@ -8,6 +8,85 @@ export const traceSiftProfileInputSchema = z.object({
   path: z.string().min(1).max(16_384), profileType: traceSiftProfileTypeSchema.default("auto"),
 });
 
+/**
+ * A web address the panel may ask TraceSift to record.
+ *
+ * Only http and https: the CLI hands this to Chrome as an argument, and a
+ * `file:` or `javascript:` address typed into the panel is not a web app to
+ * profile.
+ */
+export const traceSiftCaptureUrlSchema = z.string().trim().min(1).max(2048).refine(value => {
+  try { const url = new URL(value); return url.protocol === "http:" || url.protocol === "https:"; }
+  catch { return false; }
+}, "Enter an http:// or https:// address.");
+
+/**
+ * The Metro dev server a React Native recording attaches through.
+ *
+ * Loopback only, and an origin rather than a page: the inspector lives at
+ * `/json/list` on this server, and a path typed here would only be dropped.
+ */
+export const traceSiftMetroUrlSchema = z.string().trim().min(1).max(2048).refine(value => {
+  try {
+    const url = new URL(value);
+    return (url.protocol === "http:" || url.protocol === "https:")
+      && ["127.0.0.1", "localhost", "[::1]", "::1"].includes(url.hostname)
+      && url.pathname === "/" && !url.search && !url.hash && !url.username && !url.password;
+  } catch { return false; }
+}, "Enter a Metro address such as http://127.0.0.1:8081.");
+
+/** One recordable React Native app, as `record targets --platform rn --json` reports it. */
+export const traceSiftRnTargetSchema = z.object({
+  id: z.string(), title: z.string(),
+  appId: z.string().optional(), deviceName: z.string().optional(), deviceId: z.string().optional(),
+  /** Absent on React Natives that do not name their engine; present ones say `Hermes`. */
+  vm: z.string().optional(),
+  /**
+   * Which of the two routes reaches this app. A debug build registers an
+   * inspector target with Metro; a release build has none and instead dials
+   * the CLI from the profiler package it carries. Older CLIs report neither
+   * field, and everything they do report is a Metro target.
+   */
+  transport: z.enum(["metro", "release"]).default("metro"),
+  /** What kind of device a release build is running on, when the CLI could tell. */
+  deviceKind: z.enum(["simulator", "device", "emulator"]).optional(),
+  /** The loopback port a release build dialled in on. */
+  port: z.number().optional(),
+  supportsMultipleDebuggers: z.boolean().default(false),
+  /** The one `record start --platform rn` would pick on its own. */
+  recommended: z.boolean().default(false),
+});
+export type TraceSiftRnTarget = z.infer<typeof traceSiftRnTargetSchema>;
+
+export const traceSiftRnTargetsSchema = z.object({
+  apiVersion: z.literal(1), platform: z.literal("rn"), metro: z.string(),
+  /** The loopback port a release build would have dialled; absent on older CLIs. */
+  profilerPort: z.number().optional(),
+  targets: z.array(traceSiftRnTargetSchema),
+});
+export type TraceSiftRnTargets = z.infer<typeof traceSiftRnTargetsSchema>;
+
+/**
+ * Where a capture stands, read from the recorder's own state files rather than
+ * held in this process — so a reopened panel finds a recording still running.
+ */
+export const traceSiftCaptureSchema = z.object({
+  apiVersion: z.literal(1),
+  /** The Chrome `record launch` left open, when one is still alive. */
+  browser: z.object({ url: z.string() }).optional(),
+  /**
+   * The React Native app a running recording is attached to. Only an RN
+   * recording writes a target label, so its presence is what tells a reopened
+   * panel which of the two sources is live.
+   */
+  app: z.object({ targetLabel: z.string() }).optional(),
+  recording: z.boolean(),
+  /** The trace the last recording wrote, which the panel analyzes by path. */
+  capture: z.object({
+    path: z.string(), sizeBytes: z.number().nonnegative(), eventCount: z.number().nonnegative(),
+  }).optional(),
+});
+export type TraceSiftCapture = z.infer<typeof traceSiftCaptureSchema>;
 export const traceSiftSetupReasonSchema = z.enum(["missing_cli", "needs_init", "unsupported", "startup_failed"]);
 export const traceSiftReadinessSchema = z.discriminatedUnion("status", [
   z.object({ apiVersion: z.literal(1), status: z.literal("ready") }),

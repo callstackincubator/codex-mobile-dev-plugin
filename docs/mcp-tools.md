@@ -92,7 +92,7 @@ replaces the previously saved folder. Every non-setup tool uses `openWorldHint: 
 operations are confined to local files, the host's own dialogs, and the
 authenticated loopback TraceSift service. The two app-only setup actions are the
 exceptions: `mobile_install_tracesift_cli` runs only
-`npm install -g @callstack/tracesift`, and `mobile_initialize_tracesift` runs only
+`npm install -g @callstack/tracesift@0.7.0`, and `mobile_initialize_tracesift` runs only
 `tracesift init`. Both declare destructive writes and open-world access because
 they replace installed software and may download it. They do not accept a command,
 arguments, environment, or path from the panel.
@@ -109,10 +109,42 @@ each exact command. A successful action automatically calls
 fallback because global npm installation can require privileges and a newly
 installed executable may not enter the already-running Codex process's `PATH`.
 
-The two pickers exist because the TraceSift tool runs in a panel frame, where a
-dropped file carries no path and the analyzer reads profiles off disk. Both are
-app-only: the model never calls them. The chosen profile path reaches
-`mobile_analyze_profile` from the panel, and the chosen project folder is the
-source tree an investigation lands in — a profile names frames, not files, so
-Investigate stays disabled until one is chosen, and the folder is named in the
-hand-off the panel sends to the chat.
+"Run with TraceSift" builds a profiling build from the panel through four app-only
+tools: `mobile_tracesift_profiler_setup` (read-only: whether
+`@callstack/tracesift-profiler` is in the project's `node_modules`, the same check
+`tracesift profile build` makes, plus the install command for the lockfile's package
+manager), `mobile_tracesift_install_profiler` (that one add command, run in the project
+folder), `mobile_tracesift_profile_devices` (`tracesift profile devices`) and
+`mobile_tracesift_profile_build` (`tracesift profile build --platform <ios|android>
+[--device <id>]` in the project folder). The install and build tools declare destructive
+writes and open-world access, take only a project path, platform and device id, and are
+not visible to the model. The project is the one `mobile_pick_tracesift_project` saved.
+Progress is a busy state; the build log's tail returns when it ends, and a failure
+returns the CLI's own last `tracesift:` line.
+
+The file and project pickers exist because the TraceSift tool runs in a panel
+frame, where a dropped file carries no path and the analyzer reads profiles off
+disk. Both are app-only: the model never calls them. The chosen profile path
+reaches `mobile_analyze_profile` from the panel. The project picker belongs to
+the optional profiling-build flow; an existing-profile analysis and its
+**Investigate** action do not require a panel-selected project. The agent uses
+the project selected in the active chat to investigate the hand-off.
+
+The TraceSift panel has **Record** and **Upload** modes. **Record** discovers a
+running React Native app and captures its Hermes CPU profile through
+`mobile_tracesift_list_react_native_targets`,
+`mobile_tracesift_record_react_native`, and `mobile_tracesift_stop_recording`.
+Debug builds need Metro; release and profiling builds use the installed
+`@callstack/tracesift-profiler` package. The optional **Run with TraceSift**
+flow installs that package if needed, then builds, installs, and launches a
+profiling app on a chosen device. A model-initiated recording requires the
+project directory selected in the current chat. The panel's remembered project
+does not substitute for that chat context.
+
+The finished profile is copied into
+`~/Library/Application Support/mobile-dev/tracesift`. **Upload** can analyze
+one of those saved profiles again through `mobile_tracesift_recorded_profiles`,
+or remove it and its project-name metadata through
+`mobile_tracesift_delete_recorded_profile`. These tools operate only on files
+in the managed recordings folder; deleting a saved profile does not delete a
+TraceSift analysis or an original profile uploaded from elsewhere.

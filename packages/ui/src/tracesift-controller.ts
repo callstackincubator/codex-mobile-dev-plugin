@@ -2,7 +2,7 @@ import { chatMessage } from "./chat-message.ts";
 import { attachReference, cardsCallTools } from "./host-bridge.ts";
 import type { HostAttachmentsSource, HostBridge } from "./host-bridge.ts";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { traceSiftAnalysisSchema, traceSiftHandoffSchema, traceSiftReadinessSchema, traceSiftRestoreSchema, traceSiftSetupActionResultSchema, type TraceSiftAnalysis, type TraceSiftProfileType, type TraceSiftReadiness, type TraceSiftSetupAction } from "@mobile-dev/shared/tracesift.ts";
+import { traceSiftAnalysisSchema, traceSiftCaptureSchema, traceSiftCaptureUrlSchema, traceSiftHandoffSchema, traceSiftReadinessSchema, traceSiftRestoreSchema, traceSiftSetupActionResultSchema, traceSiftRnTargetsSchema, type TraceSiftAnalysis, type TraceSiftProfileType, type TraceSiftReadiness, type TraceSiftRnTarget, type TraceSiftSetupAction } from "@mobile-dev/shared/tracesift.ts";
 import { decodeTraceSiftExplorePayload, TRACE_SIFT_PAYLOAD_MAX_BYTES, traceSiftExploreEnvelopeSchema, TRACE_SIFT_PAYLOAD_TOO_LARGE, traceSiftPayloadRefused, type TraceSiftExploreKind } from "@mobile-dev/shared/tracesift-explore.ts";
 import { buildSelectionPrompt, frameSelectionEvidence, type SelectionCard } from "@mobile-dev/shared/tracesift-selection.ts";
 import { findingName } from "@mobile-dev/shared/tracesift-labels.ts";
@@ -10,7 +10,36 @@ import { buildReactSelectionPrompt, reactSelectionEvidence, type ReactSelectionR
 import type { ContributionChartKind } from "./components/tracesift/contribution-chart.tsx";
 import { captureUiError, countUiEvent, markUiSurfaceReady, recordUiTiming, setUiGauge, setUiSurface, setUiTelemetryContext } from "./telemetry.ts";
 
+export type TraceSiftCaptureSource = "rn" | "chrome";
+
+/** One place a profiling build can go. `device` is what `profile build --device` takes. */
+export type TraceSiftRunTarget = { platform: "ios" | "android"; kind: "simulator" | "device" | "android"; id?: string; name: string; note: string };
+
+/**
+ * "Run with TraceSift": produce a profiling build from the panel.
+ *
+ * `setup` is what the CLI itself reads to decide whether the profiler package
+ * still has to be installed, so a project that has it goes straight to targets.
+ */
+type RunState = {
+  open: boolean;
+  /** The folder the build runs in; the same one the server saved for recording. */
+  projectPath: string;
+  pickingProject: boolean;
+  checking: boolean;
+  setup?: { installed: boolean; command: string; platforms: ("ios" | "android")[] };
+  installing: boolean;
+  targets: TraceSiftRunTarget[];
+  /** The target being built for, while a build is running. */
+  building?: TraceSiftRunTarget;
+  error: string;
+  /** The end of the last successful build's log. */
+  notice: string;
+};
+
 type State = {
+  recordedProfiles: { path: string; name: string; recordedAt: string; sizeBytes: number; projectName?: string }[];
+  deletingProfile?: string;
   analysis?: TraceSiftAnalysis;
   canInvestigate: boolean;
   /** Explore, the project and hand-offs need the host to let cards call the server. */
@@ -22,6 +51,35 @@ type State = {
   notice: string;
   /** File name the upload pane is waiting on. Absent in the inline card. */
   analyzing?: { name: string; profileType: TraceSiftProfileType };
+  /**
+   * Recording a running app, rather than reading a profile someone already has.
+   *
+   * `step` is where the control stands: `idle` offers a start, `launched`
+   * waits for the person to sign in or navigate, `recording` is live. The busy
+   * steps are separate so the buttons can disable themselves without a second
+   * flag, and `url` outlives the launch so a reopened panel can say what is open.
+   *
+   * `source` is which of the two the control is pointed at. React Native needs
+   * no `launched` step at all — the app is already running, so one press
+   * records — and the two sources keep their own fields side by side so
+   * switching chips does not throw away what the other one found.
+   */
+  capture: {
+    source: TraceSiftCaptureSource;
+    step: "idle" | "launching" | "launched" | "starting" | "recording" | "stopping" | "closing";
+    /** Chrome: the address to open. */
+    url: string;
+    /** React Native: the apps Metro reported, and which of them to record. */
+    targets: TraceSiftRnTarget[];
+    /** Empty means let the CLI pick the app it recommends, as the agent does. */
+    targetId: string;
+    metro: string;
+    targetsError: string;
+    loadingTargets: boolean;
+    error: string;
+  };
+  run: RunState;
+  /** Which drawing every card on this analysis carries; one switch, as on the web. */
   checkingReadiness: boolean;
   readiness?: TraceSiftReadiness;
   setupAction?: TraceSiftSetupAction;
@@ -56,7 +114,9 @@ function composerUnavailable(error: unknown) {
 }
 
 export class TraceSiftController {
-  private state: State = { canInvestigate: false, canCallTools: false, dark: false, error: "", notice: "", setupNotice: "", chartKind: "bar", checkingReadiness: false };
+  private state: State = { recordedProfiles: [], canInvestigate: false, canCallTools: false, dark: false, error: "", notice: "", setupNotice: "", checkingReadiness: false, chartKind: "bar",
+    capture: { source: "rn", step: "idle", url: "", targets: [], targetId: "", metro: "", targetsError: "", loadingTargets: false, error: "" },
+    run: { open: false, projectPath: "", pickingProject: false, checking: false, installing: false, targets: [], error: "", notice: "" } };
   private listeners = new Set<() => void>();
   private disposed = false;
   private readyAt = performance.now();
@@ -67,6 +127,11 @@ export class TraceSiftController {
   private viewId?: string | number;
   private inputKey?: string;
   private copiedTimer?: ReturnType<typeof setTimeout>;
+  private reconnectTimer?: ReturnType<typeof setTimeout>;
+  private buildPollTimer?: ReturnType<typeof setTimeout>;
+  private buildRunId?: string;
+  private buildStartedAt = 0;
+  private reconnectGeneration = 0;
   /** Serializes `mobile_remember_tracesift_analysis` calls so out-of-order completions cannot write a stale analysis over a newer one. */
   private rememberChain: Promise<void> = Promise.resolve();
   /** Bumped by every restore attempt; a response only applies while it still matches the latest one requested. */
@@ -553,6 +618,34 @@ export class TraceSiftController {
     }
   };
 
+  loadRecordedProfiles = async () => {
+    if (this.disposed) return;
+    try {
+      const result = await this.app.callServerTool({ name: "mobile_tracesift_recorded_profiles", arguments: {} });
+      if (result.isError) throw new Error("Saved profiles could not be listed.");
+      const profiles = result.structuredContent?.profiles;
+      if (!Array.isArray(profiles) || !profiles.every(profile => typeof profile?.path === "string" && typeof profile?.name === "string" && typeof profile?.recordedAt === "string" && typeof profile?.sizeBytes === "number")) return;
+      if (!this.disposed) this.update({ recordedProfiles: profiles });
+    } catch {
+      // File picking and recording remain available if the local list cannot be read.
+    }
+  };
+
+  deleteRecordedProfile = async (path: string) => {
+    if (this.disposed || this.state.deletingProfile) return;
+    this.update({ deletingProfile: path, error: "" });
+    try {
+      const result = await this.app.callServerTool({ name: "mobile_tracesift_delete_recorded_profile", arguments: { path } });
+      if (result.isError || result.structuredContent?.deleted !== true) throw new Error("Saved profile could not be deleted.");
+      if (!this.disposed) this.update({ recordedProfiles: this.state.recordedProfiles.filter(profile => profile.path !== path) });
+    } catch (error) {
+      captureUiError(error, "tracesift.delete_recording");
+      if (!this.disposed) this.update({ error: error instanceof Error ? error.message : "Saved profile could not be deleted." });
+    } finally {
+      if (!this.disposed) this.update({ deletingProfile: undefined });
+    }
+  };
+
   /** Preflight the local service before the upload pane asks the user for a profile. */
   checkReadiness = async () => {
     if (this.disposed || this.state.checkingReadiness) return;
@@ -598,6 +691,13 @@ export class TraceSiftController {
       const parsed = traceSiftSetupActionResultSchema.safeParse(result.structuredContent);
       if (!parsed.success || parsed.data.action !== action) throw new Error("TraceSift returned an invalid setup result.");
       countUiEvent(`ui.tracesift.${action}_success`);
+      if (action === "install") {
+        this.update({ setupAction: undefined, setupNotice: parsed.data.message, readiness: {
+          apiVersion: 1, status: "setup_required", reason: "needs_init",
+          message: "TraceSift CLI is installed. Initialize the TraceSift app to finish setup.",
+        } });
+        return;
+      }
       this.update({ setupAction: undefined, setupNotice: parsed.data.message });
       await this.checkReadiness();
       if (!this.disposed && this.state.readiness?.status === "ready") this.update({ setupNotice: "" });
@@ -633,6 +733,368 @@ export class TraceSiftController {
     } finally { this.update({ analyzing: undefined }); }
   };
 
+  private captureUpdate(next: Partial<State["capture"]>) {
+    this.update({ capture: { ...this.state.capture, ...next } });
+  }
+
+  /** One capture tool call, with the panel's own wording when the tool says nothing. */
+  private async captureTool(name: string, args: Record<string, unknown>, fallback: string) {
+    const result = await this.app.callServerTool({ name, arguments: args });
+    if (result.isError) throw new Error(result.content.filter(item => item.type === "text").map(item => item.text).join("\n") || fallback);
+    return result.structuredContent;
+  }
+
+  setCaptureUrl = (url: string) => { this.captureUpdate({ url, error: "" }); };
+
+  /**
+   * Pick the recording back up where it actually is.
+   *
+   * The browser and the recording outlive this panel — they belong to Chrome
+   * and to a detached recorder — so a reopened panel asks the recorder rather
+   * than assuming it starts at `idle`. Only a React Native recording carries a
+   * target label, so that is what tells the panel which source is live.
+   */
+  loadCapture = async () => {
+    try {
+      const state = traceSiftCaptureSchema.safeParse(await this.captureTool("mobile_tracesift_capture_state", {}, "TraceSift could not report the recording."));
+      if (this.disposed || !state.success) return;
+      const step = state.data.recording ? "recording" as const : state.data.browser ? "launched" as const : "idle" as const;
+      this.captureUpdate({
+        step, url: state.data.browser?.url || this.state.capture.url,
+        ...(state.data.app ? { source: "rn" as const } : state.data.browser ? { source: "chrome" as const } : {}),
+      });
+      if (step !== "idle") countUiEvent("ui.tracesift.capture_resumed");
+    } catch (error) {
+      // Nothing is on screen yet that depends on this, so a host without the
+      // capture tools simply shows the control at rest.
+      captureUiError(error, "tracesift.capture");
+    }
+    // Asked once on open and again only when the person presses Refresh: an
+    // app that reconnects to Metro later is a press away, not worth a timer
+    // spawning a subprocess behind a panel nobody is looking at.
+    await this.loadReactNativeTargets();
+  };
+
+  setCaptureSource = (source: TraceSiftCaptureSource) => {
+    if (this.state.capture.source === source) return;
+    this.captureUpdate({ source, error: "" });
+  };
+
+  /** The React Native apps that can be recorded, over either route, and which of them Start would record. */
+  loadReactNativeTargets = async () => {
+    if (this.disposed || this.state.capture.loadingTargets) return;
+    this.captureUpdate({ loadingTargets: true, targetsError: "" });
+    const startedAt = performance.now();
+    try {
+      const listed = traceSiftRnTargetsSchema.safeParse(
+        await this.captureTool("mobile_tracesift_list_react_native_targets", {}, "TraceSift could not list the React Native apps."));
+      if (this.disposed) return;
+      if (!listed.success) throw new Error("TraceSift returned an invalid React Native target list.");
+      recordUiTiming("ui.tracesift.capture_rn_targets", performance.now() - startedAt);
+      const { targets, metro } = listed.data;
+      // Keep the person's own choice when the app they picked is still there;
+      // otherwise fall in behind the one the CLI would pick on its own.
+      const kept = targets.some(target => target.id === this.state.capture.targetId) ? this.state.capture.targetId : "";
+      this.captureUpdate({ targets, metro, targetsError: "", targetId: kept || targets.find(target => target.recommended)?.id || targets[0]?.id || "" });
+    } catch (error) {
+      countUiEvent("ui.tracesift.capture_rn_targets_failed");
+      captureUiError(error, "tracesift.capture");
+      if (!this.disposed) this.captureUpdate({ targets: [], targetsError: error instanceof Error ? error.message : "TraceSift could not list the React Native apps." });
+    } finally { if (!this.disposed) this.captureUpdate({ loadingTargets: false }); }
+  };
+
+  setCaptureTarget = (targetId: string) => { this.captureUpdate({ targetId, error: "" }); };
+
+  /**
+   * Record the React Native app that is already running.
+   *
+   * One press, not two: nothing is launched and no window opens, so there is
+   * no signed-in state to reach first the way there is in a browser.
+   */
+  startReactNativeCapture = async () => {
+    if (this.disposed || this.state.capture.step !== "idle" || this.state.capture.source !== "rn") return;
+    if (!this.state.capture.targets.length) {
+      this.captureUpdate({ error: "No React Native app found, over Metro or from a profiling build. Start the app, then refresh." });
+      return;
+    }
+    const { targetId } = this.state.capture;
+    this.captureUpdate({ source: "rn", step: "starting", error: "" });
+    const startedAt = performance.now();
+    try {
+      await this.captureTool("mobile_tracesift_record_react_native", targetId ? { targetId } : {}, "TraceSift could not start recording.");
+      if (this.disposed) return;
+      recordUiTiming("ui.tracesift.capture_rn_start", performance.now() - startedAt);
+      countUiEvent("ui.tracesift.capture_rn_start");
+      this.captureUpdate({ step: "recording" });
+    } catch (error) {
+      countUiEvent("ui.tracesift.capture_rn_start_failed");
+      captureUiError(error, "tracesift.capture");
+      if (!this.disposed) this.captureUpdate({ step: "idle", error: error instanceof Error ? error.message : "TraceSift could not start recording." });
+    }
+  };
+
+  private runUpdate(next: Partial<RunState>) { this.update({ run: { ...this.state.run, ...next } }); }
+
+  /** The folder the server saved last time, so the picker opens on it. */
+  loadRunProject = async () => {
+    try {
+      const path = (await this.captureTool("mobile_get_tracesift_project", {}, "The saved project could not be read.") as { path?: unknown } | undefined)?.path;
+      if (this.disposed || typeof path !== "string" || this.state.run.projectPath) return;
+      this.runUpdate({ projectPath: path });
+    } catch (error) { captureUiError(error, "tracesift.run"); }
+  };
+
+  /** Open the popup. A project that is already chosen is checked at once, so the person only ever sees what is left to do. */
+  openRun = async () => {
+    if (this.disposed || this.state.run.building) return;
+    this.runUpdate({ open: true, error: "", notice: "" });
+    if (!this.state.run.projectPath) await this.loadRunProject();
+    if (this.state.run.projectPath) await this.checkRun();
+  };
+
+  closeRun = () => { if (!this.state.run.building) this.runUpdate({ open: false }); };
+
+  /** The host's folder dialog; the choice is saved server-side, which is also where recording reads its working directory. */
+  pickRunProject = async () => {
+    if (this.disposed || this.state.run.pickingProject || this.state.run.building) return;
+    this.runUpdate({ pickingProject: true, error: "" });
+    try {
+      const picked = await this.captureTool("mobile_pick_tracesift_project", {}, "This host could not open a folder dialog.") as { picked?: unknown; path?: unknown } | undefined;
+      if (this.disposed) return;
+      if (picked?.picked !== true || typeof picked.path !== "string") { countUiEvent("ui.tracesift.run_project_cancelled"); return; }
+      this.runUpdate({ projectPath: picked.path, setup: undefined, targets: [] });
+      await this.checkRun();
+    } catch (error) {
+      captureUiError(error, "tracesift.run");
+      if (!this.disposed) this.runUpdate({ error: error instanceof Error ? error.message : "That project could not be chosen." });
+    } finally { if (!this.disposed) this.runUpdate({ pickingProject: false }); }
+  };
+
+  /** Is the profiler installed, and where can a build go. Both are reads. */
+  checkRun = async () => {
+    const { projectPath } = this.state.run;
+    if (this.disposed || !projectPath || this.state.run.checking) return;
+    this.runUpdate({ checking: true, error: "" });
+    const startedAt = performance.now();
+    try {
+      const setup = await this.captureTool("mobile_tracesift_profiler_setup", { projectPath }, "The project could not be checked.") as { installed?: unknown; command?: unknown; platforms?: unknown } | undefined;
+      if (this.disposed || projectPath !== this.state.run.projectPath) return;
+      if (typeof setup?.installed !== "boolean" || typeof setup.command !== "string" || !Array.isArray(setup.platforms)) throw new Error("TraceSift returned an invalid project check.");
+      const platforms = setup.platforms.filter((value): value is "ios" | "android" => value === "ios" || value === "android");
+      this.runUpdate({ setup: { installed: setup.installed, command: setup.command, platforms } });
+      if (setup.installed) await this.loadRunTargets(platforms);
+      recordUiTiming("ui.tracesift.run_check", performance.now() - startedAt);
+    } catch (error) {
+      countUiEvent("ui.tracesift.run_check_failed");
+      captureUiError(error, "tracesift.run");
+      if (!this.disposed) this.runUpdate({ setup: undefined, targets: [], error: error instanceof Error ? error.message : "The project could not be checked." });
+    } finally { if (!this.disposed) this.runUpdate({ checking: false }); }
+  };
+
+  private async loadRunTargets(platforms: ("ios" | "android")[]) {
+    const targets: TraceSiftRunTarget[] = [];
+    let listError = "";
+    // One listing covers both platforms: a phone the developer has plugged in
+    // should appear by name whichever one it is, and the popup shows them in
+    // a single list.
+    try {
+      const listed = await this.captureTool("mobile_tracesift_profile_devices", {}, "The targets could not be listed.") as { devices?: unknown } | undefined;
+      for (const entry of Array.isArray(listed?.devices) ? listed.devices : []) {
+        const device = entry as { kind?: unknown; id?: unknown; name?: unknown; note?: unknown };
+        if (typeof device.id !== "string" || typeof device.name !== "string") continue;
+        const note = typeof device.note === "string" ? device.note : "";
+        if ((device.kind === "device" || device.kind === "simulator") && platforms.includes("ios")) {
+          targets.push({ platform: "ios", kind: device.kind, id: device.id, name: device.name, note });
+        } else if (device.kind === "android" && platforms.includes("android")) {
+          targets.push({ platform: "android", kind: "android", id: device.id, name: device.name, note });
+        }
+      }
+    } catch (error) { listError = error instanceof Error ? error.message : "The targets could not be listed."; }
+    // Still offer Android when adb listed nothing, so a device attached after
+    // this check can be built for without reopening the popup; adb picks the
+    // one it sees and says so itself if there is none.
+    if (platforms.includes("android") && !targets.some((target) => target.platform === "android")) {
+      targets.push({ platform: "android", kind: "android", name: "Android emulator or device", note: "none attached yet — the one adb sees" });
+    }
+    if (!this.disposed) this.runUpdate({ targets, ...(listError ? { error: listError } : {}) });
+  }
+
+  /** Add the package with the project's own package manager: the command the popup shows beside its run button. */
+  installRunProfiler = async () => {
+    const { projectPath, setup } = this.state.run;
+    if (this.disposed || !projectPath || !setup || this.state.run.installing) return;
+    this.runUpdate({ installing: true, error: "" });
+    const startedAt = performance.now();
+    try {
+      await this.captureTool("mobile_tracesift_install_profiler", { projectPath }, "The profiler package could not be installed.");
+      if (this.disposed) return;
+      recordUiTiming("ui.tracesift.run_install", performance.now() - startedAt);
+      countUiEvent("ui.tracesift.run_install");
+      this.runUpdate({ installing: false });
+      await this.checkRun();
+    } catch (error) {
+      countUiEvent("ui.tracesift.run_install_failed");
+      // Command output is useful in the local panel but must not become telemetry.
+      captureUiError(new Error("TraceSift profiler install failed."), "tracesift.run");
+      if (!this.disposed) this.runUpdate({ installing: false, error: error instanceof Error ? error.message : "The install failed. Run the command in a terminal instead." });
+    }
+  };
+
+  /** Give a newly launched app a short window to connect to the recorder. */
+  private refreshAfterBuild = async (generation: number, attempt = 0) => {
+    if (this.disposed || generation !== this.reconnectGeneration) return;
+    await this.loadReactNativeTargets();
+    if (this.disposed || generation !== this.reconnectGeneration || this.state.capture.targets.length || attempt >= 6) return;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = undefined;
+      void this.refreshAfterBuild(generation, attempt + 1);
+    }, 2000);
+  };
+
+  /** Build, install and launch for one target, then look for the app as it connects. */
+  buildForTarget = async (target: TraceSiftRunTarget) => {
+    const { projectPath } = this.state.run;
+    if (this.disposed || !projectPath || this.state.run.building) return;
+    if (this.reconnectTimer !== undefined) clearTimeout(this.reconnectTimer);
+    const generation = ++this.reconnectGeneration;
+    this.runUpdate({ open: false, building: target, error: "", notice: "" });
+    this.buildStartedAt = performance.now();
+    try {
+      const result = await this.captureTool("mobile_tracesift_profile_build",
+        { projectPath, platform: target.platform, ...(target.id ? { device: target.id } : {}) }, "The profiling build could not start.") as { runId?: unknown } | undefined;
+      if (this.disposed) return;
+      if (typeof result?.runId !== "string") throw new Error("TraceSift did not return a build ID.");
+      this.buildRunId = result.runId;
+      void this.pollBuild(generation);
+    } catch (error) {
+      countUiEvent("ui.tracesift.run_build_failed");
+      captureUiError(new Error("TraceSift profiling build failed."), "tracesift.run");
+      if (!this.disposed) this.runUpdate({ building: undefined, error: error instanceof Error ? error.message : "The profiling build failed." });
+    }
+  };
+
+  private pollBuild = async (generation: number) => {
+    if (this.disposed || generation !== this.reconnectGeneration || !this.buildRunId) return;
+    try {
+      const result = await this.captureTool("mobile_tracesift_profile_build_status", { runId: this.buildRunId }, "The build status could not be read.") as { status?: unknown; error?: unknown } | undefined;
+      if (this.disposed || generation !== this.reconnectGeneration) return;
+      if (result?.status === "running") {
+        this.buildPollTimer = setTimeout(() => { void this.pollBuild(generation); }, 2000);
+        return;
+      }
+      if (result?.status === "failed" || result?.status === "idle") {
+        this.buildRunId = undefined;
+        countUiEvent("ui.tracesift.run_build_failed");
+        captureUiError(new Error("TraceSift profiling build failed."), "tracesift.run");
+        this.runUpdate({ building: undefined, error: typeof result.error === "string" ? result.error : "The profiling build ended without launching the app." });
+        return;
+      }
+      if (result?.status !== "completed") throw new Error("TraceSift returned an invalid build status.");
+      this.buildRunId = undefined;
+      recordUiTiming("ui.tracesift.run_build", performance.now() - this.buildStartedAt);
+      countUiEvent("ui.tracesift.run_build");
+      const target = this.state.run.building;
+      this.runUpdate({ building: undefined, notice: `Launched on ${target?.name ?? "the device"}. Use the app, then press Start profile when it appears below.`, error: "" });
+      void this.refreshAfterBuild(generation);
+    } catch (error) {
+      if (this.disposed || generation !== this.reconnectGeneration) return;
+      // A transient status request should not claim the app failed to launch.
+      this.buildPollTimer = setTimeout(() => { void this.pollBuild(generation); }, 4000);
+      this.runUpdate({ error: error instanceof Error ? error.message : "The build status could not be read." });
+    }
+  };
+
+  /** Open the address in a Chrome that stays open, so a person can sign in before recording. */
+  launchCapture = async () => {
+    if (this.disposed || this.state.capture.step !== "idle") return;
+    const url = this.state.capture.url.trim();
+    if (!traceSiftCaptureUrlSchema.safeParse(url).success) {
+      this.captureUpdate({ error: "Enter an http:// or https:// address." });
+      return;
+    }
+    // The action settles the source, not the chip: whatever the panel was
+    // showing, this recording is Chrome's, and stopping it must know that.
+    this.captureUpdate({ source: "chrome", step: "launching", error: "" });
+    const startedAt = performance.now();
+    try {
+      await this.captureTool("mobile_tracesift_launch_browser", { url }, "TraceSift could not open a browser.");
+      if (this.disposed) return;
+      recordUiTiming("ui.tracesift.capture_launch", performance.now() - startedAt);
+      countUiEvent("ui.tracesift.capture_launch");
+      this.captureUpdate({ step: "launched" });
+    } catch (error) {
+      countUiEvent("ui.tracesift.capture_launch_failed");
+      captureUiError(error, "tracesift.capture");
+      if (!this.disposed) this.captureUpdate({ step: "idle", error: error instanceof Error ? error.message : "TraceSift could not open a browser." });
+    }
+  };
+
+  startCapture = async () => {
+    if (this.disposed || this.state.capture.step !== "launched") return;
+    this.captureUpdate({ step: "starting", error: "" });
+    const startedAt = performance.now();
+    try {
+      await this.captureTool("mobile_tracesift_start_recording", {}, "TraceSift could not start recording.");
+      if (this.disposed) return;
+      recordUiTiming("ui.tracesift.capture_start", performance.now() - startedAt);
+      countUiEvent("ui.tracesift.capture_start");
+      this.captureUpdate({ step: "recording" });
+    } catch (error) {
+      countUiEvent("ui.tracesift.capture_start_failed");
+      captureUiError(error, "tracesift.capture");
+      if (!this.disposed) this.captureUpdate({ step: "launched", error: error instanceof Error ? error.message : "TraceSift could not start recording." });
+    }
+  };
+
+  /**
+   * End the recording and read what it wrote.
+   *
+   * The browser is left open on purpose: the sign-in it holds is the expensive
+   * part, and the next recording should not have to repeat it.
+   */
+  stopCapture = async () => {
+    if (this.disposed || this.state.capture.step !== "recording") return;
+    this.captureUpdate({ step: "stopping", error: "" });
+    const startedAt = performance.now();
+    let path: string | undefined;
+    try {
+      const capture = traceSiftCaptureSchema.shape.capture.unwrap()
+        .safeParse(await this.captureTool("mobile_tracesift_stop_recording", {}, "TraceSift could not stop the recording."));
+      if (this.disposed) return;
+      if (!capture.success) throw new Error("TraceSift returned an invalid recording result.");
+      recordUiTiming("ui.tracesift.capture_stop", performance.now() - startedAt);
+      countUiEvent("ui.tracesift.capture_stop");
+      path = capture.data.path;
+      // Chrome keeps the browser, and with it the sign-in worth reusing. React
+      // Native launched nothing, so there is nothing to return to.
+      this.captureUpdate({ step: this.state.capture.source === "rn" ? "idle" : "launched" });
+    } catch (error) {
+      countUiEvent("ui.tracesift.capture_stop_failed");
+      captureUiError(error, "tracesift.capture");
+      if (!this.disposed) this.captureUpdate({ step: "recording", error: error instanceof Error ? error.message : "TraceSift could not stop the recording." });
+      return;
+    }
+    // A trace is only worth recording for the cards it becomes, so the reading
+    // follows the stop without a second press.
+    await this.loadRecordedProfiles();
+    await this.analyze(path, "cpu");
+  };
+
+  closeCapture = async () => {
+    if (this.disposed || this.state.capture.step !== "launched") return;
+    this.captureUpdate({ step: "closing", error: "" });
+    try {
+      await this.captureTool("mobile_tracesift_close_browser", {}, "TraceSift could not close the browser.");
+      if (this.disposed) return;
+      countUiEvent("ui.tracesift.capture_close");
+      this.captureUpdate({ step: "idle" });
+    } catch (error) {
+      countUiEvent("ui.tracesift.capture_close_failed");
+      captureUiError(error, "tracesift.capture");
+      if (!this.disposed) this.captureUpdate({ step: "launched", error: error instanceof Error ? error.message : "TraceSift could not close the browser." });
+    }
+  };
+
   /**
    * Start readiness again from now. The inline card's frame opens with its
    * analysis, but the tool's frame is the whole workspace: timing a reading from
@@ -655,6 +1117,8 @@ export class TraceSiftController {
   dispose() {
     this.disposed = true;
     if (this.copiedTimer !== undefined) clearTimeout(this.copiedTimer);
+    if (this.reconnectTimer !== undefined) clearTimeout(this.reconnectTimer);
+    if (this.buildPollTimer !== undefined) clearTimeout(this.buildPollTimer);
     this.listeners.clear();
   }
 }

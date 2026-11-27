@@ -53,10 +53,11 @@ Depending on the tools you use, Mobile Dev processes:
 - CPU and React profiles, call trees, component names, source paths, analysis
   results, and investigation context when you use TraceSift. The integration
   sends profiles to a TraceSift service on your own computer and saves analysis
-  references locally. Choosing a profile or a project folder in the TraceSift
-  panel opens your operating system's own dialog; the path you pick is used to
-  read that profile and to tell the chat which code a finding belongs to, and the
-  project folder is saved locally until you choose another.
+  references locally. Recording a React Native app saves a copy of its CPU
+  profile locally. Choosing an existing profile or a project for a profiling
+  build opens your operating system's own dialog. The chosen profile path is
+  used to read that file; the build's project folder is saved locally until you
+  choose another. Investigate sends measured context to the active chat.
 - Network requests passing through the local proxy when you enable network
   throttling. That proxy forwards traffic to the destinations requested by your
   app; it is not a Callstack-hosted traffic collection service.
@@ -195,6 +196,7 @@ and [OpenAI's privacy policy](https://openai.com/policies/privacy-policy/).
 | agent-device session state, logs and artifacts | Kept in a `mobile-dev-agent-device-` directory in the system temporary folder after a session, so they stay readable, until the operating system or you remove them. |
 | agent-device's iOS test runner | Built from the plugin's included source and cached in `~/.agent-device/apple-runner` until you remove it. |
 | Saved performance recordings | Stored under `~/Library/Application Support/mobile-dev/recordings` until you remove them; the recording store has no automatic age-based expiry. |
+| TraceSift profiles recorded through Mobile Dev | Stored under `~/Library/Application Support/mobile-dev/tracesift` until you delete a saved profile in the TraceSift panel or remove the files. Deleting a saved profile also removes its project-name metadata. |
 | TraceSift integration results/references and the chosen project folder | Stored under `~/.tracesift/integrations/mobile-dev` by default, or the corresponding `TRACE_SIFT_HOME` directory, until removed. Original profiles and the TraceSift service's own data are separate. |
 | Installation ID | Stored at `~/Library/Application Support/mobile-dev/telemetry/anonymous-user-id` until you remove it. Process-session IDs last for the process; copies in sent reports follow Sentry retention. |
 | Native crash-report caches | Pending reports can persist between runs under `~/Library/Caches/mobile-dev/sentry` or `/data/local/tmp/mobile-dev-sentry` on Android and be sent on a subsequent start. They can be removed after stopping the relevant processes. |
