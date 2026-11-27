@@ -25,6 +25,7 @@ test("TraceSift keeps one workspace while readiness changes its inspector", asyn
     pretendToBeVisual: true, runScripts: "outside-only", url: "https://mobile-dev.test/",
   });
   t.after(() => dom.window.close());
+  dom.window.localStorage.setItem("tracesift.detailsHidden", "1");
   dom.window.eval(built.outputFiles[0].text);
 
   let status: "setup_required" | "ready" = "setup_required";
@@ -61,6 +62,7 @@ test("TraceSift keeps one workspace while readiness changes its inspector", asyn
   await settle();
   let workspace = dom.window.document.querySelector(".tracesift-workspace");
   assert.ok(workspace);
+  assert.equal(workspace.getAttribute("data-inspector"), "shown");
   assert.match(workspace.textContent ?? "", /Finish setup to add a profile/);
   assert.match(workspace.textContent ?? "", /TraceSift setup/);
   assert.equal(dom.window.document.querySelectorAll(".tracesift-workspace").length, 1);

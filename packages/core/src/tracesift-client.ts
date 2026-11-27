@@ -134,6 +134,12 @@ function cliFailure(diagnostics: string, output: string, code: number | null, fa
   }
   const reported = parseCliJson(output)?.error;
   if (typeof reported === "string" && reported.trim()) return new TraceSiftError(reported.trim().slice(0, 1024), "request");
+  if (/xcodebuild\b.*(?:exit code|exited with (?:code|status))\s*65/i.test(said)) {
+    const errors = (output + "\n" + diagnostics).split(/\r?\n/)
+      .map(line => line.trim()).filter(line => /\berror:|fatal error:/i.test(line) && !/^tracesift:/.test(line))
+      .slice(-3).map(line => line.slice(0, 300));
+    if (errors.length) return new TraceSiftError(`${said}\n${errors.join("\n")}`, "request");
+  }
   return said ? new TraceSiftError(said, "request") : new Error(failed(code));
 }
 
@@ -875,13 +881,16 @@ export class TraceSiftClient {
       const iosPath = options.platform === "ios" ? [dirname(process.execPath), join(homedir(), ".rbenv/shims"), join(homedir(), ".rbenv/bin"), "/opt/homebrew/bin", "/usr/local/bin", process.env.PATH ?? ""].join(delimiter) : process.env.PATH;
       if (options.platform === "ios") {
         const profiler = await stat(join(cwd, "node_modules", "@callstack", "tracesift-profiler")).catch(() => undefined);
+        const podfile = await stat(join(cwd, "ios", "Podfile")).catch(() => undefined);
         const lock = await readFileAsync(join(cwd, "ios", "Podfile.lock"), "utf8").catch(() => "");
-        const gemfile = await stat(join(cwd, "Gemfile")).catch(() => undefined);
-        // The CLI uses plain `pod`, which can be absent under a project's pinned
-        // Ruby even when its bundled CocoaPods is installed and ready.
-        if (profiler?.isDirectory() && gemfile?.isFile() && !lock.includes("TracesiftProfiler")) {
-          await this.runSetupCommand("bundle", ["exec", "pod", "install"], "Linking the TraceSift profiler pod", signal,
-            { ...process.env, PATH: iosPath, LANG: "en_US.UTF-8", LC_ALL: "en_US.UTF-8" }, join(cwd, "ios"), PROFILE_BUILD_TIMEOUT_MS);
+        const rootGemfile = await stat(join(cwd, "Gemfile")).catch(() => undefined);
+        const iosGemfile = await stat(join(cwd, "ios", "Gemfile")).catch(() => undefined);
+        // A GUI package install does not link the native pod. Use the project's
+        // pinned CocoaPods when available, or the system pod command otherwise.
+        if (profiler?.isDirectory() && podfile?.isFile() && !lock.includes("TracesiftProfiler")) {
+          const gemfile = rootGemfile?.isFile() ? join(cwd, "Gemfile") : iosGemfile?.isFile() ? join(cwd, "ios", "Gemfile") : undefined;
+          await this.runSetupCommand(gemfile ? "bundle" : "pod", gemfile ? ["exec", "pod", "install"] : ["install"], "Linking the TraceSift profiler pod", signal,
+            { ...process.env, PATH: iosPath, LANG: "en_US.UTF-8", LC_ALL: "en_US.UTF-8", ...(gemfile ? { BUNDLE_GEMFILE: gemfile } : {}) }, join(cwd, "ios"), PROFILE_BUILD_TIMEOUT_MS);
         }
       }
       const output = await this.runCommand(args, {

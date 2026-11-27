@@ -13,11 +13,6 @@ const options: { value: Extract<TraceSiftProfileType, "cpu" | "react">; title: s
   { value: "react", title: "React components", detail: "Find expensive commits, wasted re-renders and cascades", accepts: "React DevTools JSON", drop: "React DevTools profiling .json" },
 ];
 
-/** Whether the "Before you record" details are collapsed. localStorage can be blocked, so this is best effort. */
-const DETAILS_HIDDEN_KEY = "tracesift.detailsHidden";
-function readDetailsHidden() { try { return globalThis.localStorage?.getItem(DETAILS_HIDDEN_KEY) === "1"; } catch { return false; } }
-function writeDetailsHidden(hidden: boolean) { try { globalThis.localStorage?.setItem(DETAILS_HIDDEN_KEY, hidden ? "1" : "0"); } catch { /* Keep the in-memory value. */ } }
-
 /**
  * Recording and uploading are two ways to reach the same cards, so they share
  * the one panel rather than stacking: only one is in use at a time, and the
@@ -277,14 +272,14 @@ function TraceSiftUpload({ controller, available, mode, setMode, profileType, se
   useEffect(() => {
     if (state.capture.source === "chrome" && state.capture.step === "idle") controller.setCaptureSource("rn");
   }, [controller, state.capture.source, state.capture.step]);
-  const [detailsHidden, setDetailsHidden] = useState(readDetailsHidden);
+  const [detailsHidden, setDetailsHidden] = useState(false);
   const [buildExpanded, setBuildExpanded] = useState(true);
   const [runningExpanded, setRunningExpanded] = useState(true);
   const [profilesOpen, setProfilesOpen] = useState(false);
   useEffect(() => {
     if (state.run.notice) { setBuildExpanded(false); setRunningExpanded(true); }
   }, [state.run.notice]);
-  const toggleDetails = () => setDetailsHidden(hidden => { writeDetailsHidden(!hidden); return !hidden; });
+  const toggleDetails = () => setDetailsHidden(hidden => !hidden);
   const analyzing = state.analyzing;
   const capturing = state.capture.step !== "idle";
   const ready = state.readiness?.status === "ready";

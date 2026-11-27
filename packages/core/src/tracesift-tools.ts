@@ -81,7 +81,7 @@ export function registerTraceSiftTools(server: McpServer, client: TraceSiftClien
     try {
       await client.installCli(context.signal);
       recordTraceSiftOperation("install", "success", performance.now() - startedAt);
-      const structuredContent = { apiVersion: 1 as const, action: "install" as const, completed: true as const, message: "TraceSift CLI installed. Checking setup…" };
+      const structuredContent = { apiVersion: 1 as const, action: "install" as const, completed: true as const, message: "TraceSift CLI installed. Initialize the service to finish setup." };
       return { content: [{ type: "text", text: structuredContent.message }], structuredContent };
     } catch (error) { return failure(error, "install", startedAt, context.signal); }
   });

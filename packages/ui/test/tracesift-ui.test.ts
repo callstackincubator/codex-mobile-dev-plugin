@@ -75,6 +75,27 @@ test("TraceSift setup actions run from the panel and re-check readiness", async 
   controller.dispose();
 });
 
+test("installing the CLI prompts for initialization without starting the service", async () => {
+  const calls: string[] = [];
+  const app = {
+    getHostCapabilities: () => ({ serverTools: {} }), getHostContext: () => hostContext,
+    async callServerTool(input: { name: string }) {
+      calls.push(input.name);
+      return { content: [], structuredContent: {
+        apiVersion: 1, action: "install", completed: true,
+        message: "TraceSift CLI installed. Initialize the service to finish setup.",
+      } };
+    },
+  };
+  const controller = new TraceSiftController(app as never);
+  await controller.runSetup("install");
+  assert.deepEqual(calls, ["mobile_install_tracesift_cli"]);
+  assert.equal(controller.getSnapshot().readiness?.status, "setup_required");
+  assert.equal(controller.getSnapshot().readiness?.reason, "needs_init");
+  assert.equal(controller.getSnapshot().checkingReadiness, false);
+  controller.dispose();
+});
+
 test("TraceSift Investigate fetches one authoritative handoff and sends it to the active chat", async () => {
   const calls: unknown[] = []; const messages: unknown[] = [];
   const app = {

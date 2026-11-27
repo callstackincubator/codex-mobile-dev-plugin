@@ -625,10 +625,23 @@ fi
   await assert.rejects(client.profileBuild({ projectPath: home, platform: "ios" }), /No provisioning profile covers this phone\./);
 });
 
+test("an iOS build exit 65 includes the Xcode error behind the CLI verdict", async t => {
+  const root = await mkdtemp(join(tmpdir(), "mobile-dev-xcode-error-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(join(root, "package.json"), "{}");
+  const command = join(root, "tracesift");
+  await writeFile(command, `#!/bin/sh\nprintf '%s\\n' '/app/ios/App.swift:12:3: error: cannot find Widget in scope' 'BUILD FAILED'\necho 'tracesift: xcodebuild -workspace failed with exit code 65.' >&2\nexit 1\n`, { mode: 0o755 });
+  const client = new TraceSiftClient(command, root);
+  await assert.rejects(client.profileBuild({ projectPath: root, platform: "ios" }), error =>
+    error instanceof Error && /xcodebuild -workspace failed with exit code 65/.test(error.message)
+      && /cannot find Widget in scope/.test(error.message));
+});
+
 test("an iOS profiling build links a manually installed profiler with the project's Bundler", async t => {
   const root = await mkdtemp(join(tmpdir(), "mobile-dev-bundled-pods-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, "ios"));
+  await writeFile(join(root, "ios", "Podfile"), "platform :ios, '15.0'");
   await mkdir(join(root, "node_modules", "@callstack", "tracesift-profiler"), { recursive: true });
   await writeFile(join(root, "package.json"), "{}");
   await writeFile(join(root, "Gemfile"), "gem 'cocoapods'");
@@ -649,4 +662,22 @@ test("an iOS profiling build links a manually installed profiler with the projec
   bundled = undefined;
   await client.profileBuild({ projectPath: root, platform: "ios" });
   assert.equal(bundled, undefined);
+});
+
+test("an iOS profiling build links a GUI-installed profiler without a Gemfile", async t => {
+  const root = await mkdtemp(join(tmpdir(), "mobile-dev-system-pods-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, "ios"));
+  await writeFile(join(root, "ios", "Podfile"), "platform :ios, '15.0'");
+  await mkdir(join(root, "node_modules", "@callstack", "tracesift-profiler"), { recursive: true });
+  await writeFile(join(root, "package.json"), "{}");
+  const cli = join(root, "tracesift");
+  await writeFile(cli, "#!/bin/sh\nprintf 'built\\n'\n", { mode: 0o755 });
+  const client = new TraceSiftClient(cli, root);
+  let linked: { command: string; args: string[]; cwd: string | undefined } | undefined;
+  (client as unknown as { runSetupCommand: (command: string, args: string[], label: string, signal: AbortSignal | undefined, env: NodeJS.ProcessEnv, cwd: string) => Promise<void> }).runSetupCommand = async (command, args, _label, _signal, _env, cwd) => {
+    linked = { command, args, cwd };
+  };
+  assert.deepEqual(await client.profileBuild({ projectPath: root, platform: "ios" }), { log: "built\n" });
+  assert.deepEqual(linked, { command: "pod", args: ["install"], cwd: await realpath(join(root, "ios")) });
 });

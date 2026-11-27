@@ -97,7 +97,7 @@ test("the TraceSift setup tools run only their fixed client operations", async t
   const initialized = await mcp.callTool({ name: "mobile_initialize_tracesift", arguments: {} });
   assert.deepEqual(calls, ["install", "init"]);
   assert.deepEqual(installed.structuredContent, {
-    apiVersion: 1, action: "install", completed: true, message: "TraceSift CLI installed. Checking setup…",
+    apiVersion: 1, action: "install", completed: true, message: "TraceSift CLI installed. Initialize the service to finish setup.",
   });
   assert.deepEqual(initialized.structuredContent, {
     apiVersion: 1, action: "init", completed: true, message: "TraceSift initialized. Checking readiness…",

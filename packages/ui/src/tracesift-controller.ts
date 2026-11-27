@@ -691,6 +691,13 @@ export class TraceSiftController {
       const parsed = traceSiftSetupActionResultSchema.safeParse(result.structuredContent);
       if (!parsed.success || parsed.data.action !== action) throw new Error("TraceSift returned an invalid setup result.");
       countUiEvent(`ui.tracesift.${action}_success`);
+      if (action === "install") {
+        this.update({ setupAction: undefined, setupNotice: parsed.data.message, readiness: {
+          apiVersion: 1, status: "setup_required", reason: "needs_init",
+          message: "TraceSift CLI is installed. Initialize the TraceSift app to finish setup.",
+        } });
+        return;
+      }
       this.update({ setupAction: undefined, setupNotice: parsed.data.message });
       await this.checkReadiness();
       if (!this.disposed && this.state.readiness?.status === "ready") this.update({ setupNotice: "" });

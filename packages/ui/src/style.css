@@ -422,7 +422,8 @@ html[data-theme="dark"] .tracesift-upload { --tracesift-blue-ink: var(--tracesif
 .tracesift-upload .tracesift-before dt { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 11px; font-weight: 600; }
 .tracesift-upload .tracesift-before dt svg { width: 13px; height: 13px; color: var(--muted-foreground); }
 .tracesift-upload .tracesift-before dd { min-width: 0; margin: 0; color: var(--muted-foreground); font-size: 10.5px; line-height: 1.4; text-align: right; overflow-wrap: anywhere; }
-.tracesift-upload .tracesift-before > a { color: var(--ring); font-size: 11.5px; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+.tracesift-upload .tracesift-before a { color: var(--ring); font-size: 11.5px; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+.tracesift-upload .tracesift-before a:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 .tracesift-upload .upload-pane {
   width: 100%;
   min-height: 150px;
@@ -503,7 +504,7 @@ html[data-theme="dark"] .tracesift-upload { --tracesift-blue-ink: var(--tracesif
 /* Option A's blue is local to the TraceSift setup and capture workflow. */
 .tracesift-upload [data-slot="tabs-list"] { background: transparent; border: 1px solid var(--border); }
 .tracesift-upload [data-slot="tabs-trigger"][data-active] { background: color-mix(in srgb, var(--tracesift-blue) 7%, transparent); border-color: var(--border); box-shadow: none; }
-.tracesift-upload .eyebrow, .tracesift-upload .tracesift-before > a, .tracesift-upload .tracesift-setup-actions a:not([aria-disabled="true"]) { color: var(--tracesift-blue-ink); }
+.tracesift-upload .eyebrow, .tracesift-upload .tracesift-before a, .tracesift-upload .tracesift-setup-actions a:not([aria-disabled="true"]) { color: var(--tracesift-blue-ink); }
 .tracesift-upload .tracesift-blocker { color: var(--tracesift-blue-ink); border-color: var(--tracesift-blue); background: color-mix(in srgb, var(--tracesift-blue) 11%, transparent); }
 .tracesift-upload .tracesift-rn-badge, .tracesift-upload .tracesift-ready, .tracesift-upload .tracesift-action-required { color: var(--tracesift-blue-ink); border-color: color-mix(in srgb, var(--tracesift-blue) 55%, var(--border)); background: color-mix(in srgb, var(--tracesift-blue) 12%, transparent); }
 .tracesift-upload .workflow-label > span, .tracesift-upload .tracesift-step-index, .tracesift-upload .tracesift-setup-step-label > span { color: var(--tracesift-blue-ink); background: color-mix(in srgb, var(--tracesift-blue) 20%, var(--accent)); }
